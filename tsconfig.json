@@ -1,0 +1,48 @@
+{
+  "compilerOptions": {
+    // ============ LANGUAGE ============
+    "target": "ES2022",                         // ✅ Node 18+ supports ES2022
+    "module": "CommonJS",
+    "lib": ["ES2022"],                          // ✅ Match target
+
+    // ============ PATHS ============
+    "rootDir": "./src",
+    "outDir": "./dist",
+    "baseUrl": "./src",                         // ✅ For path aliases
+    "paths": {                                  // ✅ Clean imports
+      "@config/*": ["config/*"],
+      "@middlewares/*": ["middlewares/*"],
+      "@routes/*": ["routes/*"],
+      "@shared/*": ["shared/*"],
+      "@utils/*": ["utils/*"]
+    },
+
+    // ============ MODULE RESOLUTION ============
+    "moduleResolution": "node",
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "resolveJsonModule": true,
+    "forceConsistentCasingInFileNames": true,
+
+    // ============ TYPE CHECKING ============
+    "strict": true,
+    "noUnusedLocals": true,                     // ✅ Catch unused variables
+    "noUnusedParameters": true,                 // ✅ Catch unused params
+    "noFallthroughCasesInSwitch": true,         // ✅ Catch switch bugs
+    "noUncheckedIndexedAccess": true,           // ✅ Catch undefined access
+
+    // ============ BUILD ============
+    "skipLibCheck": true,
+    "noEmitOnError": true,
+    "incremental": true,                        // ✅ Faster rebuilds
+    "tsBuildInfoFile": "./dist/.tsbuildinfo",   // ✅ Cache build info
+
+    // ============ OUTPUT ============
+    "declaration": false,                       // ✅ Not needed for API
+    "sourceMap": false,                         // ✅ Security: no source maps
+    "removeComments": true,                     // ✅ Smaller output
+
+  },
+  "include": ["src/**/*"],
+  "exclude": ["node_modules", "dist", "**/*.test.ts", "**/*.spec.ts"]
+}
