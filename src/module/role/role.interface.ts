@@ -1,0 +1,29 @@
+import { Types } from "mongoose";
+
+export interface TRole {
+	branchId: Types.ObjectId;
+	roleName: string;
+	isOwner?: boolean;
+	canViewMembers?: boolean;
+	canAddMember?: boolean;
+	canEditMember?: boolean;
+	canDeleteMember?: boolean;
+	canViewPackages?: boolean;
+	canAddPackage?: boolean;
+	canEditPackage?: boolean;
+	canDeletePackage?: boolean;
+	canViewBilling?: boolean;
+	canAddBilling?: boolean;
+	canEditBilling?: boolean;
+	canDeleteBilling?: boolean;
+	canViewAnalytics?: boolean;
+	canExportAnalytics?: boolean;
+	canViewSMS?: boolean;
+	canSendSMS?: boolean;
+	canViewEmail?: boolean;
+	canSendEmail?: boolean;
+	createdAt?: Date;
+	updatedAt?: Date;
+}
+
+export type TPartialRole = Partial<TRole>;
