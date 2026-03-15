@@ -16,6 +16,15 @@ export enum PaymentStatus {
 	CANCELLED = "cancelled",
 	REFUNDED = "refunded",
 }
+export enum PaymentMethod {
+    CASH = "cash",
+    CARD = "card",
+    Bkash = "bkash",
+    Nagad = "nagad",
+    Rocket = "rocket",
+    BankTransfer = "bank_transfer",
+    Other = "other",
+}
 
 export interface TPayment {
 	branchId: Types.ObjectId;
@@ -39,7 +48,7 @@ export interface TPayment {
 	dueAmount?: number;
 	paidTotal?: number;
 	admissionFee?: number;
-	paymentMethod?: string;
+	paymentMethod?: PaymentMethod;
 	paymentDate?: Date;
 	nextPaymentDate?: Date;
 	status?: PaymentStatus;

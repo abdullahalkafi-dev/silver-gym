@@ -1,11 +1,19 @@
 import { Types } from "mongoose";
 
 export interface emergencyContact{
-    name: string;
     relationship: string;
     contactNumber: string;
 }
-
+export type heightUnit = "cm" | "in" | "ft";
+export type weightUnit = "kg" | "lb";
+export type trainingGoal =
+	| "Yoga"
+	| "Cardio Endurance"
+	| "Bodybuilding"
+	| "Muscle Gain"
+	| "Flexibility & Mobility"
+	| "General Fitness"
+	| "Strength Training";
 export interface TMember {
 	branchId: Types.ObjectId;
 	legacyId?: string;
@@ -20,13 +28,13 @@ export interface TMember {
 	gender?: string;
 	bloodGroup?: string;
 	height?: number;
-	heightUnit?: string;
+	heightUnit?: heightUnit;
 	weight?: number;
-	weightUnit?: string;
+	weightUnit?: weightUnit;
 	address?: string;
 	photo?: string;
 	emergencyContact?: emergencyContact;
-	trainingGoals?: string;
+	trainingGoals?: trainingGoal[];
 	currentPackageId?: Types.ObjectId;
 	currentPackageName?: string;
 	membershipStartDate?: Date;

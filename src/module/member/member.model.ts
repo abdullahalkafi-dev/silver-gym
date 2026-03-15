@@ -3,13 +3,19 @@ import { Schema, model } from "mongoose";
 import { TMember, emergencyContact } from './member.interface';
 import { Package } from "../package/package.model";
 
+const TRAINING_GOALS = [
+  "Yoga",
+  "Cardio Endurance",
+  "Bodybuilding",
+  "Muscle Gain",
+  "Flexibility & Mobility",
+  "General Fitness",
+  "Strength Training",
+] as const;
+
 const emergencyContactSchema = new Schema<emergencyContact>(
   {
-    name: {
-        type: String,
-        required: true,
-        trim: true,
-    },
+
     relationship: {
         type: String,
         trim: true,
@@ -82,6 +88,7 @@ const memberSchema = new Schema<TMember>(
     },
     heightUnit: {
       type: String,
+      enum: ["cm", "in", "ft"],
       trim: true,
     },
     weight: {
@@ -90,6 +97,7 @@ const memberSchema = new Schema<TMember>(
     },
     weightUnit: {
       type: String,
+      enum: ["kg", "lb"],
       trim: true,
     },
     address: {
@@ -103,8 +111,9 @@ const memberSchema = new Schema<TMember>(
       type: emergencyContactSchema,
     },
     trainingGoals: {
-      type: String,
-      trim: true,
+      type: [String],
+      enum: TRAINING_GOALS,
+      default: [],
     },
     currentPackageId: {
       type: Schema.Types.ObjectId,

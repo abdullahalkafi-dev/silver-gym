@@ -1,6 +1,6 @@
 import { Schema, model } from "mongoose";
 
-import { PaymentStatus, PaymentType, TPayment } from "./payment.interface";
+import { PaymentMethod, PaymentStatus, PaymentType, TPayment } from "./payment.interface";
 import { Member } from "../member/member.model";
 import { Package } from "../package/package.model";
 
@@ -96,6 +96,7 @@ const paymentSchema = new Schema<TPayment>(
     },
     paymentMethod: {
       type: String,
+      enum: Object.values(PaymentMethod),
       trim: true,
     },
     paymentDate: {
@@ -131,27 +132,39 @@ paymentSchema.pre("validate", async function () {
     return;
   }
 
-  const shouldCheckMember = this.memberId && (this.isNew || this.isModified("memberId") || this.isModified("branchId"));
+  const shouldCheckMember =
+    this.memberId &&
+    (this.isNew || this.isModified("memberId") || this.isModified("branchId"));
   if (shouldCheckMember) {
-    const member = await Member.findById(this.memberId).select("_id branchId").lean();
+    const member = await Member.findById(this.memberId)
+      .select("_id branchId")
+      .lean();
     if (!member) {
       throw new Error("Selected member does not exist.");
     }
 
     if (member.branchId.toString() !== this.branchId.toString()) {
-      throw new Error("Selected member must belong to the same branch as payment.");
+      throw new Error(
+        "Selected member must belong to the same branch as payment.",
+      );
     }
   }
 
-  const shouldCheckPackage = this.packageId && (this.isNew || this.isModified("packageId") || this.isModified("branchId"));
+  const shouldCheckPackage =
+    this.packageId &&
+    (this.isNew || this.isModified("packageId") || this.isModified("branchId"));
   if (shouldCheckPackage) {
-    const pkg = await Package.findById(this.packageId).select("_id branchId").lean();
+    const pkg = await Package.findById(this.packageId)
+      .select("_id branchId")
+      .lean();
     if (!pkg) {
       throw new Error("Selected package does not exist.");
     }
 
     if (pkg.branchId.toString() !== this.branchId.toString()) {
-      throw new Error("Selected package must belong to the same branch as payment.");
+      throw new Error(
+        "Selected package must belong to the same branch as payment.",
+      );
     }
   }
 });
