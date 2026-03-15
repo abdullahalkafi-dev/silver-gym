@@ -19,12 +19,18 @@ class RedisClient {
         connectTimeout: 5000, // Reduced from 60 seconds
         noDelay: true, // Disable Nagle's algorithm for lower latency
         reconnectStrategy: (retries: number) => {
-          console.warn(`Redis reconnection attempt ${retries}`);
-          if (retries > this.maxRetries) {
+          this.retryCount = retries;
+          console.warn(
+            `Redis reconnection attempt ${this.retryCount}/${this.maxRetries}`
+          );
+
+          if (this.retryCount > this.maxRetries) {
             console.error("Redis max reconnection attempts reached");
             return false; // Stop reconnecting
           }
-          return Math.min(retries * 1000, 5000); // Exponential backoff, max 5 seconds
+
+          // Exponential backoff using configured base delay, max 5 seconds.
+          return Math.min(this.retryCount * this.retryDelay, 5000);
         },
       },
     });

@@ -4,7 +4,7 @@ import { Model, Query } from "mongoose";
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type FilterQuery<T> = Record<string, any> & Partial<T>;
 
-const DEFAULT_LIMIT = 9999;
+const DEFAULT_LIMIT = 100;
 
 export interface QueryBuilderOptions {
   /** Fields that are safe to apply regex/text search on in filter() */

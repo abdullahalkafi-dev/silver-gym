@@ -81,6 +81,11 @@ const userSchema = new Schema<TUser>(
 			type: [linkedProviderSchema],
 			default: [],
 		},
+        status: {
+            type: String,
+            enum: ["active", "inactive", "suspended"],
+            default: "active",
+        },
 	},
 	{
 		timestamps: true,

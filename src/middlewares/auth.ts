@@ -4,8 +4,8 @@ import { Secret } from "jsonwebtoken";
 import config from "../config";
 
 import AppError from "../errors/AppError";
-import { User } from "../modules/user/user.model";
 import { verifyJwtToken } from "jwt";
+import { UserRepository } from "module/user/user.repository";
 
 const auth =
   (...roles: string[]) =>
@@ -25,7 +25,7 @@ const auth =
         //set user to header
         req.user = verifyUser;
         console.log(verifyUser);
-     const user = await User.isExistUserById(verifyUser._id);
+     const user = await UserRepository.findById(verifyUser._id);
 
         if (!user) {
           throw new AppError(StatusCodes.UNAUTHORIZED, "You are not authorized");

@@ -161,10 +161,6 @@ memberSchema.pre("validate", async function () {
     if (this.monthlyFeeAmount == null) {
       throw new Error("monthlyFeeAmount is required when customMonthlyFee is true.");
     }
-
-    if (this.currentPackageId) {
-      throw new Error("currentPackageId cannot be set when customMonthlyFee is true.");
-    }
   } else if (this.monthlyFeeAmount != null) {
     throw new Error("monthlyFeeAmount can only be set when customMonthlyFee is true.");
   }

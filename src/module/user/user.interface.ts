@@ -24,6 +24,7 @@ export interface TUser {
 	isPhoneVerified?: boolean;
 	lastLogin?: Date | null;
 	linkedProviders?: LinkedProvider[];
+    status?: "active" | "inactive" | "suspended";
 	createdAt?: Date;
 	updatedAt?: Date;
 }

@@ -5,176 +5,149 @@ import multer, { FileFilterCallback } from "multer";
 import path from "path";
 import AppError from "../errors/AppError";
 import sharp from "sharp";
+import generateUploadFileName from "../util/generateUploadFileName";
 
-const randomCode = () => {
-  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz123456789";
-  let result = "";
-  for (let i = 0; i < 5; i++) {
-    result += chars.charAt(Math.floor(Math.random() * chars.length));
+type UploadField = "image" | "media" | "doc" | "docs";
+
+const BASE_UPLOAD_DIR = path.join(process.cwd(), "uploads");
+
+const FIELD_CONFIG: Record<
+  UploadField,
+  { folder: string; maxCount: number; forcedExtension?: string }
+> = {
+  image: { folder: "images", maxCount: 10, forcedExtension: ".tmp" },
+  media: { folder: "medias", maxCount: 10 },
+  doc: { folder: "docs", maxCount: 10, forcedExtension: ".pdf" },
+  docs: { folder: "docs", maxCount: 10, forcedExtension: ".pdf" },
+};
+
+const ALLOWED_MIME_TYPES: Record<UploadField, Set<string>> = {
+  image: new Set([
+    "image/jpeg",
+    "image/png",
+    "image/jpg",
+    "image/heif",
+    "image/heic",
+    "image/tiff",
+    "image/webp",
+    "image/avif",
+  ]),
+  media: new Set(["video/mp4", "audio/mpeg"]),
+  doc: new Set(["application/pdf"]),
+  docs: new Set(["application/pdf"]),
+};
+
+const ALLOWED_MIME_MESSAGES: Record<UploadField, string> = {
+  image: "Only .jpeg, .png, .jpg, .heif, .heic, .tiff, .webp, .avif files supported",
+  media: "Only .mp4, .mp3 file supported",
+  doc: "Only pdf supported",
+  docs: "Only pdf supported",
+};
+
+const SUPPORTED_FIELDS = Object.keys(FIELD_CONFIG) as UploadField[];
+
+const ensureDirExists = (dirPath: string) => {
+  if (!fs.existsSync(dirPath)) {
+    fs.mkdirSync(dirPath, { recursive: true });
   }
-  return result;
+};
+
+const isUploadField = (value: string): value is UploadField => {
+  return value in FIELD_CONFIG;
 };
 
 const fileUploadHandler = (req: Request, res: Response, next: NextFunction) => {
-  // Create upload folder
-  const baseUploadDir = path.join(process.cwd(), "uploads");
-  if (!fs.existsSync(baseUploadDir)) {
-    fs.mkdirSync(baseUploadDir);
-  }
+  ensureDirExists(BASE_UPLOAD_DIR);
 
-  // Folder create for different file
-  const createDir = (dirPath: string) => {
-    if (!fs.existsSync(dirPath)) {
-      fs.mkdirSync(dirPath);
-    }
-  };
-
-  // Create filename
   const storage = multer.diskStorage({
     destination: (_req, file, cb) => {
-      let uploadDir;
-      console.log(file.fieldname);
-      switch (file.fieldname) {
-        case "image":
-          uploadDir = path.join(baseUploadDir, "images");
-          break;
-        case "media":
-          uploadDir = path.join(baseUploadDir, "medias");
-          break;
-        case "doc":
-        case "docs":
-          uploadDir = path.join(baseUploadDir, "docs");
-          break;
-        default:
-          throw new AppError(StatusCodes.BAD_REQUEST, "File is not supported");
+      if (!isUploadField(file.fieldname)) {
+        cb(new AppError(StatusCodes.BAD_REQUEST, "File is not supported"), "");
+        return;
       }
-      createDir(uploadDir);
+
+      const uploadDir = path.join(BASE_UPLOAD_DIR, FIELD_CONFIG[file.fieldname].folder);
+      ensureDirExists(uploadDir);
       cb(null, uploadDir);
     },
 
     filename: (req, file, cb) => {
-      let fileExt: string;
-      if (file.fieldname === "doc" || file.fieldname === "docs") {
-        fileExt = ".pdf";
-      } else if (file.fieldname === "image") {
-        fileExt = ".tmp"; // will be converted to .webp later
-      } else {
-        // For media, retain the original extension
-        fileExt = path.extname(file.originalname);
+      if (!isUploadField(file.fieldname)) {
+        cb(new AppError(StatusCodes.BAD_REQUEST, "This file is not supported"), "");
+        return;
       }
-      const date = new Date();
-      const formattedDate = `${date.getDate()}-${
-        date.getMonth() + 1
-      }-${date.getFullYear()}`;
 
-      const originalNameWithoutExt =
-        path.parse(file.originalname).name + "-" + randomCode();
-      const fileName =
-        req?.user?._id &&
-        req.url === "/update-profile" &&
-        file.fieldname == "image"
-          ? req.user._id + "-" + originalNameWithoutExt
-          : originalNameWithoutExt.toLowerCase().split(" ").join("-") +
-            "-" +
-            formattedDate;
+      const extension =
+        FIELD_CONFIG[file.fieldname].forcedExtension ??
+        path.extname(file.originalname).toLowerCase();
+      const useUserId =
+        file.fieldname === "image" && req.url === "/update-profile" && !!req.user?._id;
 
-      cb(null, fileName + fileExt);
+      const fileName = generateUploadFileName({
+        originalName: file.originalname,
+        userId: useUserId ? String(req.user?._id) : undefined,
+      });
+
+      cb(null, `${fileName}${extension}`);
     },
   });
 
-  // File filter
-  const filterFilter = (_req: Request, file: any, cb: FileFilterCallback) => {
-    if (file.fieldname === "image") {
-      if (
-        file.mimetype === "image/jpeg" ||
-        file.mimetype === "image/png" ||
-        file.mimetype === "image/jpg" ||
-        file.mimetype === "image/heif" ||
-        file.mimetype === "image/heic" ||
-        file.mimetype === "image/tiff" ||
-        file.mimetype === "image/webp" ||
-        file.mimetype === "image/avif"
-      ) {
-        cb(null, true);
-      } else {
-        console.log(file.fieldname);
-        console.log(file.mimetype);
-        cb(
-          new AppError(
-            StatusCodes.BAD_REQUEST,
-            "Only .jpeg, .png, .jpg, .heif, .heic, .tiff, .webp, .avif files supported",
-          ),
-        );
-      }
-    } else if (file.fieldname === "media") {
-      if (file.mimetype === "video/mp4" || file.mimetype === "audio/mpeg") {
-        cb(null, true);
-      } else {
-        cb(
-          new AppError(
-            StatusCodes.BAD_REQUEST,
-            "Only .mp4, .mp3, file supported",
-          ),
-        );
-      }
-    } else if (file.fieldname === "doc" || file.fieldname === "docs") {
-      if (file.mimetype === "application/pdf") {
-        cb(null, true);
-      } else {
-        cb(new AppError(StatusCodes.BAD_REQUEST, "Only pdf supported"));
-      }
-    } else {
-      throw new AppError(StatusCodes.BAD_REQUEST, "This file is not supported");
+  const fileFilter = (_req: Request, file: Express.Multer.File, cb: FileFilterCallback) => {
+    if (!isUploadField(file.fieldname)) {
+      cb(new AppError(StatusCodes.BAD_REQUEST, "This file is not supported"));
+      return;
     }
+
+    const isAllowedMime = ALLOWED_MIME_TYPES[file.fieldname].has(file.mimetype);
+    if (!isAllowedMime) {
+      cb(new AppError(StatusCodes.BAD_REQUEST, ALLOWED_MIME_MESSAGES[file.fieldname]));
+      return;
+    }
+
+    cb(null, true);
   };
 
-  // Return multer middleware
   const upload = multer({
-    storage: storage,
-    fileFilter: filterFilter,
-  }).fields([
-    { name: "image", maxCount: 10 },
-    { name: "media", maxCount: 10 },
-    { name: "doc", maxCount: 10 },
-  ]);
-  // Execute the multer middleware
-  upload(req, res, async (err: any) => {
+    storage,
+    fileFilter,
+  }).fields(
+    SUPPORTED_FIELDS.map((fieldName) => ({
+      name: fieldName,
+      maxCount: FIELD_CONFIG[fieldName].maxCount,
+    })),
+  );
+
+  upload(req, res, async (err: unknown) => {
     if (err) {
       return next(err);
     }
 
-    // Post-process image files: convert to WebP and compress.
-    if (req.files && "image" in req.files) {
-      const imageFiles = (
-        req.files as { [fieldname: string]: Express.Multer.File[] }
-      )["image"] as Express.Multer.File[];
-      try {
-        // Loop through each image file uploaded
-        for (const file of imageFiles) {
-          const inputFilePath = file.path;
-          // Create new filename by replacing .tmp with .webp
-          const newFilePath = inputFilePath.replace(/\.tmp$/, ".webp");
+    const uploadedFiles = req.files as Record<string, Express.Multer.File[]> | undefined;
+    const imageFiles = uploadedFiles?.image;
 
-          await sharp(inputFilePath)
-            .resize({ width: 1024 })
-            .webp({ quality: 40, effort: 6, nearLossless: false })
-            .toFile(newFilePath);
+    if (!imageFiles || imageFiles.length === 0) {
+      return next();
+    }
 
-          // Remove the temporary file
-          fs.unlinkSync(inputFilePath);
+    try {
+      for (const file of imageFiles) {
+        const inputFilePath = file.path;
+        const newFilePath = inputFilePath.replace(/\.tmp$/, ".webp");
 
-          // Update file metadata if needed for later middlewares
-          file.path = newFilePath;
-          file.filename = path.basename(newFilePath);
-        }
-      } catch (error) {
-        return next(
-          new AppError(
-            StatusCodes.INTERNAL_SERVER_ERROR,
-            "Image processing failed",
-          ),
-        );
+        await sharp(inputFilePath)
+          .resize({ width: 1024 })
+          .webp({ quality: 40, effort: 6, nearLossless: false })
+          .toFile(newFilePath);
+
+        await fs.promises.unlink(inputFilePath);
+
+        file.path = newFilePath;
+        file.filename = path.basename(newFilePath);
       }
+    } catch {
+      return next(
+        new AppError(StatusCodes.INTERNAL_SERVER_ERROR, "Image processing failed"),
+      );
     }
 
     next();
