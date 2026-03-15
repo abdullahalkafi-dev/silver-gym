@@ -31,6 +31,14 @@ const packageSchema = new Schema<TPackage>(
       trim: true,
       enum: Object.values(PackageDurationType),
     },
+    description: {
+      type: String,
+      trim: true,
+    },
+    color: {
+      type: String,
+      trim: true,
+    },
     amount: {
       type: Number,
       required: true,

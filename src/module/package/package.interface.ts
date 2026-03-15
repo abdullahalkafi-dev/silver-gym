@@ -14,6 +14,8 @@ export interface TPackage {
 	title: string;
 	duration: number;
 	durationType: PackageDurationType;
+    description?: string;
+    color: string;
 	amount: number;
 	includeAdmissionFee?: boolean;
 	admissionFeeAmount?: number;
