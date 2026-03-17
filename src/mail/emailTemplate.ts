@@ -1,3 +1,4 @@
+import config from "@config/index";
 import { TResetPassword, TCreateAccount } from "./emailTemplate.type";
 const themes = {
   "theme-red": {
@@ -26,6 +27,7 @@ const themes = {
     accent: "#e7f4fd",
   },
 };
+const projectName = config.app_public_name || "Project";
 const createAccount = (values: TCreateAccount) => {
   const theme = themes[values.theme] ?? themes["theme-blue"];
 
@@ -67,7 +69,7 @@ const createAccount = (values: TCreateAccount) => {
             <!-- Header -->
             <tr>
               <td style="background-color: ${theme.primary}; padding: 20px; text-align: center;">
-                <h1 style="color: #ffffff; margin: 0; font-size: 24px;">TrueDots</h1>
+                <h1 style="color: #ffffff; margin: 0; font-size: 24px;">${projectName}</h1>
               </td>
             </tr>
 
@@ -101,7 +103,7 @@ const createAccount = (values: TCreateAccount) => {
             <!-- Footer -->
             <tr>
               <td style="background-color: ${theme.accent}; padding: 20px; text-align: center; border-left: 1px solid #e6e6e6; border-right: 1px solid #e6e6e6; border-bottom: 1px solid #e6e6e6;">
-                <p style="color: #333333; margin: 0; font-size: 14px;">© 2025 TrueDots. All rights reserved.</p>
+                <p style="color: #333333; margin: 0; font-size: 14px;">© 2025 ${projectName}. All rights reserved.</p>
               </td>
             </tr>
           </table>
@@ -157,7 +159,7 @@ const resetPassword = (values: TResetPassword) => {
             <!-- Header -->
             <tr>
               <td style="background-color: ${theme.primary}; padding: 20px; text-align: center;">
-                <h1 style="color: #ffffff; margin: 0; font-size: 24px;">TrueDots</h1>
+                <h1 style="color: #ffffff; margin: 0; font-size: 24px;">${projectName}</h1>
               </td>
             </tr>
 
@@ -197,7 +199,7 @@ const resetPassword = (values: TResetPassword) => {
             <!-- Footer -->
             <tr>
               <td style="background-color: ${theme.accent}; padding: 20px; text-align: center; border-left: 1px solid #e6e6e6; border-right: 1px solid #e6e6e6; border-bottom: 1px solid #e6e6e6;">
-                <p style="color: #333333; margin: 0; font-size: 14px;">© 2025 TrueDots. All rights reserved.</p>
+                <p style="color: #333333; margin: 0; font-size: 14px;">© 2025 ${projectName}. All rights reserved.</p>
               </td>
             </tr>
           </table>

@@ -8,7 +8,7 @@ const resend = new Resend(config.resend.api_key);
 const sendEmail = async (values: ISendEmail) => {
   try {
     const { data, error } = await resend.emails.send({
-      from: `TrueDots <${config.resend.mail_domain}>` as string,
+      from: `${config.app_public_name} <${config.resend.mail_domain}>` as string,
       to: values.to as string,
       subject: values.subject,
       html: values.html,

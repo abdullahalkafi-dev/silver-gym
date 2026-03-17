@@ -60,6 +60,7 @@ const createUser = async (payload: TUser) => {
   return user;
 };
 
+
 export const UserService = {
   createUser,
 };

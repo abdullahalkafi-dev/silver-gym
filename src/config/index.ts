@@ -4,6 +4,7 @@ dotenv.config({ path: path.join(process.cwd(), ".env") });
 
 export default {
   app_name: process.env.APP_NAME,
+  app_public_name: process.env.APP_PUBLIC_NAME,
   ip_address: process.env.IP_ADDRESS,
   database_url: process.env.DATABASE_URL,
   node_env: process.env.NODE_ENV,
