@@ -14,7 +14,8 @@
       "@middlewares/*": ["middlewares/*"],
       "@routes/*": ["routes/*"],
       "@shared/*": ["shared/*"],
-      "@utils/*": ["utils/*"]
+      "@util/*": ["util/*"],
+      "@utils/*": ["util/*"]
     },
 
     // ============ MODULE RESOLUTION ============

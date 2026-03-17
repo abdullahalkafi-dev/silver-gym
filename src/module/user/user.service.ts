@@ -60,12 +60,13 @@ const createUser = async (payload: TUser) => {
   const user = await UserRepository.create(userPayload);
   const otpData = {
     userId: user._id,
+    name:user.firstName + " " + user.lastName, //for mail/sms sending
     type: "account_verification" as OTPType,
     provider: user.loginProvider as OTPProvider,
     target: user?.email || user?.phone || "",
   };
 
-  OTPService.createOTP(otpData);
+ await OTPService.createOTP(otpData);
   return user;
 };
 

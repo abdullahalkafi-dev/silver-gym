@@ -38,7 +38,6 @@ const userSchema = new Schema<TUser>(
       type: String,
       lowercase: true,
       trim: true,
-      sparse: true,
     },
     password: {
       type: String,
@@ -47,7 +46,6 @@ const userSchema = new Schema<TUser>(
     phone: {
       type: String,
       trim: true,
-      sparse: true,
     },
     countryCode: {
       type: String,

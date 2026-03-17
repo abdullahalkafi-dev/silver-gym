@@ -25,8 +25,8 @@
     "zod": "^4.3.6"
   },
   "scripts": {
-    "dev": "ts-node-dev --respawn --transpile-only src/server.ts",
-    "build": "tsc",
+    "dev": "ts-node-dev --respawn --transpile-only -r tsconfig-paths/register src/server.ts",
+    "build": "tsc && tsc-alias",
     "start": "node dist/server.js"
   },
   "devDependencies": {
@@ -39,6 +39,8 @@
     "@types/multer": "^2.1.0",
     "@types/node": "^25.5.0",
     "ts-node-dev": "^2.0.0",
+    "tsc-alias": "^1.8.16",
+    "tsconfig-paths": "^4.2.0",
     "typescript": "^5.9.3"
   }
 }

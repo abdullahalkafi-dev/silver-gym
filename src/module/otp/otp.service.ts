@@ -6,11 +6,14 @@ import generateOTP from "util/generateOTP";
 import { StatusCodes } from "http-status-codes/build/cjs/status-codes";
 import AppError from "errors/AppError";
 import config from "config";
+import { emailHelper } from "mail/emailHelper";
+import { emailTemplate } from "mail/emailTemplate";
+import { TCreateAccount } from "mail/emailTemplate.type";
 
 const OTP_BCRYPT_ROUNDS = Number(config.bcrypt_salt_rounds) || 10;
 
 const createOTP = async (createOtpData: createOTPData) => {
-  const { userId, type, provider, target } = createOtpData;
+  const { userId, type, provider, target, name = "User" } = createOtpData;
   // Delete any existing unused OTPs of same type
   await OTPRepository.deleteMany({ userId, type, isUsed: false });
 
@@ -27,6 +30,19 @@ const createOTP = async (createOtpData: createOTPData) => {
     expiresAt,
     maxAttempts: 5,
   });
+  //send mail or sms with the OTP here using provider and target info //TODO - integrate with SMS service
+
+  if (provider === "email" && target) {
+    const mailSendingData: TCreateAccount = {
+      name: name,
+      email: target,
+      otp,
+      theme: "theme-blue",
+    };
+    const data = emailTemplate.createAccount(mailSendingData);
+
+    emailHelper.sendEmail(data);
+  }
 
   return { otp, otpDoc };
 };

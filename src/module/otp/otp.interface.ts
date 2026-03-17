@@ -23,6 +23,7 @@ export type TOTPCreate = Omit<TOTP, "attempts" | "maxAttempts" | "isUsed"> & {
 
 export type createOTPData = {
   userId: Types.ObjectId;
+  name? : string; //for mail/sms sending
   type: OTPType;
   provider: OTPProvider;
   target: string;
