@@ -1,9 +1,5 @@
-import {  model, Schema } from "mongoose";
+import { model, Schema } from "mongoose";
 import { TOTP } from "./otp.interface";
-
-
-
-
 
 // Schema
 const otpSchema = new Schema<TOTP>(

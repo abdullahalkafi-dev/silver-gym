@@ -3,6 +3,8 @@ import { StatusCodes } from "http-status-codes";
 import AppError from "../../errors/AppError";
 import { LoginProvider, TUser } from "./user.interface";
 import { UserRepository } from "./user.repository";
+import { OTPService } from "module/otp/otp.service";
+import { OTPProvider, OTPType } from "../otp/otp.interface";
 
 const createUser = async (payload: TUser) => {
   const loginProvider = payload.loginProvider;
@@ -46,8 +48,7 @@ const createUser = async (payload: TUser) => {
       isPhoneVerified: false,
     });
   }
-  
- 
+
   const userPayload: TUser = {
     ...payload,
     email: normalizedEmail,
@@ -57,9 +58,16 @@ const createUser = async (payload: TUser) => {
   };
 
   const user = await UserRepository.create(userPayload);
+  const otpData = {
+    userId: user._id,
+    type: "account_verification" as OTPType,
+    provider: user.loginProvider as OTPProvider,
+    target: user?.email || user?.phone || "",
+  };
+
+  OTPService.createOTP(otpData);
   return user;
 };
-
 
 export const UserService = {
   createUser,

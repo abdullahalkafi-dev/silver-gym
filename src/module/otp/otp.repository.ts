@@ -60,7 +60,9 @@ export const OTPRepository = {
 			runValidators: true,
 		});
 	},
-
+	findOneAndUpdate(filter: object, payload: object, options: object = {}) {
+		return OTP.findOneAndUpdate(filter, payload, { new: true, runValidators: true, ...options });
+	},
 	deleteById(id: string) {
 		return OTP.findByIdAndDelete(id);
 	},

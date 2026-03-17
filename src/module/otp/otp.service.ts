@@ -1,21 +1,16 @@
 import { Types } from "mongoose";
 import bcrypt from "bcryptjs";
-import { OTPProvider, OTPType } from "./otp.interface";
+import { OTPType, createOTPData } from "./otp.interface";
 import { OTPRepository } from "./otp.repository";
 import generateOTP from "util/generateOTP";
 import { StatusCodes } from "http-status-codes/build/cjs/status-codes";
 import AppError from "errors/AppError";
 import config from "config";
-import { OTP } from "./otp.model";
 
 const OTP_BCRYPT_ROUNDS = Number(config.bcrypt_salt_rounds) || 10;
 
-const createOTP = async (
-  userId: Types.ObjectId,
-  type: OTPType,
-  provider: OTPProvider,
-  target: string,
-) => {
+const createOTP = async (createOtpData: createOTPData) => {
+  const { userId, type, provider, target } = createOtpData;
   // Delete any existing unused OTPs of same type
   await OTPRepository.deleteMany({ userId, type, isUsed: false });
 
@@ -43,7 +38,7 @@ const verifyOTP = async (
   inputOTP: string,
 ) => {
   const now = new Date();
-  const otpDoc = await OTP.findOne({
+  const otpDoc = await OTPRepository.findOne({
     userId,
     type,
     isUsed: false,
@@ -52,7 +47,7 @@ const verifyOTP = async (
   }).select("+otp");
 
   if (!otpDoc) {
-    const exhaustedOtpDoc = await OTP.findOne({
+    const exhaustedOtpDoc = await OTPRepository.findOne({
       userId,
       type,
       expiresAt: { $gt: now },
@@ -72,7 +67,7 @@ const verifyOTP = async (
   const isMatched = await bcrypt.compare(inputOTP, otpDoc.otp);
 
   if (isMatched) {
-    const verifiedOtpDoc = await OTP.findOneAndUpdate(
+    const verifiedOtpDoc = await OTPRepository.findOneAndUpdate(
       {
         _id: otpDoc._id,
         isUsed: false,
@@ -91,7 +86,7 @@ const verifyOTP = async (
   }
 
   // Atomic failed-attempt increment with lock on max attempts.
-  const failedAttemptDoc = await OTP.findOneAndUpdate(
+  const failedAttemptDoc = await OTPRepository.findOneAndUpdate(
     {
       _id: otpDoc._id,
       isUsed: false,

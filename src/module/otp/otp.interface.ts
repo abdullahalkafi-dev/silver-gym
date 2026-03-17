@@ -20,3 +20,12 @@ export type TOTPCreate = Omit<TOTP, "attempts" | "maxAttempts" | "isUsed"> & {
   maxAttempts?: number;
   isUsed?: boolean;
 };
+
+export type createOTPData = {
+  userId: Types.ObjectId;
+  type: OTPType;
+  provider: OTPProvider;
+  target: string;
+}
+
+export type PartialTOTP = Partial<TOTP>;
