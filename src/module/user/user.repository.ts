@@ -64,6 +64,9 @@ export const UserRepository = {
   deleteById(id: string) {
     return User.findByIdAndDelete(id);
   },
+  deleteMany(filter: object) {
+    return User.deleteMany(filter);
+  },
 
   async exists(filter: object) {
     const doc = await User.exists(filter);

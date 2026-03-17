@@ -11,7 +11,8 @@ export interface LinkedProvider {
 }
 
 export interface TUser {
-	name: string;
+	firstName: string;
+	lastName: string;
 	email?: string;
 	password?: string;
 	phone?: string;
