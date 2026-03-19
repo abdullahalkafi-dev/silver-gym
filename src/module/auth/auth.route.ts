@@ -1,8 +1,8 @@
 import { Router } from "express";
-
 import validateRequest from "@middlewares/validateRequest";
 import { AuthController } from "./auth.controller";
 import { AuthDto } from "./auth.dto";
+import { authLimiter, strictLimiter } from "@middlewares/security";
 
 const router = Router();
 
@@ -13,6 +13,7 @@ const router = Router();
  */
 router.post(
   "/register",
+  authLimiter,
   validateRequest(AuthDto.register),
   AuthController.register,
 );
@@ -24,6 +25,7 @@ router.post(
  */
 router.post(
   "/login",
+  authLimiter,
   validateRequest(AuthDto.login),
   AuthController.login,
 );
@@ -35,6 +37,7 @@ router.post(
  */
 router.post(
   "/verify-account",
+  authLimiter,
   validateRequest(AuthDto.verifyAccount),
   AuthController.verifyAccount,
 );
@@ -46,6 +49,7 @@ router.post(
  */
 router.post(
   "/resend-otp",
+  strictLimiter,
   validateRequest(AuthDto.resendOtp),
   AuthController.resendOtp,
 );
