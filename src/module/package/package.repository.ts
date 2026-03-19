@@ -56,7 +56,7 @@ export const PackageRepository = {
 
   updateById(id: string, payload: object) {
     return Package.findByIdAndUpdate(id, payload, {
-      new: true,
+      returnDocument: 'after',
       runValidators: true,
     });
   },

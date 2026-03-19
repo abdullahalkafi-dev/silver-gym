@@ -56,7 +56,7 @@ export const RoleRepository = {
 
   updateById(id: string, payload: object) {
     return Role.findByIdAndUpdate(id, payload, {
-      new: true,
+      returnDocument: 'after',
       runValidators: true,
     });
   },

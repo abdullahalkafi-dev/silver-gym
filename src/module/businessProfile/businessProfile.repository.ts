@@ -59,7 +59,7 @@ export const BusinessProfileRepository = {
 
   updateById(id: string, payload: object) {
     return BusinessProfile.findByIdAndUpdate(id, payload, {
-      new: true,
+      returnDocument: 'after',
       runValidators: true,
     });
   },

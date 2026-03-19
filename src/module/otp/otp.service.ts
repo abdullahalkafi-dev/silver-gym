@@ -94,7 +94,7 @@ const verifyOTP = async (
         $expr: { $lt: ["$attempts", "$maxAttempts"] },
       },
       { $set: { isUsed: true } },
-      { new: true },
+      { returnDocument: 'after' },
     );
 
     if (verifiedOtpDoc) {
@@ -126,7 +126,7 @@ const verifyOTP = async (
         },
       },
     ],
-    { new: true },
+    { returnDocument: 'after' },
   );
 
   if (failedAttemptDoc) {

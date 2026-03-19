@@ -56,7 +56,7 @@ export const StaffRepository = {
 
   updateById(id: string, payload: object) {
     return Staff.findByIdAndUpdate(id, payload, {
-      new: true,
+      returnDocument: 'after',
       runValidators: true,
     });
   },

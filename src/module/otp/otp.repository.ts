@@ -56,12 +56,12 @@ export const OTPRepository = {
 
 	updateById(id: string, payload: object) {
 		return OTP.findByIdAndUpdate(id, payload, {
-			new: true,
+			returnDocument: 'after',
 			runValidators: true,
 		});
 	},
 	findOneAndUpdate(filter: object, payload: object, options: object = {}) {
-		return OTP.findOneAndUpdate(filter, payload, { new: true, runValidators: true, ...options });
+		return OTP.findOneAndUpdate(filter, payload, { returnDocument: 'after', runValidators: true, ...options });
 	},
 	deleteById(id: string) {
 		return OTP.findByIdAndDelete(id);

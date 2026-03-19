@@ -15,15 +15,27 @@ const myFormat = printf((info) => {
   const { level, message, label, timestamp, stack } = info;
   const date = new Date(timestamp as string);
 
-  // Fixed: pad with leading zeros
-  const hour = String(date.getHours()).padStart(2, "0");
-  const minutes = String(date.getMinutes()).padStart(2, "0");
-  const seconds = String(date.getSeconds()).padStart(2, "0");
-
+  // Format date and time for Bangladesh Time (Asia/Dhaka) in 12-hour format
+  const dateStr = date.toLocaleDateString("en-US", {
+    timeZone: "Asia/Dhaka",
+    weekday: "short",
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  });
+  
+  const timeStr = date.toLocaleTimeString("en-US", {
+    timeZone: "Asia/Dhaka",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: true,
+  });
+  
   // Include stack trace for errors
   const logMessage = stack || message;
 
-  return `${date.toDateString()} ${hour}:${minutes}:${seconds} [${label}] ${level}: ${logMessage}`;
+  return `${dateStr} ${timeStr} [${label}] ${level}: ${logMessage}`;
 });
 
 // ============ SHARED FORMAT ============

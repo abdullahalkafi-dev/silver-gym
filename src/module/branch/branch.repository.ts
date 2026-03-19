@@ -56,7 +56,7 @@ export const BranchRepository = {
 
   updateById(id: string, payload: object) {
     return Branch.findByIdAndUpdate(id, payload, {
-      new: true,
+      returnDocument: 'after',
       runValidators: true,
     });
   },

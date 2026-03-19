@@ -56,7 +56,7 @@ export const MemberRepository = {
 
   updateById(id: string, payload: object) {
     return Member.findByIdAndUpdate(id, payload, {
-      new: true,
+      returnDocument: 'after',
       runValidators: true,
     });
   },

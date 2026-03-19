@@ -56,7 +56,7 @@ export const PaymentRepository = {
 
   updateById(id: string, payload: object) {
     return Payment.findByIdAndUpdate(id, payload, {
-      new: true,
+      returnDocument: 'after',
       runValidators: true,
     });
   },
