@@ -45,6 +45,22 @@ const registerDto = z.object({
           message: "Either email or phone is required for registration",
         });
       }
+      if (data.loginProvider === "phone") {
+        if (data.email) {
+          ctx.addIssue({
+            code: "custom",
+            path: ["email"],
+            message: "Email cannot be used during phone registration",
+          });
+        }
+        if (data.googleId) {
+          ctx.addIssue({
+            code: "custom",
+            path: ["googleId"],
+            message: "Google ID cannot be used during phone registration",
+          });
+        }
+      }
 
       if (data.loginProvider === "email") {
         if (!hasEmail) {
@@ -105,9 +121,7 @@ const loginDto = z.object({
     .object({
       email: z.email("Invalid email address").toLowerCase().optional(),
       phone: z.string().optional(),
-      password: z
-        .string()
-        .min(8, "Password must be at least 8 characters"),
+      password: z.string().min(8, "Password must be at least 8 characters"),
     })
     .strict()
     .superRefine((data, ctx) => {
@@ -167,7 +181,9 @@ const resendOtpDto = z.object({
     .object({
       email: z.email("Invalid email address").toLowerCase().optional(),
       phone: z.string().optional(),
-      type: z.enum(["account_verification", "password_reset", "two_factor"]).default("account_verification"),
+      type: z
+        .enum(["account_verification", "password_reset", "two_factor"])
+        .default("account_verification"),
     })
     .strict()
     .superRefine((data, ctx) => {

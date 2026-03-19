@@ -417,6 +417,11 @@ const getLogsViewerHtml = (scriptSrc: string): string => {
       background: #fff5f5;
     }
 
+    .status.success {
+      color: #0f5132;
+      background: #ecfdf3;
+    }
+
     pre {
       margin: 0;
       padding: 16px;
@@ -431,6 +436,57 @@ const getLogsViewerHtml = (scriptSrc: string): string => {
       word-break: break-word;
     }
 
+    .token-string { color: #a5f3fc; }
+    .token-number { color: #facc15; }
+    .token-boolean { color: #fb7185; font-weight: 600; }
+    .token-operator { color: #c4b5fd; }
+
+    .viewer-wrap {
+      position: relative;
+      display: flex;
+      flex: 1;
+      min-height: 0;
+    }
+
+    .side-controls {
+      position: absolute;
+      right: 12px;
+      top: 12px;
+      z-index: 4;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .side-btn {
+      border: 1px solid rgba(148, 163, 184, 0.35);
+      border-radius: 8px;
+      padding: 7px 10px;
+      font-size: 0.76rem;
+      color: #e5edf8;
+      background: rgba(11, 18, 32, 0.72);
+      backdrop-filter: blur(4px);
+      cursor: pointer;
+      font-family: var(--ui);
+    }
+
+    .side-btn.active {
+      background: rgba(18, 164, 176, 0.84);
+      border-color: rgba(18, 164, 176, 0.9);
+    }
+
+    .shell.fullscreen {
+      max-width: none;
+      width: calc(100vw - 24px);
+      height: calc(100vh - 24px);
+      margin: 12px auto;
+      border-radius: 16px;
+    }
+
+    .shell.fullscreen .content {
+      min-height: calc(100vh - 200px);
+    }
+
     @media (max-width: 980px) {
       .toolbar { grid-template-columns: repeat(6, minmax(0, 1fr)); }
       .span-4 { grid-column: span 6; }
@@ -438,11 +494,15 @@ const getLogsViewerHtml = (scriptSrc: string): string => {
       .actions { grid-column: span 6; }
       .content { grid-template-columns: 1fr; }
       .left { border-right: 0; border-bottom: 1px solid var(--line); max-height: 38vh; }
+      .side-controls {
+        right: 8px;
+        top: 8px;
+      }
     }
   </style>
 </head>
 <body>
-  <div class="shell">
+  <div class="shell" id="shell">
     <header class="head">
       <h1 class="title">SilverGym Log Console</h1>
       <p class="sub">Secure, lightweight access to the latest logs in the server log directory.</p>
@@ -475,6 +535,7 @@ const getLogsViewerHtml = (scriptSrc: string): string => {
       <div class="actions">
         <button class="btn" id="loadBtn">Load</button>
         <button class="btn secondary" id="refreshBtn">Refresh</button>
+        <button class="btn secondary" id="fullscreenBtn">Fullscreen</button>
       </div>
     </section>
 
@@ -482,7 +543,14 @@ const getLogsViewerHtml = (scriptSrc: string): string => {
       <aside class="left" id="fileList"></aside>
       <section class="right">
         <div class="status" id="status">Ready</div>
-        <pre id="viewer">Select a log file to preview content.</pre>
+        <div class="viewer-wrap">
+          <div class="side-controls">
+            <button class="side-btn" id="autoFollowBtn">Follow</button>
+            <button class="side-btn" id="toTopBtn">Top</button>
+            <button class="side-btn" id="toBottomBtn">Bottom</button>
+          </div>
+          <pre id="viewer">Select a log file to preview content.</pre>
+        </div>
       </section>
     </section>
   </div>
@@ -501,6 +569,11 @@ const categoryInput = document.getElementById("category");
 const linesInput = document.getElementById("lines");
 const loadBtn = document.getElementById("loadBtn");
 const refreshBtn = document.getElementById("refreshBtn");
+const fullscreenBtn = document.getElementById("fullscreenBtn");
+const shell = document.getElementById("shell");
+const autoFollowBtn = document.getElementById("autoFollowBtn");
+const toTopBtn = document.getElementById("toTopBtn");
+const toBottomBtn = document.getElementById("toBottomBtn");
 
 const urlParams = new URLSearchParams(window.location.search);
 const keyFromUrl =
@@ -511,17 +584,41 @@ const keyFromUrl =
   "";
 
 let selected = { category: null, fileName: null };
+let autoFollow = true;
+let pollTimer = null;
 
-apiKeyInput.value = keyFromUrl || sessionStorage.getItem("sg-admin-api-key") || "";
+const storedKey = sessionStorage.getItem("sg-admin-api-key") || "";
+const initialKey = (keyFromUrl || storedKey).trim();
 
-function setStatus(message, isError = false) {
+if (initialKey) {
+  sessionStorage.setItem("sg-admin-api-key", initialKey);
+}
+
+apiKeyInput.value = initialKey;
+
+function setStatus(message, mode) {
   statusBar.textContent = message;
-  statusBar.classList.toggle("error", isError);
+  statusBar.classList.remove("error", "success");
+  if (mode === "error") {
+    statusBar.classList.add("error");
+  }
+  if (mode === "success") {
+    statusBar.classList.add("success");
+  }
 }
 
 function getAuthKey() {
-  const key = apiKeyInput.value.trim();
-  sessionStorage.setItem("sg-admin-api-key", key);
+  const inputKey = apiKeyInput.value.trim();
+  const key = inputKey || keyFromUrl.trim() || storedKey.trim();
+
+  if (key && inputKey !== key) {
+    apiKeyInput.value = key;
+  }
+
+  if (key) {
+    sessionStorage.setItem("sg-admin-api-key", key);
+  }
+
   return key;
 }
 
@@ -545,7 +642,175 @@ function sizeToText(size) {
   return (size / (1024 * 1024)).toFixed(2) + " MB";
 }
 
+function escapeHtml(value) {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/\"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function escapeHtmlChar(value) {
+  if (value === "&") return "&amp;";
+  if (value === "<") return "&lt;";
+  if (value === ">") return "&gt;";
+  if (value === '"') return "&quot;";
+  if (value === "'") return "&#39;";
+  return value;
+}
+
+function highlightLine(line) {
+  const operators = "{}[]:,=+-*/<>!&|";
+  const isDigit = (char) => char >= "0" && char <= "9";
+  const isWord = (char) =>
+    (char >= "a" && char <= "z") ||
+    (char >= "A" && char <= "Z") ||
+    (char >= "0" && char <= "9") ||
+    char === "_";
+  const hasWordBoundary = (start, length) => {
+    const prev = start > 0 ? line[start - 1] : "";
+    const next = start + length < line.length ? line[start + length] : "";
+    return !isWord(prev) && !isWord(next);
+  };
+
+  let output = "";
+  let i = 0;
+
+  while (i < line.length) {
+    const current = line[i];
+
+    if (current === '"') {
+      let end = i + 1;
+      while (end < line.length) {
+        if (line[end] === "\\") {
+          end += 2;
+          continue;
+        }
+        if (line[end] === '"') {
+          end += 1;
+          break;
+        }
+        end += 1;
+      }
+
+      const token = line.slice(i, end);
+      output += '<span class="token-string">' + escapeHtml(token) + '</span>';
+      i = end;
+      continue;
+    }
+
+    if (
+      line.startsWith("true", i) &&
+      hasWordBoundary(i, 4)
+    ) {
+      output += '<span class="token-boolean">true</span>';
+      i += 4;
+      continue;
+    }
+
+    if (
+      line.startsWith("false", i) &&
+      hasWordBoundary(i, 5)
+    ) {
+      output += '<span class="token-boolean">false</span>';
+      i += 5;
+      continue;
+    }
+
+    if (
+      line.startsWith("null", i) &&
+      hasWordBoundary(i, 4)
+    ) {
+      output += '<span class="token-boolean">null</span>';
+      i += 4;
+      continue;
+    }
+
+    const startsNumber =
+      isDigit(current) ||
+      (current === "-" && i + 1 < line.length && isDigit(line[i + 1]));
+
+    if (startsNumber) {
+      let end = i + (current === "-" ? 1 : 0);
+      while (end < line.length && isDigit(line[end])) {
+        end += 1;
+      }
+      if (line[end] === ".") {
+        end += 1;
+        while (end < line.length && isDigit(line[end])) {
+          end += 1;
+        }
+      }
+
+      const token = line.slice(i, end);
+      output += '<span class="token-number">' + escapeHtml(token) + '</span>';
+      i = end;
+      continue;
+    }
+
+    if (operators.includes(current)) {
+      let end = i + 1;
+      while (end < line.length && operators.includes(line[end])) {
+        end += 1;
+      }
+
+      const token = line.slice(i, end);
+      output += '<span class="token-operator">' + escapeHtml(token) + '</span>';
+      i = end;
+      continue;
+    }
+
+    output += escapeHtmlChar(current);
+    i += 1;
+  }
+
+  return output;
+}
+
+function renderHighlightedLogs(content) {
+  const text = content || "(empty file)";
+  const lines = text.split(/\r?\n/);
+  viewer.innerHTML = lines.map(highlightLine).join("\n");
+}
+
+function isNearBottom(node, threshold) {
+  const maxScrollTop = node.scrollHeight - node.clientHeight;
+  if (maxScrollTop <= 0) {
+    return true;
+  }
+  return maxScrollTop - node.scrollTop <= threshold;
+}
+
+function scrollToBottom() {
+  viewer.scrollTop = viewer.scrollHeight;
+}
+
+function updateAutoFollowButton() {
+  autoFollowBtn.classList.toggle("active", autoFollow);
+  autoFollowBtn.textContent = autoFollow ? "Follow On" : "Follow Off";
+}
+
+function startPolling() {
+  if (pollTimer) {
+    clearInterval(pollTimer);
+  }
+
+  pollTimer = setInterval(async () => {
+    if (!selected.category || !selected.fileName) {
+      return;
+    }
+    await loadFileContent(true);
+  }, 2000);
+}
+
 async function loadFiles() {
+  const authKey = getAuthKey();
+  if (!authKey) {
+    setStatus("Enter Admin API Key first", "error");
+    return;
+  }
+
   setStatus("Loading file list...");
 
   const category = categoryInput.value;
@@ -560,9 +825,9 @@ async function loadFiles() {
     }
 
     renderFileList(payload.data.categories || []);
-    setStatus("File list loaded.");
+    setStatus("File list loaded.", "success");
   } catch (error) {
-    setStatus(error.message || "Failed to load files", true);
+    setStatus(error.message || "Failed to load files", "error");
   }
 }
 
@@ -614,9 +879,15 @@ function renderFileList(categories) {
   });
 }
 
-async function loadFileContent() {
+async function loadFileContent(isBackgroundRefresh) {
   if (!selected.category || !selected.fileName) {
     viewer.textContent = "Select a file from the left panel.";
+    return;
+  }
+
+  const authKey = getAuthKey();
+  if (!authKey) {
+    setStatus("Enter Admin API Key first", "error");
     return;
   }
 
@@ -629,7 +900,11 @@ async function loadFileContent() {
     "?lines=" +
     encodeURIComponent(lines);
 
-  setStatus("Loading " + selected.fileName + "...");
+  if (!isBackgroundRefresh) {
+    setStatus("Loading " + selected.fileName + "...");
+  }
+
+  const shouldStickBottom = autoFollow && isNearBottom(viewer, 80);
 
   try {
     const res = await fetch(withAuthQuery(url), { headers: buildHeaders() });
@@ -638,11 +913,18 @@ async function loadFileContent() {
       throw new Error(payload.message || "Failed to load file");
     }
 
-    viewer.textContent = payload.data.content || "(empty file)";
-    setStatus("Showing " + payload.data.fileName + " • " + payload.data.lines + " lines");
+    renderHighlightedLogs(payload.data.content || "(empty file)");
+    if (shouldStickBottom) {
+      scrollToBottom();
+    }
+
+    setStatus(
+      "Showing " + payload.data.fileName + " • " + payload.data.lines + " lines",
+      "success",
+    );
   } catch (error) {
     viewer.textContent = "";
-    setStatus(error.message || "Failed to load content", true);
+    setStatus(error.message || "Failed to load content", "error");
   }
 }
 
@@ -671,6 +953,44 @@ categoryInput.addEventListener("change", () => {
   selected = { category: null, fileName: null };
 });
 
+autoFollowBtn.addEventListener("click", () => {
+  autoFollow = !autoFollow;
+  updateAutoFollowButton();
+  if (autoFollow) {
+    scrollToBottom();
+  }
+});
+
+toTopBtn.addEventListener("click", () => {
+  viewer.scrollTop = 0;
+});
+
+toBottomBtn.addEventListener("click", () => {
+  scrollToBottom();
+});
+
+viewer.addEventListener("scroll", () => {
+  if (!autoFollow) {
+    return;
+  }
+
+  if (!isNearBottom(viewer, 32)) {
+    autoFollow = false;
+    updateAutoFollowButton();
+  }
+});
+
+fullscreenBtn.addEventListener("click", () => {
+  shell.classList.toggle("fullscreen");
+  const isFullscreen = shell.classList.contains("fullscreen");
+  fullscreenBtn.textContent = isFullscreen ? "Exit Fullscreen" : "Fullscreen";
+  if (autoFollow) {
+    scrollToBottom();
+  }
+});
+
+updateAutoFollowButton();
+startPolling();
 loadFiles();`;
 };
 
