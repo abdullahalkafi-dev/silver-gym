@@ -13,12 +13,16 @@ const server = http.createServer(app);
 async function gracefulShutdown(signal: string) {
   logger.info(`${signal} received. Starting graceful shutdown...`);
 
-  // 1. Stop accepting new requests
-  server.close(() => {
-    logger.info("HTTP server closed");
-  });
-
   try {
+    // 1. Stop accepting new requests and wait for it to close
+    await new Promise<void>((resolve) => {
+      server.close(() => {
+        logger.info("HTTP server closed");
+        resolve();
+      });
+    });
+
+  
     // 2. Close Redis
     await redisClient.disconnect();
     logger.info("Redis disconnected");

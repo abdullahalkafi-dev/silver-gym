@@ -20,7 +20,7 @@ const LOG_CATEGORIES: TLogCategory[] = [
 ];
 
 const MIN_LINES = 10;
-const MAX_LINES = 1000;
+const MAX_LINES = 5000;
 const DEFAULT_LINES = 200;
 const DEFAULT_MAX_BYTES = 128 * 1024;
 const MAX_BYTES_LIMIT = 512 * 1024;
@@ -329,7 +329,7 @@ const getLogsViewerHtml = (scriptSrc: string): string => {
     .content {
       display: grid;
       grid-template-columns: 330px 1fr;
-      min-height: 70vh;
+      height: 75vh;
     }
 
     .left {
@@ -403,6 +403,7 @@ const getLogsViewerHtml = (scriptSrc: string): string => {
       display: flex;
       flex-direction: column;
       min-width: 0;
+      min-height: 0;
     }
 
     .status {
@@ -434,6 +435,33 @@ const getLogsViewerHtml = (scriptSrc: string): string => {
       line-height: 1.48;
       white-space: pre-wrap;
       word-break: break-word;
+      scrollbar-width: auto;
+      scrollbar-color: rgba(18, 164, 176, 0.6) rgba(11, 18, 32, 0.5);
+    }
+
+    /* Chromium-based browsers (Chrome, Edge, Opera, Safari) */
+    pre::-webkit-scrollbar {
+      width: 14px;
+      height: 14px;
+    }
+
+    pre::-webkit-scrollbar-track {
+      background: rgba(11, 18, 32, 0.5);
+      border-radius: 10px;
+    }
+
+    pre::-webkit-scrollbar-thumb {
+      background: rgba(18, 164, 176, 0.7);
+      border-radius: 7px;
+      border: 2px solid rgba(11, 18, 32, 0.5);
+    }
+
+    pre::-webkit-scrollbar-thumb:hover {
+      background: rgba(18, 164, 176, 0.95);
+    }
+
+    pre::-webkit-scrollbar-thumb:active {
+      background: rgba(18, 164, 176, 1);
     }
 
     .token-string { color: #a5f3fc; }
@@ -448,43 +476,17 @@ const getLogsViewerHtml = (scriptSrc: string): string => {
       min-height: 0;
     }
 
-    .side-controls {
-      position: absolute;
-      right: 12px;
-      top: 12px;
-      z-index: 4;
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
-    }
-
-    .side-btn {
-      border: 1px solid rgba(148, 163, 184, 0.35);
-      border-radius: 8px;
-      padding: 7px 10px;
-      font-size: 0.76rem;
-      color: #e5edf8;
-      background: rgba(11, 18, 32, 0.72);
-      backdrop-filter: blur(4px);
-      cursor: pointer;
-      font-family: var(--ui);
-    }
-
-    .side-btn.active {
-      background: rgba(18, 164, 176, 0.84);
-      border-color: rgba(18, 164, 176, 0.9);
-    }
-
     .shell.fullscreen {
       max-width: none;
-      width: calc(100vw - 24px);
-      height: calc(100vh - 24px);
-      margin: 12px auto;
-      border-radius: 16px;
+      width: 100vw;
+      height: 100vh;
+      margin: 0;
+      border-radius: 0;
+      border: none;
     }
 
     .shell.fullscreen .content {
-      min-height: calc(100vh - 200px);
+      height: calc(100vh - 146px);
     }
 
     @media (max-width: 980px) {
@@ -494,10 +496,6 @@ const getLogsViewerHtml = (scriptSrc: string): string => {
       .actions { grid-column: span 6; }
       .content { grid-template-columns: 1fr; }
       .left { border-right: 0; border-bottom: 1px solid var(--line); max-height: 38vh; }
-      .side-controls {
-        right: 8px;
-        top: 8px;
-      }
     }
   </style>
 </head>
@@ -528,8 +526,10 @@ const getLogsViewerHtml = (scriptSrc: string): string => {
         <select id="lines">
           <option value="100">100</option>
           <option value="200" selected>200</option>
-          <option value="400">400</option>
-          <option value="800">800</option>
+          <option value="500">500</option>
+          <option value="1000">1000</option>
+          <option value="2000">2000</option>
+          <option value="5000">MAX (5000)</option>
         </select>
       </div>
       <div class="actions">
@@ -544,11 +544,6 @@ const getLogsViewerHtml = (scriptSrc: string): string => {
       <section class="right">
         <div class="status" id="status">Ready</div>
         <div class="viewer-wrap">
-          <div class="side-controls">
-            <button class="side-btn" id="autoFollowBtn">Follow</button>
-            <button class="side-btn" id="toTopBtn">Top</button>
-            <button class="side-btn" id="toBottomBtn">Bottom</button>
-          </div>
           <pre id="viewer">Select a log file to preview content.</pre>
         </div>
       </section>
@@ -561,49 +556,44 @@ const getLogsViewerHtml = (scriptSrc: string): string => {
 };
 
 const getLogsViewerScript = (): string => {
-  return `const fileList = document.getElementById("fileList");
-const viewer = document.getElementById("viewer");
-const statusBar = document.getElementById("status");
-const apiKeyInput = document.getElementById("apiKey");
-const categoryInput = document.getElementById("category");
-const linesInput = document.getElementById("lines");
-const loadBtn = document.getElementById("loadBtn");
-const refreshBtn = document.getElementById("refreshBtn");
-const fullscreenBtn = document.getElementById("fullscreenBtn");
-const shell = document.getElementById("shell");
-const autoFollowBtn = document.getElementById("autoFollowBtn");
-const toTopBtn = document.getElementById("toTopBtn");
-const toBottomBtn = document.getElementById("toBottomBtn");
+  return `const fileList = document.getElementById('fileList');
+const viewer = document.getElementById('viewer');
+const statusBar = document.getElementById('status');
+const apiKeyInput = document.getElementById('apiKey');
+const categoryInput = document.getElementById('category');
+const linesInput = document.getElementById('lines');
+const loadBtn = document.getElementById('loadBtn');
+const refreshBtn = document.getElementById('refreshBtn');
+const fullscreenBtn = document.getElementById('fullscreenBtn');
+const shell = document.getElementById('shell');
 
 const urlParams = new URLSearchParams(window.location.search);
 const keyFromUrl =
-  urlParams.get("adminKey") ||
-  urlParams.get("apiKey") ||
-  urlParams.get("key") ||
-  urlParams.get("token") ||
-  "";
+  urlParams.get('adminKey') ||
+  urlParams.get('apiKey') ||
+  urlParams.get('key') ||
+  urlParams.get('token') ||
+  '';
 
 let selected = { category: null, fileName: null };
-let autoFollow = true;
-let pollTimer = null;
 
-const storedKey = sessionStorage.getItem("sg-admin-api-key") || "";
+const storedKey = sessionStorage.getItem('sg-admin-api-key') || '';
 const initialKey = (keyFromUrl || storedKey).trim();
 
 if (initialKey) {
-  sessionStorage.setItem("sg-admin-api-key", initialKey);
+  sessionStorage.setItem('sg-admin-api-key', initialKey);
 }
 
 apiKeyInput.value = initialKey;
 
 function setStatus(message, mode) {
   statusBar.textContent = message;
-  statusBar.classList.remove("error", "success");
-  if (mode === "error") {
-    statusBar.classList.add("error");
+  statusBar.classList.remove('error', 'success');
+  if (mode === 'error') {
+    statusBar.classList.add('error');
   }
-  if (mode === "success") {
-    statusBar.classList.add("success");
+  if (mode === 'success') {
+    statusBar.classList.add('success');
   }
 }
 
@@ -616,14 +606,14 @@ function getAuthKey() {
   }
 
   if (key) {
-    sessionStorage.setItem("sg-admin-api-key", key);
+    sessionStorage.setItem('sg-admin-api-key', key);
   }
 
   return key;
 }
 
 function buildHeaders() {
-  return { "x-admin-key": getAuthKey() };
+  return { 'x-admin-key': getAuthKey() };
 }
 
 function withAuthQuery(url) {
@@ -632,365 +622,255 @@ function withAuthQuery(url) {
     return url;
   }
 
-  const separator = url.includes("?") ? "&" : "?";
-  return url + separator + "adminKey=" + encodeURIComponent(key);
+  const separator = url.includes('?') ? '&' : '?';
+  return url + separator + 'adminKey=' + encodeURIComponent(key);
 }
 
 function sizeToText(size) {
-  if (size < 1024) return size + " B";
-  if (size < 1024 * 1024) return (size / 1024).toFixed(1) + " KB";
-  return (size / (1024 * 1024)).toFixed(2) + " MB";
+  if (size < 1024) return size + ' B';
+  if (size < 1024 * 1024) return (size / 1024).toFixed(1) + ' KB';
+  return (size / (1024 * 1024)).toFixed(2) + ' MB';
 }
 
-function escapeHtml(value) {
-  return value
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/\"/g, "&quot;")
-    .replace(/'/g, "&#39;");
-}
-
-function escapeHtmlChar(value) {
-  if (value === "&") return "&amp;";
-  if (value === "<") return "&lt;";
-  if (value === ">") return "&gt;";
-  if (value === '"') return "&quot;";
-  if (value === "'") return "&#39;";
-  return value;
+function escapeHtml(str) {
+  const map = {
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#39;'
+  };
+  return str.replace(/[&<>"']/g, (c) => map[c]);
 }
 
 function highlightLine(line) {
-  const operators = "{}[]:,=+-*/<>!&|";
-  const isDigit = (char) => char >= "0" && char <= "9";
-  const isWord = (char) =>
-    (char >= "a" && char <= "z") ||
-    (char >= "A" && char <= "Z") ||
-    (char >= "0" && char <= "9") ||
-    char === "_";
-  const hasWordBoundary = (start, length) => {
-    const prev = start > 0 ? line[start - 1] : "";
-    const next = start + length < line.length ? line[start + length] : "";
-    return !isWord(prev) && !isWord(next);
-  };
+  const ops = '{}[]:,=+-*/<>!&|';
+  const isDigit = (c) => c >= '0' && c <= '9';
+  const isWordChar = (c) =>
+    (c >= 'a' && c <= 'z') ||
+    (c >= 'A' && c <= 'Z') ||
+    (c >= '0' && c <= '9') ||
+    c === '_';
 
-  let output = "";
+  let out = '';
   let i = 0;
 
   while (i < line.length) {
-    const current = line[i];
+    const c = line[i];
 
-    if (current === '"') {
-      let end = i + 1;
-      while (end < line.length) {
-        if (line[end] === "\\") {
-          end += 2;
-          continue;
-        }
-        if (line[end] === '"') {
-          end += 1;
-          break;
-        }
-        end += 1;
+    if (c === '"') {
+      let j = i + 1;
+      while (j < line.length && line[j] !== '"') {
+        if (line[j] === '\\\\') j += 2;
+        else j += 1;
       }
-
-      const token = line.slice(i, end);
-      output += '<span class="token-string">' + escapeHtml(token) + '</span>';
-      i = end;
+      j++;
+      const token = line.slice(i, j);
+      out += '<span class="token-string">' + escapeHtml(token) + '</span>';
+      i = j;
       continue;
     }
 
-    if (
-      line.startsWith("true", i) &&
-      hasWordBoundary(i, 4)
-    ) {
-      output += '<span class="token-boolean">true</span>';
+    if (line.startsWith('true', i) && 
+        (i === 0 || !isWordChar(line[i - 1])) &&
+        (i + 4 >= line.length || !isWordChar(line[i + 4]))) {
+      out += '<span class="token-boolean">true</span>';
       i += 4;
       continue;
     }
 
-    if (
-      line.startsWith("false", i) &&
-      hasWordBoundary(i, 5)
-    ) {
-      output += '<span class="token-boolean">false</span>';
+    if (line.startsWith('false', i) && 
+        (i === 0 || !isWordChar(line[i - 1])) &&
+        (i + 5 >= line.length || !isWordChar(line[i + 5]))) {
+      out += '<span class="token-boolean">false</span>';
       i += 5;
       continue;
     }
 
-    if (
-      line.startsWith("null", i) &&
-      hasWordBoundary(i, 4)
-    ) {
-      output += '<span class="token-boolean">null</span>';
+    if (line.startsWith('null', i) && 
+        (i === 0 || !isWordChar(line[i - 1])) &&
+        (i + 4 >= line.length || !isWordChar(line[i + 4]))) {
+      out += '<span class="token-boolean">null</span>';
       i += 4;
       continue;
     }
 
-    const startsNumber =
-      isDigit(current) ||
-      (current === "-" && i + 1 < line.length && isDigit(line[i + 1]));
-
-    if (startsNumber) {
-      let end = i + (current === "-" ? 1 : 0);
-      while (end < line.length && isDigit(line[end])) {
-        end += 1;
+    if (isDigit(c) || (c === '-' && i + 1 < line.length && isDigit(line[i + 1]))) {
+      let j = i + (c === '-' ? 1 : 0);
+      while (j < line.length && isDigit(line[j])) j++;
+      if (line[j] === '.') {
+        j++;
+        while (j < line.length && isDigit(line[j])) j++;
       }
-      if (line[end] === ".") {
-        end += 1;
-        while (end < line.length && isDigit(line[end])) {
-          end += 1;
-        }
-      }
-
-      const token = line.slice(i, end);
-      output += '<span class="token-number">' + escapeHtml(token) + '</span>';
-      i = end;
+      const token = line.slice(i, j);
+      out += '<span class="token-number">' + escapeHtml(token) + '</span>';
+      i = j;
       continue;
     }
 
-    if (operators.includes(current)) {
-      let end = i + 1;
-      while (end < line.length && operators.includes(line[end])) {
-        end += 1;
-      }
-
-      const token = line.slice(i, end);
-      output += '<span class="token-operator">' + escapeHtml(token) + '</span>';
-      i = end;
+    if (ops.includes(c)) {
+      let j = i;
+      while (j < line.length && ops.includes(line[j])) j++;
+      const token = line.slice(i, j);
+      out += '<span class="token-operator">' + escapeHtml(token) + '</span>';
+      i = j;
       continue;
     }
 
-    output += escapeHtmlChar(current);
-    i += 1;
+    out += escapeHtml(c);
+    i++;
   }
 
-  return output;
+  return out;
 }
 
 function renderHighlightedLogs(content) {
-  const text = content || "(empty file)";
-  const lines = text.split(/\r?\n/);
-  viewer.innerHTML = lines.map(highlightLine).join("\n");
+  const text = content || '(empty file)';
+  const lines = text.split(/\\r?\\n/);
+  viewer.innerHTML = lines.map(highlightLine).join('\\n');
 }
 
-function isNearBottom(node, threshold) {
-  const maxScrollTop = node.scrollHeight - node.clientHeight;
-  if (maxScrollTop <= 0) {
-    return true;
-  }
-  return maxScrollTop - node.scrollTop <= threshold;
+function isNearBottom(node, thresh) {
+  const max = node.scrollHeight - node.clientHeight;
+  return max <= 0 || max - node.scrollTop <= thresh;
 }
 
 function scrollToBottom() {
   viewer.scrollTop = viewer.scrollHeight;
 }
 
-function updateAutoFollowButton() {
-  autoFollowBtn.classList.toggle("active", autoFollow);
-  autoFollowBtn.textContent = autoFollow ? "Follow On" : "Follow Off";
-}
-
-function startPolling() {
-  if (pollTimer) {
-    clearInterval(pollTimer);
-  }
-
-  pollTimer = setInterval(async () => {
-    if (!selected.category || !selected.fileName) {
-      return;
-    }
-    await loadFileContent(true);
-  }, 2000);
-}
-
 async function loadFiles() {
   const authKey = getAuthKey();
   if (!authKey) {
-    setStatus("Enter Admin API Key first", "error");
+    setStatus('Enter Admin API Key first', 'error');
     return;
   }
 
-  setStatus("Loading file list...");
-
+  setStatus('Loading file list...');
   const category = categoryInput.value;
-  const query = category === "all" ? "" : "?category=" + encodeURIComponent(category);
-  const requestUrl = withAuthQuery("/api/v1/logs" + query);
+  const query = category === 'all' ? '' : '?category=' + encodeURIComponent(category);
+  const url = withAuthQuery('/api/v1/logs' + query);
 
   try {
-    const res = await fetch(requestUrl, { headers: buildHeaders() });
-    const payload = await res.json();
-    if (!res.ok) {
-      throw new Error(payload.message || "Failed to load logs");
-    }
-
-    renderFileList(payload.data.categories || []);
-    setStatus("File list loaded.", "success");
-  } catch (error) {
-    setStatus(error.message || "Failed to load files", "error");
+    const res = await fetch(url, { headers: buildHeaders() });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.message || 'Failed to load');
+    renderFileList(data.data.categories || []);
+    setStatus('File list loaded.', 'success');
+  } catch (e) {
+    setStatus(e.message || 'Failed to load files', 'error');
   }
 }
 
 function renderFileList(categories) {
-  fileList.innerHTML = "";
+  fileList.innerHTML = '';
+  categories.forEach((cat) => {
+    const section = document.createElement('section');
+    section.className = 'category';
 
-  categories.forEach((category) => {
-    const section = document.createElement("section");
-    section.className = "category";
+    const h3 = document.createElement('h3');
+    h3.textContent = cat.name + ' (' + cat.files.length + ')';
 
-    const title = document.createElement("h3");
-    title.textContent = category.name + " (" + category.files.length + ")";
+    const ul = document.createElement('ul');
+    ul.className = 'files';
 
-    const list = document.createElement("ul");
-    list.className = "files";
-
-    if (!category.files.length) {
-      const empty = document.createElement("li");
-      empty.className = "file";
-      empty.textContent = "No .log files found";
-      list.appendChild(empty);
+    if (!cat.files.length) {
+      const li = document.createElement('li');
+      li.className = 'file';
+      li.textContent = 'No .log files found';
+      ul.appendChild(li);
     }
 
-    category.files.forEach((file) => {
-      const item = document.createElement("li");
-      item.className = "file";
+    cat.files.forEach((f) => {
+      const li = document.createElement('li');
+      li.className = 'file';
 
-      const name = document.createElement("div");
-      name.className = "file-name";
-      name.textContent = file.name;
+      const nm = document.createElement('div');
+      nm.className = 'file-name';
+      nm.textContent = f.name;
 
-      const meta = document.createElement("div");
-      meta.className = "file-meta";
-      meta.textContent = sizeToText(file.size) + " • " + new Date(file.modifiedAt).toLocaleString();
+      const mt = document.createElement('div');
+      mt.className = 'file-meta';
+      mt.textContent = sizeToText(f.size) + ' \\u2022 ' + new Date(f.modifiedAt).toLocaleString();
 
-      item.append(name, meta);
-      item.addEventListener("click", () => {
-        selected = { category: category.name, fileName: file.name };
-        document.querySelectorAll(".file.active").forEach((node) => node.classList.remove("active"));
-        item.classList.add("active");
+      li.append(nm, mt);
+      li.addEventListener('click', () => {
+        selected = { category: cat.name, fileName: f.name };
+        document.querySelectorAll('.file.active').forEach((n) => n.classList.remove('active'));
+        li.classList.add('active');
         loadFileContent();
       });
 
-      list.appendChild(item);
+      ul.appendChild(li);
     });
 
-    section.append(title, list);
+    section.append(h3, ul);
     fileList.appendChild(section);
   });
 }
 
-async function loadFileContent(isBackgroundRefresh) {
+async function loadFileContent(isRefresh) {
   if (!selected.category || !selected.fileName) {
-    viewer.textContent = "Select a file from the left panel.";
+    viewer.textContent = 'Select a file from the left panel.';
     return;
   }
 
   const authKey = getAuthKey();
   if (!authKey) {
-    setStatus("Enter Admin API Key first", "error");
+    setStatus('Enter Admin API Key first', 'error');
     return;
   }
 
   const lines = linesInput.value;
-  const url =
-    "/api/v1/logs/" +
-    encodeURIComponent(selected.category) +
-    "/" +
-    encodeURIComponent(selected.fileName) +
-    "?lines=" +
-    encodeURIComponent(lines);
+  const url = '/api/v1/logs/' + encodeURIComponent(selected.category) + '/' +
+    encodeURIComponent(selected.fileName) + '?lines=' + encodeURIComponent(lines);
 
-  if (!isBackgroundRefresh) {
-    setStatus("Loading " + selected.fileName + "...");
+  if (!isRefresh) {
+    setStatus('Loading ' + selected.fileName + '...');
   }
-
-  const shouldStickBottom = autoFollow && isNearBottom(viewer, 80);
 
   try {
     const res = await fetch(withAuthQuery(url), { headers: buildHeaders() });
-    const payload = await res.json();
-    if (!res.ok) {
-      throw new Error(payload.message || "Failed to load file");
-    }
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.message || 'Failed to load');
+    renderHighlightedLogs(data.data.content || '(empty file)');
 
-    renderHighlightedLogs(payload.data.content || "(empty file)");
-    if (shouldStickBottom) {
-      scrollToBottom();
-    }
-
-    setStatus(
-      "Showing " + payload.data.fileName + " • " + payload.data.lines + " lines",
-      "success",
-    );
-  } catch (error) {
-    viewer.textContent = "";
-    setStatus(error.message || "Failed to load content", "error");
+    setStatus('Showing ' + data.data.fileName + ' \\u2022 ' + data.data.lines + ' lines', 'success');
+  } catch (e) {
+    viewer.textContent = '';
+    setStatus(e.message || 'Failed', 'error');
   }
 }
 
-loadBtn.addEventListener("click", async () => {
+loadBtn.addEventListener('click', async () => {
   await loadFiles();
-  viewer.textContent = "Select a log file to preview content.";
+  viewer.textContent = 'Select a log file to preview.';
   selected = { category: null, fileName: null };
 });
 
-refreshBtn.addEventListener("click", async () => {
+refreshBtn.addEventListener('click', async () => {
   await loadFiles();
-  if (selected.category && selected.fileName) {
-    await loadFileContent();
-  }
+  if (selected.category && selected.fileName) await loadFileContent();
 });
 
-linesInput.addEventListener("change", () => {
-  if (selected.category && selected.fileName) {
-    loadFileContent();
-  }
+linesInput.addEventListener('change', () => {
+  if (selected.category && selected.fileName) loadFileContent();
 });
 
-categoryInput.addEventListener("change", () => {
+categoryInput.addEventListener('change', () => {
   loadFiles();
-  viewer.textContent = "Select a log file to preview content.";
+  viewer.textContent = 'Select a log file to preview.';
   selected = { category: null, fileName: null };
 });
 
-autoFollowBtn.addEventListener("click", () => {
-  autoFollow = !autoFollow;
-  updateAutoFollowButton();
-  if (autoFollow) {
-    scrollToBottom();
-  }
+
+
+fullscreenBtn.addEventListener('click', () => {
+  shell.classList.toggle('fullscreen');
+  const fs = shell.classList.contains('fullscreen');
+  fullscreenBtn.textContent = fs ? 'Exit Fullscreen' : 'Fullscreen';
 });
 
-toTopBtn.addEventListener("click", () => {
-  viewer.scrollTop = 0;
-});
-
-toBottomBtn.addEventListener("click", () => {
-  scrollToBottom();
-});
-
-viewer.addEventListener("scroll", () => {
-  if (!autoFollow) {
-    return;
-  }
-
-  if (!isNearBottom(viewer, 32)) {
-    autoFollow = false;
-    updateAutoFollowButton();
-  }
-});
-
-fullscreenBtn.addEventListener("click", () => {
-  shell.classList.toggle("fullscreen");
-  const isFullscreen = shell.classList.contains("fullscreen");
-  fullscreenBtn.textContent = isFullscreen ? "Exit Fullscreen" : "Fullscreen";
-  if (autoFollow) {
-    scrollToBottom();
-  }
-});
-
-updateAutoFollowButton();
-startPolling();
 loadFiles();`;
 };
 

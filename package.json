@@ -25,7 +25,7 @@
     "zod": "^4.3.6"
   },
   "scripts": {
-    "dev": "ts-node-dev --respawn --transpile-only -r tsconfig-paths/register src/server.ts",
+    "dev": "ts-node-dev --respawn --interval 1000 --transpile-only -r tsconfig-paths/register src/server.ts",
     "build": "tsc && tsc-alias",
     "start": "node dist/server.js"
   },
