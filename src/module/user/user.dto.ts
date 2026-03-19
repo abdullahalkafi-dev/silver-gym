@@ -15,15 +15,6 @@ const createUserDto = z.object({
       loginProvider: z.enum(["email", "google", "phone"]).default("email"),
       googleId: z.string().optional(),
       profilePicture: z.url("Invalid URL").optional(),
-      linkedProviders: z
-        .array(
-          z.object({
-            provider: z.enum(["email", "google", "phone"]),
-            providerId: z.string(),
-            linkedAt: z.date().optional(),
-          }),
-        )
-        .default([]),
     })
     .strict()
     .superRefine((data, ctx) => {

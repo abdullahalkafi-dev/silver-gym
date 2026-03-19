@@ -14,8 +14,12 @@ async function gracefulShutdown(signal: string) {
   logger.info(`${signal} received. Starting graceful shutdown...`);
 
   try {
-    // 1. Stop accepting new requests and wait for it to close
+    // 1. Stop accepting new requests and close existing connections
     await new Promise<void>((resolve) => {
+      if (server.closeAllConnections) {
+        server.closeAllConnections();
+      }
+      
       server.close(() => {
         logger.info("HTTP server closed");
         resolve();
@@ -66,6 +70,7 @@ process.on("unhandledRejection", (reason: unknown) => {
 // Graceful shutdown signals
 process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
 process.on("SIGINT", () => gracefulShutdown("SIGINT")); // Ctrl+C
+process.on("SIGUSR2", () => gracefulShutdown("SIGUSR2")); // nodemon / ts-node-dev restart
 
 // ============ MAIN ============
 async function main() {

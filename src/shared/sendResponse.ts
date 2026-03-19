@@ -20,7 +20,6 @@ const sendResponse = <T>(res: Response, data: IData<T>) => {
     meta: data.meta,
     data: data.data,
   };
-  console.log(resData);
   res.status(data.statusCode).json(resData);
 };
 

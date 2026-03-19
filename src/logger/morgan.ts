@@ -47,13 +47,19 @@ const errorStream: StreamOptions = {
 
 // ============ HANDLERS ============
 
+const shouldSkipLogsApi = (req: Request): boolean => {
+  return req.originalUrl.includes('/api/v1/logs');
+};
+
 const successHandler = morgan(successFormat, {
-  skip: (_req: Request, res: Response) => res.statusCode >= 400,
+  skip: (req: Request, res: Response) => 
+    res.statusCode >= 400 || shouldSkipLogsApi(req),
   stream: successStream,
 });
 
 const errorHandler = morgan(errorFormat, {
-  skip: (_req: Request, res: Response) => res.statusCode < 400,
+  skip: (req: Request, res: Response) => 
+    res.statusCode < 400 || shouldSkipLogsApi(req),
   stream: errorStream,
 });
 

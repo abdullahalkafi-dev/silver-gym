@@ -9,6 +9,7 @@ import config from "config";
 import { emailHelper } from "mail/emailHelper";
 import { emailTemplate } from "mail/emailTemplate";
 import { TCreateAccount } from "mail/emailTemplate.type";
+import { logger } from "logger/logger";
 
 const OTP_BCRYPT_ROUNDS = Number(config.bcrypt_salt_rounds) || 10;
 
@@ -31,6 +32,7 @@ const createOTP = async (createOtpData: createOTPData) => {
     expiresAt,
     maxAttempts: 5,
   });
+  logger.info(`OTP created for user ${userId} with type ${type} and provider ${provider}`);
   //send mail or sms with the OTP here using provider and target info //TODO - integrate with SMS service
 
   if (provider === "email" && target) {

@@ -3,24 +3,6 @@ import { Schema, model } from "mongoose";
 import { LoginProvider, TUser } from "./user.interface";
 import generateHashPassword from "util/generateHashPassword";
 
-const linkedProviderSchema = new Schema(
-  {
-    provider: {
-      type: String,
-      enum: Object.values(LoginProvider),
-      required: true,
-    },
-    providerId: {
-      type: String,
-      required: true,
-    },
-    linkedAt: {
-      type: Date,
-    },
-  },
-  { _id: false },
-);
-
 const userSchema = new Schema<TUser>(
   {
     firstName: {
@@ -79,10 +61,6 @@ const userSchema = new Schema<TUser>(
     },
     lastLogin: {
       type: Date,
-    },
-    linkedProviders: {
-      type: [linkedProviderSchema],
-      default: [],
     },
     status: {
       type: String,

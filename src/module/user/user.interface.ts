@@ -4,12 +4,6 @@ export enum LoginProvider {
 	GOOGLE = 'google',
 }
 
-export interface LinkedProvider {
-	provider: LoginProvider;
-	providerId: string;
-	linkedAt?: Date;
-}
-
 export interface TUser {
 	firstName: string;
 	lastName: string;
@@ -24,7 +18,6 @@ export interface TUser {
 	isEmailVerified?: boolean;
 	isPhoneVerified?: boolean;
 	lastLogin?: Date | null;
-	linkedProviders?: LinkedProvider[];
     status?: "active" | "inactive" | "suspended";
 	createdAt?: Date;
 	updatedAt?: Date;
