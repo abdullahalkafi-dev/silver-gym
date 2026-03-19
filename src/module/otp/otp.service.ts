@@ -16,8 +16,9 @@ const createOTP = async (createOtpData: createOTPData) => {
   const { userId, type, provider, target, name = "User" } = createOtpData;
   // Delete any existing unused OTPs of same type
   await OTPRepository.deleteMany({ userId, type, isUsed: false });
+  //TODO- for development purposes
+  const otp = "123456"; //generateOTP();
 
-  const otp = generateOTP();
   const otpHash = await bcrypt.hash(otp, OTP_BCRYPT_ROUNDS);
   const expiresAt = new Date(Date.now() + 30 * 60 * 1000); // 30 minutes
 
@@ -40,8 +41,8 @@ const createOTP = async (createOtpData: createOTPData) => {
       theme: "theme-blue",
     };
     const data = emailTemplate.createAccount(mailSendingData);
-
-    emailHelper.sendEmail(data);
+    //TODO - temporarily disable email sending in development to avoid spamming real email accounts. Make sure to test email sending functionality before production deployment.
+    // emailHelper.sendEmail(data);
   }
 
   return { otp, otpDoc };
