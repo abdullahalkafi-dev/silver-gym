@@ -3,9 +3,6 @@ import rateLimit from "express-rate-limit";
 import mongoSanitize from "express-mongo-sanitize";
 import compression from "compression";
 import { Request, Response, NextFunction, RequestHandler } from "express";
-import { body, validationResult } from "express-validator";
-import AppError from "../errors/AppError";
-import { StatusCodes } from "http-status-codes";
 import { logger } from "../logger/logger";
 
 // ============ HELMET ============
@@ -78,7 +75,7 @@ export const compressionConfig: RequestHandler = compression({
     return compression.filter(req, res);
   },
   threshold: 1024,
-  level: 1, // ✅ Fastest compression for 1 core VPS
+  level: 1, 
 }) as RequestHandler;
 
 // ============ INPUT SANITIZATION (XSS only, NOT Mongo) ============
@@ -128,33 +125,3 @@ export const additionalSanitization = (
 
   next();
 };
-
-// ============ VALIDATION ============
-export const handleValidationErrors = (
-  req: Request,
-  _res: Response,
-  next: NextFunction
-) => {
-  const errors = validationResult(req);
-  if (!errors.isEmpty()) {
-    const errorMessages = errors
-      .array()
-      .map((error) => error.msg)
-      .join(", ");
-    throw new AppError(
-      StatusCodes.BAD_REQUEST,
-      `Validation failed: ${errorMessages}`
-    );
-  }
-  next();
-};
-
-export const validateEmail = body("email")
-  .isEmail()
-  .normalizeEmail()
-  .withMessage("Please provide a valid email address");
-
-export const validateObjectId = (field: string) =>
-  body(field)
-    .isMongoId()
-    .withMessage(`${field} must be a valid MongoDB ObjectId`);
