@@ -4,12 +4,13 @@ import { Types } from "mongoose";
 
 import config from "config";
 import AppError from "errors/AppError";
-import { createJwtToken } from "jwt";
+import { createJwtToken, verifyJwtToken } from "jwt";
 import {  OTPType } from "module/otp/otp.interface";
 import { OTPService } from "module/otp/otp.service";
 import { LoginProvider, TUser } from "module/user/user.interface";
 import { UserRepository } from "module/user/user.repository";
 import { buildTokenPayload, getNormalizedIdentity, getOtpChannel } from "./auth.util";
+import generateHashPassword from "util/generateHashPassword";
 
 type TLoginPayload = {
   email?: string;
@@ -27,6 +28,27 @@ type TResendOtpPayload = {
   email?: string;
   phone?: string;
   type: OTPType;
+};
+
+type TForgotPasswordPayload = {
+  email?: string;
+  phone?: string;
+};
+
+type TVerifyResetOtpPayload = {
+  email?: string;
+  phone?: string;
+  otp: string;
+};
+
+type TResetPasswordPayload = {
+  resetToken: string;
+  newPassword: string;
+};
+
+type TChangePasswordPayload = {
+  oldPassword: string;
+  newPassword: string;
 };
 
 
@@ -266,9 +288,143 @@ const resendOtp = async (payload: TResendOtpPayload) => {
   };
 };
 
+const forgotPassword = async (payload: TForgotPasswordPayload) => {
+  const { email, phone } = getNormalizedIdentity(payload);
+
+  const user = await UserRepository.findOne({
+    ...(email ? { email } : { phone }),
+  });
+
+  if (!user) {
+    throw new AppError(StatusCodes.NOT_FOUND, "User not found");
+  }
+
+  const otpChannel = getOtpChannel(user);
+
+  if (!otpChannel) {
+    throw new AppError(
+      StatusCodes.BAD_REQUEST,
+      "No valid email or phone found for OTP delivery",
+    );
+  }
+
+  await OTPService.createOTP({
+    userId: user._id as Types.ObjectId,
+    name: `${user.firstName} ${user.lastName}`,
+    type: "password_reset",
+    provider: otpChannel.provider,
+    target: otpChannel.target,
+  });
+
+  return {
+    target: otpChannel.target,
+    provider: otpChannel.provider,
+    message: "OTP sent to your preferred channel",
+  };
+};
+
+const verifyResetOtp = async (payload: TVerifyResetOtpPayload) => {
+  const { email, phone } = getNormalizedIdentity(payload);
+
+  const user = await UserRepository.findOne({
+    ...(email ? { email } : { phone }),
+  });
+
+  if (!user) {
+    throw new AppError(StatusCodes.NOT_FOUND, "User not found");
+  }
+
+  await OTPService.verifyOTP(
+    user._id as Types.ObjectId,
+    "password_reset",
+    payload.otp,
+  );
+
+  const resetTokenPayload = {
+    _id: user._id,
+    type: "password_reset",
+  };
+
+  const resetToken = createJwtToken(
+    resetTokenPayload,
+    config.jwt.jwt_secret as string,
+    "15m" // Valid for 15 minutes
+  );
+
+  return {
+    resetToken,
+  };
+};
+
+const resetPassword = async (payload: TResetPasswordPayload) => {
+  let decoded: any;
+  try {
+    decoded = verifyJwtToken(payload.resetToken, config.jwt.jwt_secret as string);
+  } catch (error) {
+    throw new AppError(StatusCodes.UNAUTHORIZED, "Invalid or expired reset token");
+  }
+
+  if (decoded?.type !== "password_reset" || !decoded?._id) {
+    throw new AppError(StatusCodes.UNAUTHORIZED, "Invalid reset token type");
+  }
+
+  const hashedPassword = generateHashPassword(payload.newPassword);
+
+  const updatedUser = await UserRepository.updateById(String(decoded._id), {
+    password: hashedPassword,
+  });
+
+  if (!updatedUser) {
+    throw new AppError(StatusCodes.NOT_FOUND, "User not found");
+  }
+
+  return {
+    message: "Password reset successful",
+  };
+};
+
+const changePassword = async (userId: string, payload: TChangePasswordPayload) => {
+  const user = await UserRepository.findOne({ _id: userId }, { select: "+password" });
+
+  if (!user) {
+    throw new AppError(StatusCodes.NOT_FOUND, "User not found");
+  }
+
+  const userWithPassword = user as typeof user & { password?: string };
+  const currentHashedPassword = userWithPassword.password;
+
+  if (!currentHashedPassword) {
+    throw new AppError(
+      StatusCodes.BAD_REQUEST,
+      "Password change is not available for this account. You might have registered via a third-party provider.",
+    );
+  }
+
+  const isPasswordMatched = await bcrypt.compare(payload.oldPassword, currentHashedPassword);
+
+  if (!isPasswordMatched) {
+    throw new AppError(StatusCodes.UNAUTHORIZED, "Incorrect old password");
+  }
+
+  const newHashedPassword = generateHashPassword(payload.newPassword);
+
+  await UserRepository.updateById(userId, {
+    password: newHashedPassword,
+  });
+
+  return {
+    message: "Password changed successfully",
+  };
+};
+
 export const AuthService = {
   register,
   login,
   verifyAccount,
   resendOtp,
+  forgotPassword,
+  verifyResetOtp,
+  resetPassword,
+  changePassword,
 };
+

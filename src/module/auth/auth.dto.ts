@@ -199,9 +199,90 @@ const resendOtpDto = z.object({
     }),
 });
 
+const forgotPasswordDto = z.object({
+  body: z
+    .object({
+      email: z.email("Invalid email address").toLowerCase().optional(),
+      phone: z.string().optional(),
+    })
+    .strict()
+    .superRefine((data, ctx) => {
+      const hasEmail = Boolean(data.email);
+      const hasPhone = Boolean(data.phone);
+
+      if (hasEmail && hasPhone) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["email"],
+          message: "Provide either email or phone, not both",
+        });
+      }
+
+      if (!hasEmail && !hasPhone) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["email"],
+          message: "Either email or phone is required",
+        });
+      }
+    }),
+});
+
+const verifyResetOtpDto = z.object({
+  body: z
+    .object({
+      email: z.email("Invalid email address").toLowerCase().optional(),
+      phone: z.string().optional(),
+      otp: z.string().length(6, "OTP must be 6 digits"),
+    })
+    .strict()
+    .superRefine((data, ctx) => {
+      const hasEmail = Boolean(data.email);
+      const hasPhone = Boolean(data.phone);
+
+      if (hasEmail && hasPhone) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["email"],
+          message: "Provide either email or phone, not both",
+        });
+      }
+
+      if (!hasEmail && !hasPhone) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["email"],
+          message: "Either email or phone is required",
+        });
+      }
+    }),
+});
+
+const resetPasswordDto = z.object({
+  body: z
+    .object({
+      resetToken: z.string().min(1, "Reset token is required"),
+      newPassword: z.string().min(8, "Password must be at least 8 characters"),
+    })
+    .strict(),
+});
+
+const changePasswordDto = z.object({
+  body: z
+    .object({
+      oldPassword: z.string().min(1, "Old password is required"),
+      newPassword: z.string().min(8, "New password must be at least 8 characters"),
+    })
+    .strict(),
+});
+
 export const AuthDto = {
   register: registerDto,
   login: loginDto,
   verifyAccount: verifyAccountDto,
   resendOtp: resendOtpDto,
+  forgotPassword: forgotPasswordDto,
+  verifyResetOtp: verifyResetOtpDto,
+  resetPassword: resetPasswordDto,
+  changePassword: changePasswordDto,
 };

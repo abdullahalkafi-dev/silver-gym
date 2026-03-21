@@ -48,9 +48,60 @@ const resendOtp = catchAsync(async (req, res) => {
   });
 });
 
+const forgotPassword = catchAsync(async (req, res) => {
+  const result = await AuthService.forgotPassword(req.body);
+
+  sendResponse(res, {
+    statusCode: StatusCodes.OK,
+    success: true,
+    message: "Password reset OTP sent successfully",
+    data: result,
+  });
+});
+
+const verifyResetOtp = catchAsync(async (req, res) => {
+  const result = await AuthService.verifyResetOtp(req.body);
+
+  sendResponse(res, {
+    statusCode: StatusCodes.OK,
+    success: true,
+    message: "OTP verified successfully",
+    data: result, // Contains the resetToken
+  });
+});
+
+const resetPassword = catchAsync(async (req, res) => {
+  const result = await AuthService.resetPassword(req.body);
+
+  sendResponse(res, {
+    statusCode: StatusCodes.OK,
+    success: true,
+    message: result.message,
+    data: null,
+  });
+});
+
+const changePassword = catchAsync(async (req, res) => {
+  // Assuming auth() middleware sets user in req.user
+  const userId = req.user?._id;
+  const result = await AuthService.changePassword(userId, req.body);
+
+  sendResponse(res, {
+    statusCode: StatusCodes.OK,
+    success: true,
+    message: result.message,
+    data: null,
+  });
+});
+
 export const AuthController = {
   register,
   login,
   verifyAccount,
   resendOtp,
+  forgotPassword,
+  verifyResetOtp,
+  resetPassword,
+  changePassword,
 };
+

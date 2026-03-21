@@ -3,6 +3,7 @@ import validateRequest from "@middlewares/validateRequest";
 import { AuthController } from "./auth.controller";
 import { AuthDto } from "./auth.dto";
 import { authLimiter, strictLimiter } from "@middlewares/security";
+import auth from "@middlewares/auth";
 
 const router = Router();
 
@@ -52,6 +53,55 @@ router.post(
   strictLimiter,
   validateRequest(AuthDto.resendOtp),
   AuthController.resendOtp,
+);
+
+/**
+ * @route   POST /api/v1/auth/forgot-password
+ * @desc    Send OTP to email/phone for password reset
+ * @access  Public
+ */
+router.post(
+  "/forgot-password",
+  strictLimiter,
+  validateRequest(AuthDto.forgotPassword),
+  AuthController.forgotPassword,
+);
+
+/**
+ * @route   POST /api/v1/auth/verify-reset-otp
+ * @desc    Verify OTP for password reset and get reset token
+ * @access  Public
+ */
+router.post(
+  "/verify-reset-otp",
+  strictLimiter,
+  validateRequest(AuthDto.verifyResetOtp),
+  AuthController.verifyResetOtp,
+);
+
+/**
+ * @route   POST /api/v1/auth/reset-password
+ * @desc    Reset password using reset token
+ * @access  Public
+ */
+router.post(
+  "/reset-password",
+  strictLimiter,
+  validateRequest(AuthDto.resetPassword),
+  AuthController.resetPassword,
+);
+
+/**
+ * @route   POST /api/v1/auth/change-password
+ * @desc    Change password using old password
+ * @access  Private
+ */
+router.post(
+  "/change-password",
+  authLimiter,
+  auth(),
+  validateRequest(AuthDto.changePassword),
+  AuthController.changePassword,
 );
 
 export const AuthRoutes = router;
