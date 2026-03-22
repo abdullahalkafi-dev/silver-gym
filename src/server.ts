@@ -9,68 +9,7 @@ import ConnectDB from "./db";
 // ============ CREATE SERVER ============
 const server = http.createServer(app);
 
-// ============ GRACEFUL SHUTDOWN ============
-async function gracefulShutdown(signal: string) {
-  logger.info(`${signal} received. Starting graceful shutdown...`);
-
-  try {
-    // 1. Stop accepting new requests and close existing connections
-    await new Promise<void>((resolve) => {
-      if (server.closeAllConnections) {
-        server.closeAllConnections();
-      }
-      
-      server.close(() => {
-        logger.info("HTTP server closed");
-        resolve();
-      });
-    });
-
-  
-    // 2. Close Redis
-    await redisClient.disconnect();
-    logger.info("Redis disconnected");
-
-    // 3. Close MongoDB
-    await mongoose.connection.close();
-    logger.info("MongoDB disconnected");
-
-    logger.info("Graceful shutdown completed");
-    process.exit(0);
-  } catch (error) {
-    errorLogger.error("Error during shutdown", {
-      error: error instanceof Error ? error.message : error,
-    });
-    process.exit(1);
-  }
-}
-
-// ============ PROCESS EVENT HANDLERS (register ONCE, outside main) ============
-
-// Uncaught exceptions
-process.on("uncaughtException", (error: Error) => {
-  errorLogger.error("Uncaught Exception", {
-    message: error.message,
-    stack: error.stack,
-  });
-  // Give logger time to write, then exit
-  setTimeout(() => process.exit(1), 1000);
-});
-
-// Unhandled promise rejections
-process.on("unhandledRejection", (reason: unknown) => {
-  errorLogger.error("Unhandled Rejection", {
-    reason: reason instanceof Error ? reason.message : String(reason),
-    stack: reason instanceof Error ? reason.stack : undefined,
-  });
-  // Give logger time to write, then exit
-  setTimeout(() => process.exit(1), 1000);
-});
-
-// Graceful shutdown signals
-process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
-process.on("SIGINT", () => gracefulShutdown("SIGINT")); // Ctrl+C
-process.on("SIGUSR2", () => gracefulShutdown("SIGUSR2")); // nodemon / ts-node-dev restart
+export { server };
 
 // ============ MAIN ============
 async function main() {
@@ -103,4 +42,76 @@ async function main() {
 
 main();
 
-export { server };
+// ============ GRACEFUL SHUTDOWN ============
+async function gracefulShutdown(signal: string) {
+  logger.info(`${signal} received. Starting graceful shutdown...`);
+
+  try {
+    // 1. Stop accepting new requests and close existing connections
+    await new Promise<void>((resolve) => {
+      if (server.closeAllConnections) {
+        server.closeAllConnections();
+      }
+
+      server.close(() => {
+        logger.info("HTTP server closed");
+        resolve();
+      });
+    });
+
+    // 2. Close Redis
+    await redisClient.disconnect();
+    logger.info("Redis disconnected");
+
+    // 3. Close MongoDB
+    await mongoose.connection.close();
+    logger.info("MongoDB disconnected");
+
+    logger.info("Graceful shutdown completed");
+    process.exit(0);
+  } catch (error) {
+    errorLogger.error("Error during shutdown", {
+      error: error instanceof Error ? error.message : error,
+    });
+    process.exit(1);
+  }
+}
+
+// ============ MONGODB EVENT LISTENERS ============
+mongoose.connection.on("error", (err: Error) => {
+  errorLogger.error("MongoDB connection error", {
+    message: err.message,
+    stack: err.stack,
+  });
+});
+
+mongoose.connection.on("disconnected", () => {
+  logger.info("MongoDB disconnected");
+});
+
+// ============ PROCESS EVENT HANDLERS (register ONCE, outside main) ============
+
+// Uncaught exceptions
+process.on("uncaughtException", (error: Error) => {
+  errorLogger.error("Uncaught Exception", {
+    message: error.message,
+    stack: error.stack,
+  });
+  // Give logger time to write, then exit
+  setTimeout(() => process.exit(1), 1000);
+});
+
+// Unhandled promise rejections
+process.on("unhandledRejection", (reason: unknown) => {
+  errorLogger.error("Unhandled Rejection", {
+    reason: reason instanceof Error ? reason.message : String(reason),
+    stack: reason instanceof Error ? reason.stack : undefined,
+  });
+  // Give logger time to write, then exit
+  setTimeout(() => process.exit(1), 1000);
+});
+
+// Graceful shutdown signals
+process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
+process.on("SIGINT", () => gracefulShutdown("SIGINT")); // Ctrl+C
+process.on("SIGUSR2", () => gracefulShutdown("SIGUSR2")); // nodemon / ts-node-dev restart

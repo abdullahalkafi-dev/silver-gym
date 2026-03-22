@@ -99,7 +99,7 @@ const errorLogger = createLogger({
       filename: path.join(LOG_DIR, "error", "%DATE%-error.log"),
       datePattern: "DD-MM-YYYY",   // ✅ Daily
       maxSize: "20m",
-      maxFiles: "14d",             // ✅ Keep 14 days (errors are important)
+      maxFiles: "14d",             // ✅ Keep 14 days 
       zippedArchive: true,         // ✅ Compress old logs
     }),
 
