@@ -12,9 +12,12 @@ const create = catchAsync(async (req: Request, res: Response) => {
   const businessId = req.params.businessId as string;
   const logoFile = (req.files as any)?.image?.[0] as Express.Multer.File | undefined;
 
+  // Use parsed data if available, otherwise use body
+  const payload = req.body.data || req.body;
+
   const branch = await BranchService.createBranch(
     businessId,
-    req.body,
+    payload,
     logoFile
   );
 
@@ -68,9 +71,12 @@ const update = catchAsync(async (req: Request, res: Response) => {
   const branchId = req.params.branchId as string;
   const logoFile = (req.files as any)?.image?.[0] as Express.Multer.File | undefined;
 
+  // Use parsed data if available, otherwise use body
+  const payload = req.body.data || req.body;
+
   const branch = await BranchService.updateBranch(
     branchId,
-    req.body,
+    payload,
     logoFile
   );
 

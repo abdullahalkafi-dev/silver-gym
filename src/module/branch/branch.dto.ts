@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 const createBranchDto = z.object({
-  body: z
+  data: z
     .object({
       branchName: z
         .string()
@@ -14,7 +14,7 @@ const createBranchDto = z.object({
 });
 
 const updateBranchDto = z.object({
-  body: z
+  data: z
     .object({
       branchName: z
         .string()

@@ -4,7 +4,7 @@ import { BusinessType } from "./businessProfile.interface";
 const businessTypeValues = Object.values(BusinessType) as [string, ...string[]];
 
 const createBusinessProfileDto = z.object({
-  body: z
+  data: z
     .object({
       businessName: z
         .string()
@@ -19,7 +19,6 @@ const createBusinessProfileDto = z.object({
       zip: z.string().trim().optional(),
       businessPhoneNumber: z.string().trim().optional(),
       businessEmail: z
-        .string()
         .email("Invalid email address")
         .toLowerCase()
         .trim()
@@ -29,7 +28,7 @@ const createBusinessProfileDto = z.object({
 });
 
 const updateBusinessProfileDto = z.object({
-  body: z
+  data: z
     .object({
       businessName: z
         .string()
@@ -44,7 +43,6 @@ const updateBusinessProfileDto = z.object({
       zip: z.string().trim().optional(),
       businessPhoneNumber: z.string().trim().optional(),
       businessEmail: z
-        .string()
         .email("Invalid email address")
         .toLowerCase()
         .trim()
