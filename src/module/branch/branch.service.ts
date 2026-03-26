@@ -17,24 +17,29 @@ const getLogoRelativePath = (fullPath: string): string => {
 type CreateBranchPayload = Omit<TBranch, "_id" | "createdAt" | "updatedAt">;
 
 /**
- * Create a new branch for a business
+ * Create a new branch for a business with ownership verification
+ * Optimized to avoid N+1: 1 query for business verification + 1 create
  */
 const createBranch = async (
   businessId: string,
+  userId: Types.ObjectId,
   payload: Omit<CreateBranchPayload, "businessId" | "logo">,
   logoFile?: Express.Multer.File
 ) => {
-  // Verify business exists
-  const business = await BusinessProfileRepository.findById(businessId);
+  // Query 1: Verify business exists AND user owns it (combined for efficiency)
+  const business = await BusinessProfileRepository.findOne({
+    _id: new Types.ObjectId(businessId),
+    userId,
+  });
 
   if (!business) {
-    // Cleanup uploaded file if business not found
+    // Cleanup uploaded file if not authorized
     if (logoFile) {
       await unlinkFile(getLogoRelativePath(logoFile.path));
     }
     throw new AppError(
-      StatusCodes.NOT_FOUND,
-      "Business profile not found"
+      StatusCodes.FORBIDDEN,
+      "You do not have permission to create branches for this business"
     );
   }
 
@@ -45,7 +50,7 @@ const createBranch = async (
     logo: logoFile ? getLogoRelativePath(logoFile.path) : null,
   };
 
-  // Create branch
+  // Query 2: Create branch
   const branch = await BranchRepository.create(branchData);
 
   if (!branch) {
@@ -63,9 +68,22 @@ const createBranch = async (
 };
 
 /**
- * Get all branches for a business
+ * Get all branches for a business with ownership verification
  */
-const getBranches = async (businessId: string, options?: any) => {
+const getBranches = async (businessId: string, userId: Types.ObjectId, options?: any) => {
+  // Verify user owns the business
+  const business = await BusinessProfileRepository.findOne({
+    _id: new Types.ObjectId(businessId),
+    userId,
+  });
+
+  if (!business) {
+    throw new AppError(
+      StatusCodes.FORBIDDEN,
+      "You do not have permission to view branches for this business"
+    );
+  }
+
   const branches = await BranchRepository.findMany(
     { businessId: new Types.ObjectId(businessId) },
     { sort: { isDefault: -1, createdAt: -1 }, ...options }
@@ -75,9 +93,22 @@ const getBranches = async (businessId: string, options?: any) => {
 };
 
 /**
- * Get default branch for a business
+ * Get default branch for a business with ownership verification
  */
-const getDefaultBranch = async (businessId: string) => {
+const getDefaultBranch = async (businessId: string, userId: Types.ObjectId) => {
+  // Verify user owns the business
+  const business = await BusinessProfileRepository.findOne({
+    _id: new Types.ObjectId(businessId),
+    userId,
+  });
+
+  if (!business) {
+    throw new AppError(
+      StatusCodes.FORBIDDEN,
+      "You do not have permission to view branches for this business"
+    );
+  }
+
   const branch = await BranchRepository.findOne({
     businessId: new Types.ObjectId(businessId),
     isDefault: true,
@@ -94,23 +125,47 @@ const getDefaultBranch = async (businessId: string) => {
 };
 
 /**
- * Update branch information
+ * Update branch information with ownership verification
+ * Optimized to avoid N+1 queries: 2 queries for verification + 1 update
  */
 const updateBranch = async (
   branchId: string,
+  businessId: string,
+  userId: Types.ObjectId,
   payload: Partial<Omit<CreateBranchPayload, "businessId">>,
   logoFile?: Express.Multer.File
 ) => {
-  const branch = await BranchRepository.findById(branchId);
+  // Query 1: Verify branch exists AND belongs to the specified business (combined for efficiency)
+  const branch = await BranchRepository.findOne({
+    _id: branchId,
+    businessId: new Types.ObjectId(businessId),
+  });
 
   if (!branch) {
-    // Cleanup file if branch not found
+    // Cleanup file if branch not found or doesn't belong to business
     if (logoFile) {
       await unlinkFile(getLogoRelativePath(logoFile.path));
     }
     throw new AppError(
       StatusCodes.NOT_FOUND,
-      "Branch not found"
+      "Branch not found or does not belong to this business"
+    );
+  }
+
+  // Query 2: Verify user owns the business (combined condition for efficiency)
+  const business = await BusinessProfileRepository.findOne({
+    _id: new Types.ObjectId(businessId),
+    userId,
+  });
+
+  if (!business) {
+    // Cleanup file if user is not the owner
+    if (logoFile) {
+      await unlinkFile(getLogoRelativePath(logoFile.path));
+    }
+    throw new AppError(
+      StatusCodes.FORBIDDEN,
+      "You do not have permission to update this branch"
     );
   }
 
@@ -125,6 +180,7 @@ const updateBranch = async (
     ...(logoFile && { logo: getLogoRelativePath(logoFile.path) }),
   };
 
+  // Query 3: Update branch
   const updatedBranch = await BranchRepository.updateById(branchId, updateData);
 
   if (!updatedBranch) {

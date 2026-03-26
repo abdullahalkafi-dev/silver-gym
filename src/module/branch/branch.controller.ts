@@ -1,5 +1,6 @@
 import { Request, Response } from "express";
 import { StatusCodes } from "http-status-codes";
+import { Types } from "mongoose";
 import catchAsync from "../../shared/catchAsync";
 import sendResponse from "../../shared/sendResponse";
 import { BranchService } from "./branch.service";
@@ -10,6 +11,7 @@ import { BranchService } from "./branch.service";
  */
 const create = catchAsync(async (req: Request, res: Response) => {
   const businessId = req.params.businessId as string;
+  const userId = new Types.ObjectId(req.user?._id);
   const logoFile = (req.files as any)?.image?.[0] as Express.Multer.File | undefined;
 
   // Use parsed data if available, otherwise use body
@@ -17,6 +19,7 @@ const create = catchAsync(async (req: Request, res: Response) => {
 
   const branch = await BranchService.createBranch(
     businessId,
+    userId,
     payload,
     logoFile
   );
@@ -35,8 +38,9 @@ const create = catchAsync(async (req: Request, res: Response) => {
  */
 const getAll = catchAsync(async (req: Request, res: Response) => {
   const businessId = req.params.businessId as string;
+  const userId = new Types.ObjectId(req.user?._id);
 
-  const branches = await BranchService.getBranches(businessId);
+  const branches = await BranchService.getBranches(businessId, userId);
 
   sendResponse(res, {
     statusCode: StatusCodes.OK,
@@ -52,8 +56,9 @@ const getAll = catchAsync(async (req: Request, res: Response) => {
  */
 const getDefault = catchAsync(async (req: Request, res: Response) => {
   const businessId = req.params.businessId as string;
+  const userId = new Types.ObjectId(req.user?._id);
 
-  const branch = await BranchService.getDefaultBranch(businessId);
+  const branch = await BranchService.getDefaultBranch(businessId, userId);
 
   sendResponse(res, {
     statusCode: StatusCodes.OK,
@@ -68,7 +73,9 @@ const getDefault = catchAsync(async (req: Request, res: Response) => {
  * PATCH /api/v1/branches/:businessId/branches/:branchId
  */
 const update = catchAsync(async (req: Request, res: Response) => {
+  const businessId = req.params.businessId as string;
   const branchId = req.params.branchId as string;
+  const userId = new Types.ObjectId(req.user?._id);
   const logoFile = (req.files as any)?.image?.[0] as Express.Multer.File | undefined;
 
   // Use parsed data if available, otherwise use body
@@ -76,6 +83,8 @@ const update = catchAsync(async (req: Request, res: Response) => {
 
   const branch = await BranchService.updateBranch(
     branchId,
+    businessId,
+    userId,
     payload,
     logoFile
   );
