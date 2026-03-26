@@ -3,6 +3,7 @@ import { AuthRoutes } from "../module/auth/auth.route";
 import { LogsRoutes } from "../module/logs/logs.route";
 import { BusinessProfileRoutes } from "../module/businessProfile/businessProfile.route";
 import { BranchRoutes } from "../module/branch/branch.route";
+import { RoleRoute } from "../module/role/role.route";
 
 const router: Router = express.Router();
 
@@ -22,6 +23,10 @@ const apiRoutes = [
   {
     path: "/branches",
     route: BranchRoutes,
+  },
+  {
+    path: "/roles",
+    route: RoleRoute,
   },
 ];
 

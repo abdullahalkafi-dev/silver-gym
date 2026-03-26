@@ -5,6 +5,7 @@ import { TBranch } from "./branch.interface";
 import { BranchRepository } from "./branch.repository";
 import { BusinessProfileRepository } from "../businessProfile/businessProfile.repository";
 import unlinkFile from "../../shared/unlinkFile";
+import { RoleService } from "../role/role.service";
 
 /**
  * Extract branch logo filename from file path (relative path)
@@ -62,6 +63,14 @@ const createBranch = async (
       StatusCodes.INTERNAL_SERVER_ERROR,
       "Failed to create branch"
     );
+  }
+
+  // Automatically create default roles (Admin, Manager, Sales) for the new branch
+  try {
+    await RoleService.initializeBranchRoles(branch._id.toString());
+  } catch (error) {
+    // Log error but don't fail branch creation if roles creation fails
+    console.error(`Failed to create default roles for branch ${branch._id}:`, error);
   }
 
   return branch;
