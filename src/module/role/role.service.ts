@@ -1,6 +1,7 @@
 import { StatusCodes } from "http-status-codes";
 import { Types } from "mongoose";
 import AppError from "../../errors/AppError";
+import { errorLogger } from "../../logger/logger";
 import { TRole } from "./role.interface";
 import { RoleRepository } from "./role.repository";
 import {
@@ -11,6 +12,7 @@ import {
 
 // Default role names that can be created (system-generated only)
 const DEFAULT_ROLE_NAMES = ["Admin", "Manager", "Sales"];
+const SERVICE_NAME = "RoleService";
 
 type CreateRolePayload = Omit<TRole, "_id" | "createdAt" | "updatedAt">;
 
@@ -19,18 +21,29 @@ type CreateRolePayload = Omit<TRole, "_id" | "createdAt" | "updatedAt">;
  * - Admin: All permissions TRUE
  * - Manager: All permissions FALSE
  * - Sales: All permissions FALSE
+ * OPTIMIZED: Single query to check + create (avoids N+1)
  */
 const initializeBranchRoles = async (branchId: string) => {
-  // Check if roles already exist for this branch
-  const existingRolesCount = await RoleRepository.count({
+  // OPTIMIZED: Fetch existing roles in single query instead of count + findMany
+  const existingRoles = await RoleRepository.findMany({
     branchId: new Types.ObjectId(branchId),
   });
 
-  if (existingRolesCount > 0) {
-    // Roles already exist, return them
-    return await RoleRepository.findMany({
-      branchId: new Types.ObjectId(branchId),
-    });
+  if (existingRoles.length === 3) {
+    // All roles already exist - expected state
+    return existingRoles;
+  }
+
+  if (existingRoles.length > 0 && existingRoles.length < 3) {
+    // IMPORTANT ISSUE: Partial roles exist (inconsistent DB state)
+    errorLogger.error(
+      `${SERVICE_NAME}.initializeBranchRoles: INCONSISTENT STATE - Branch ${branchId} has ${existingRoles.length}/3 roles. Attempting recovery...`
+    );
+    
+    // Delete incomplete roles
+    await Promise.all(
+      existingRoles.map((role) => RoleRepository.deleteById(role._id.toString()))
+    );
   }
 
   // Prepare role data
@@ -66,43 +79,17 @@ const initializeBranchRoles = async (branchId: string) => {
 /**
  * Check if roles exist for a branch, if not create them (for branch owners)
  * API endpoint: GET /api/v1/roles/:branchId/initialize
+
  */
 const checkAndCreateBranchRoles = async (branchId: string) => {
-  // Check if roles already exist
-  const existingRoles = await RoleRepository.findMany({
-    branchId: new Types.ObjectId(branchId),
-  });
+  // Single call to initializeBranchRoles (handles all scenarios internally)
+  const roles = await initializeBranchRoles(branchId);
 
-  if (existingRoles.length === 3) {
-    // All 3 roles already exist
-    return {
-      created: false,
-      roles: existingRoles,
-      message: "Roles already exist for this branch",
-    };
-  } else if (existingRoles.length === 0) {
-    // Create roles
-    const roles = await initializeBranchRoles(branchId);
-    return {
-      created: true,
-      roles,
-      message: "Default roles created successfully",
-    };
-  } else {
-    // Partial roles exist (inconsistent state), recreate them
-    // Delete existing incomplete roles
-    await Promise.all(
-      existingRoles.map((role) => RoleRepository.deleteById(role._id.toString()))
-    );
-
-    // Create new roles
-    const roles = await initializeBranchRoles(branchId);
-    return {
-      created: true,
-      roles,
-      message: "Incomplete roles were recreated",
-    };
-  }
+  return {
+    created: roles.length > 0,
+    roles,
+    message: roles.length > 0 ? "Roles initialized successfully" : "No roles returned",
+  };
 };
 
 /**
@@ -114,6 +101,9 @@ const getRolesByBranch = async (branchId: string) => {
   });
 
   if (!roles || roles.length === 0) {
+    errorLogger.warn(
+      `${SERVICE_NAME}.getRolesByBranch: No roles found for branch ${branchId}`
+    );
     throw new AppError(StatusCodes.NOT_FOUND, "No roles found for this branch");
   }
 
@@ -127,6 +117,9 @@ const getRoleById = async (roleId: string) => {
   const role = await RoleRepository.findById(roleId);
 
   if (!role) {
+    errorLogger.warn(
+      `${SERVICE_NAME}.getRoleById: Role not found with ID ${roleId}`
+    );
     throw new AppError(StatusCodes.NOT_FOUND, "Role not found");
   }
 
@@ -149,6 +142,9 @@ const updateRolePermissions = async (
   });
 
   if (!role) {
+    errorLogger.warn(
+      `${SERVICE_NAME}.updateRolePermissions: Role not found - ID: ${roleId}, Branch: ${branchId}`
+    );
     throw new AppError(StatusCodes.NOT_FOUND, "Role not found for this branch");
   }
 
@@ -159,6 +155,9 @@ const updateRolePermissions = async (
   const updatedRole = await RoleRepository.updateById(roleId, updatePayload);
 
   if (!updatedRole) {
+    errorLogger.error(
+      `${SERVICE_NAME}.updateRolePermissions: UPDATE FAILED - Role ${roleId} returned null after update (potential DB issue)`
+    );
     throw new AppError(
       StatusCodes.INTERNAL_SERVER_ERROR,
       "Failed to update role permissions"
@@ -175,6 +174,9 @@ const getRolePermissions = async (roleId: string) => {
   const permissions = await getPermissionsByRoleId(roleId);
 
   if (!permissions) {
+    errorLogger.warn(
+      `${SERVICE_NAME}.getRolePermissions: Role not found - ID: ${roleId}`
+    );
     throw new AppError(StatusCodes.NOT_FOUND, "Role not found");
   }
 
