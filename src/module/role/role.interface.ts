@@ -3,7 +3,6 @@ import { Types } from "mongoose";
 export interface TRole {
 	branchId: Types.ObjectId;
 	roleName: string;
-	isOwner?: boolean;
 	canViewMembers?: boolean;
 	canAddMember?: boolean;
 	canEditMember?: boolean;

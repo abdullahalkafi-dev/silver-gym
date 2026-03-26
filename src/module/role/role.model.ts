@@ -15,10 +15,6 @@ const roleSchema = new Schema<TRole>(
       required: true,
       trim: true,
     },
-    isOwner: {
-      type: Boolean,
-      default: false,
-    },
     canViewMembers: { type: Boolean, default: false },
     canAddMember: { type: Boolean, default: false },
     canEditMember: { type: Boolean, default: false },
