@@ -276,6 +276,14 @@ const changePasswordDto = z.object({
     .strict(),
 });
 
+const refreshAccessTokenDto = z.object({
+  body: z
+    .object({
+      refreshToken: z.string().min(1, "Refresh token is required"),
+    })
+    .strict(),
+});
+
 export const AuthDto = {
   register: registerDto,
   login: loginDto,
@@ -285,4 +293,5 @@ export const AuthDto = {
   verifyResetOtp: verifyResetOtpDto,
   resetPassword: resetPasswordDto,
   changePassword: changePasswordDto,
+  refreshAccessToken: refreshAccessTokenDto,
 };

@@ -51,6 +51,10 @@ type TChangePasswordPayload = {
   newPassword: string;
 };
 
+type TRefreshAccessTokenPayload = {
+  refreshToken: string;
+};
+
 
 const register = async (payload: TUser) => {
   const loginProvider = payload.loginProvider;
@@ -417,6 +421,43 @@ const changePassword = async (userId: string, payload: TChangePasswordPayload) =
   };
 };
 
+const refreshAccessToken = async (payload: TRefreshAccessTokenPayload) => {
+  let decoded: any;
+  try {
+    decoded = verifyJwtToken(
+      payload.refreshToken,
+      (config.jwt.jwt_refresh_secret || config.jwt.jwt_secret) as string,
+    );
+  } catch (error) {
+    throw new AppError(StatusCodes.UNAUTHORIZED, "Invalid or expired refresh token");
+  }
+
+  const user = await UserRepository.findOne({ _id: decoded._id });
+
+  if (!user) {
+    throw new AppError(StatusCodes.NOT_FOUND, "User not found");
+  }
+
+  if (user.status !== "active") {
+    throw new AppError(
+      StatusCodes.UNAUTHORIZED,
+      "Your account is not active",
+    );
+  }
+
+  const tokenPayload = buildTokenPayload(user);
+
+  const newAccessToken = createJwtToken(
+    tokenPayload,
+    config.jwt.jwt_secret as string,
+    config.jwt.jwt_expire_in || "7d",
+  );
+
+  return {
+    accessToken: newAccessToken,
+  };
+};
+
 export const AuthService = {
   register,
   login,
@@ -426,5 +467,6 @@ export const AuthService = {
   verifyResetOtp,
   resetPassword,
   changePassword,
+  refreshAccessToken,
 };
 

@@ -104,4 +104,16 @@ router.post(
   AuthController.changePassword,
 );
 
+/**
+ * @route   POST /api/v1/auth/refresh-access-token
+ * @desc    Get a new access token using refresh token
+ * @access  Public
+ */
+router.post(
+  "/refresh-access-token",
+  authLimiter,
+  validateRequest(AuthDto.refreshAccessToken),
+  AuthController.refreshAccessToken,
+);
+
 export const AuthRoutes = router;

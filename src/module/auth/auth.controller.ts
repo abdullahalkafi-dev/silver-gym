@@ -94,6 +94,17 @@ const changePassword = catchAsync(async (req, res) => {
   });
 });
 
+const refreshAccessToken = catchAsync(async (req, res) => {
+  const result = await AuthService.refreshAccessToken(req.body);
+
+  sendResponse(res, {
+    statusCode: StatusCodes.OK,
+    success: true,
+    message: "Access token refreshed successfully",
+    data: result,
+  });
+});
+
 export const AuthController = {
   register,
   login,
@@ -103,5 +114,6 @@ export const AuthController = {
   verifyResetOtp,
   resetPassword,
   changePassword,
+  refreshAccessToken,
 };
 
