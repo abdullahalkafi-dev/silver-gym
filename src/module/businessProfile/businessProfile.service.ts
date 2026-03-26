@@ -24,9 +24,9 @@ const createBusinessProfile = async (
   });
 
   if (existingProfile) {
-    // Cleanup uploaded file if validation fails
+    // Cleanup uploaded file if profile already exists
     if (logoFile) {
-      unlinkFile(getLogoRelativePath(logoFile.path));
+      await unlinkFile(getLogoRelativePath(logoFile.path));
     }
     throw new AppError(
       StatusCodes.CONFLICT,
@@ -61,7 +61,7 @@ const createBusinessProfile = async (
   if (!businessProfile) {
     // Cleanup file if profile creation fails
     if (logoFile) {
-      unlinkFile(getLogoRelativePath(logoFile.path));
+      await unlinkFile(getLogoRelativePath(logoFile.path));
     }
     throw new AppError(
       StatusCodes.INTERNAL_SERVER_ERROR,
@@ -87,12 +87,10 @@ const createBusinessProfile = async (
 };
 
 /**
- * Get business profile by user ID with branches
+ * Get business profile by user ID
  */
 const getBusinessProfile = async (userId: Types.ObjectId) => {
-  const profile = await BusinessProfileRepository.findOne({ userId }).populate(
-    "branches"
-  );
+  const profile = await BusinessProfileRepository.findOne({ userId });
 
   if (!profile) {
     throw new AppError(
@@ -117,7 +115,7 @@ const updateBusinessProfile = async (
   if (!profile) {
     // Cleanup file if profile not found
     if (logoFile) {
-      unlinkFile(getLogoRelativePath(logoFile.path));
+      await unlinkFile(getLogoRelativePath(logoFile.path));
     }
     throw new AppError(
       StatusCodes.NOT_FOUND,
@@ -134,14 +132,14 @@ const updateBusinessProfile = async (
   } catch (error) {
     // Cleanup file on validation failure
     if (logoFile) {
-      unlinkFile(getLogoRelativePath(logoFile.path));
+      await unlinkFile(getLogoRelativePath(logoFile.path));
     }
     throw error;
   }
 
   // Delete old logo if replacing
   if (logoFile && profile.logo) {
-    unlinkFile(profile.logo);
+    await unlinkFile(profile.logo);
   }
 
   // Prepare update data

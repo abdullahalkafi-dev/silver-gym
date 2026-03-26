@@ -30,7 +30,7 @@ const createBranch = async (
   if (!business) {
     // Cleanup uploaded file if business not found
     if (logoFile) {
-      unlinkFile(getLogoRelativePath(logoFile.path));
+      await unlinkFile(getLogoRelativePath(logoFile.path));
     }
     throw new AppError(
       StatusCodes.NOT_FOUND,
@@ -51,7 +51,7 @@ const createBranch = async (
   if (!branch) {
     // Cleanup file if branch creation fails
     if (logoFile) {
-      unlinkFile(getLogoRelativePath(logoFile.path));
+      await unlinkFile(getLogoRelativePath(logoFile.path));
     }
     throw new AppError(
       StatusCodes.INTERNAL_SERVER_ERROR,
@@ -106,7 +106,7 @@ const updateBranch = async (
   if (!branch) {
     // Cleanup file if branch not found
     if (logoFile) {
-      unlinkFile(getLogoRelativePath(logoFile.path));
+      await unlinkFile(getLogoRelativePath(logoFile.path));
     }
     throw new AppError(
       StatusCodes.NOT_FOUND,
@@ -116,7 +116,7 @@ const updateBranch = async (
 
   // Delete old logo if replacing
   if (logoFile && branch.logo) {
-    unlinkFile(branch.logo);
+    await unlinkFile(branch.logo);
   }
 
   // Prepare update data
@@ -130,7 +130,7 @@ const updateBranch = async (
   if (!updatedBranch) {
     // Cleanup new file if update fails
     if (logoFile) {
-      unlinkFile(getLogoRelativePath(logoFile.path));
+      await unlinkFile(getLogoRelativePath(logoFile.path));
     }
     throw new AppError(
       StatusCodes.INTERNAL_SERVER_ERROR,
