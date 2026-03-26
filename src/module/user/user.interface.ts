@@ -1,3 +1,5 @@
+import { Types } from "mongoose";
+
 export enum LoginProvider {
 	EMAIL = 'email',
 	PHONE = 'phone',
@@ -5,6 +7,7 @@ export enum LoginProvider {
 }
 
 export interface TUser {
+	_id: Types.ObjectId;
 	firstName: string;
 	lastName: string;
 	email?: string;

@@ -6,13 +6,14 @@ import config from "../config";
 import AppError from "../errors/AppError";
 import { verifyJwtToken } from "jwt";
 import { UserRepository } from "module/user/user.repository";
+import { logger } from "logger/logger";
 
 const auth =
   (...roles: string[]) =>
   async (req: Request, _res: Response, next: NextFunction) => {
     try {
       const tokenWithBearer = req.headers.authorization;
-       if (!tokenWithBearer) {
+      if (!tokenWithBearer) {
         throw new AppError(StatusCodes.UNAUTHORIZED, "You are not authorized");
       }
       if (tokenWithBearer && tokenWithBearer.startsWith("Bearer")) {
@@ -20,28 +21,34 @@ const auth =
         //verify token
         const verifyUser = verifyJwtToken(
           token!,
-          config.jwt.jwt_secret as Secret
+          config.jwt.jwt_secret as Secret,
         );
-        //set user to header
-        req.user = verifyUser;
-        console.log(verifyUser);
-     const user = await UserRepository.findById(verifyUser._id);
+
+        const user = await UserRepository.findById(verifyUser._id);
 
         if (!user) {
-          throw new AppError(StatusCodes.UNAUTHORIZED, "You are not authorized");
-        } 
+          throw new AppError(
+            StatusCodes.UNAUTHORIZED,
+            "You are not authorized",
+          );
+        }
+        //set user to header
+        req.user = user;
         //check if user is active
         if (user.status !== "active") {
           throw new AppError(
             StatusCodes.UNAUTHORIZED,
-            "You account does not exist or is not active"
+            "You account does not exist or is not active",
           );
         }
+
+        user.isSuperAdmin ? (verifyUser.role = "superAdmin") : (verifyUser.role = "user");
+
         //guard user
         if (roles.length && !roles.includes(verifyUser.role)) {
           throw new AppError(
             StatusCodes.FORBIDDEN,
-            "You don't have permission to access this api"
+            "You don't have permission to access this api",
           );
         }
 
