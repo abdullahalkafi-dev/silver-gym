@@ -5,7 +5,8 @@ import { TBranch } from "./branch.interface";
 import { BranchRepository } from "./branch.repository";
 import { BusinessProfileRepository } from "../businessProfile/businessProfile.repository";
 import unlinkFile from "../../shared/unlinkFile";
-import { RoleService } from "../role/role.service";
+import { RoleService } from "../role/role.service";
+
 /**
  * Extract branch logo filename from file path (relative path)
  */
@@ -67,10 +68,8 @@ const createBranch = async (
     );
   }
 
-  // Async role initialization (don't wait, but log any critical issues)
+  // Async role initialization 
   RoleService.initializeBranchRoles(branch._id.toString())
-    .catch((error) => {
-    });
 
   return branch;
 };

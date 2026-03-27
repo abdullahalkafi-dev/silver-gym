@@ -3,7 +3,8 @@ import { StatusCodes } from "http-status-codes";
 import { Types } from "mongoose";
 
 import config from "config";
-import AppError from "errors/AppError";import { createJwtToken, verifyJwtToken } from "jwt";
+import AppError from "errors/AppError";
+import { createJwtToken, verifyJwtToken } from "jwt";
 import {  OTPType } from "module/otp/otp.interface";
 import { OTPService } from "module/otp/otp.service";
 import { LoginProvider, TUser } from "module/user/user.interface";
@@ -386,7 +387,7 @@ const resetPassword = async (payload: TResetPasswordPayload) => {
   };
 };
 
-const changePassword = async (userId: string, payload: TChangePasswordPayload) => {
+const changePassword = async (userId: Types.ObjectId, payload: TChangePasswordPayload) => {
   const user = await UserRepository.findOne({ _id: userId }, { select: "+password" });
 
   if (!user) {
@@ -411,9 +412,10 @@ const changePassword = async (userId: string, payload: TChangePasswordPayload) =
 
   const newHashedPassword = generateHashPassword(payload.newPassword);
 
-  await UserRepository.updateById(userId, {
+  await UserRepository.updateById(userId?.toString(), {
     password: newHashedPassword,
   });
+  
 
   return {
     message: "Password changed successfully",

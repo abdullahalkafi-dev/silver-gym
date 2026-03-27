@@ -3,13 +3,15 @@ import { Types } from "mongoose";
 import AppError from "../../errors/AppError";
 import { TStaff } from "./staff.interface";
 import { StaffRepository } from "./staff.repository";
+import { BusinessProfileRepository } from "../businessProfile/businessProfile.repository";
 import { BranchRepository } from "../branch/branch.repository";
 import { RoleRepository } from "../role/role.repository";
 import {
   generateStaffUsernameOptions,
   isValidUsername,
 } from "./staff.util";
-import generateHashPassword from "@util/generateHashPassword";
+import generateHashPassword from "@util/generateHashPassword";
+
 type CreateStaffPayload = Omit<
   TStaff,
   "createdAt" | "updatedAt" | "lastLogin" | "assignedAt"
@@ -86,20 +88,37 @@ const createStaff = async (
   userId: Types.ObjectId,
   payload: Omit<CreateStaffPayload, "branchId" | "assignedBy">
 ) => {
-  // Verify branch exists
-  const branch = await BranchRepository.findOne({
-    _id: new Types.ObjectId(branchId),
-  });
+  // Validate and check username globally early
+  if (!isValidUsername(payload.username)) {
+    throw new AppError(StatusCodes.BAD_REQUEST, "Invalid username format");
+  }
+
+  // Execute non-dependent queries in parallel
+  const [branch, role, existingStaff] = await Promise.all([
+    BranchRepository.findOne({ _id: new Types.ObjectId(branchId) }),
+    RoleRepository.findOne({
+      _id: new Types.ObjectId(payload.roleId),
+      branchId: new Types.ObjectId(branchId),
+    }),
+    StaffRepository.findOne({ username: payload.username.toLowerCase() }),
+  ]);
 
   if (!branch) {
     throw new AppError(StatusCodes.NOT_FOUND, "Branch not found");
   }
 
-  // Verify role exists and belongs to the same branch
-  const role = await RoleRepository.findOne({
-    _id: new Types.ObjectId(payload.roleId),
-    branchId: new Types.ObjectId(branchId),
+  // Verify user is the owner of the branch's business
+  const businessProfile = await BusinessProfileRepository.findOne({
+    _id: branch.businessId,
+    userId: userId,
   });
+
+  if (!businessProfile) {
+    throw new AppError(
+      StatusCodes.FORBIDDEN,
+      "You do not have permission to create staff in this branch"
+    );
+  }
 
   if (!role) {
     throw new AppError(
@@ -107,15 +126,6 @@ const createStaff = async (
       "Role not found or does not belong to this branch"
     );
   }
-
-  // Validate and check username globally
-  if (!isValidUsername(payload.username)) {
-    throw new AppError(StatusCodes.BAD_REQUEST, "Invalid username format");
-  }
-
-  const existingStaff = await StaffRepository.findOne({
-    username: payload.username.toLowerCase(),
-  });
 
   if (existingStaff) {
     throw new AppError(StatusCodes.CONFLICT, "Username already exists");

@@ -93,6 +93,5 @@ staffSchema.pre("validate", async function () {
 });
 
 staffSchema.index({ branchId: 1, isActive: 1 });
-staffSchema.index({ username: 1 }, { unique: true, sparse: true });
 
 export const Staff = model<TStaff>("Staff", staffSchema);

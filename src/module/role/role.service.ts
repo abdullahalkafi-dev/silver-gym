@@ -10,7 +10,8 @@ import {
 } from "./role.util";
 
 // Default role names that can be created (system-generated only)
-const DEFAULT_ROLE_NAMES = ["Admin", "Manager", "Sales"];
+// const DEFAULT_ROLE_NAMES = ["Admin", "Manager", "Sales"];
+
 type CreateRolePayload = Omit<TRole, "_id" | "createdAt" | "updatedAt">;
 
 /**

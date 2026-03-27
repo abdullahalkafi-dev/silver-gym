@@ -6,7 +6,6 @@ import config from "../config";
 import AppError from "../errors/AppError";
 import { verifyJwtToken } from "jwt";
 import { UserRepository } from "module/user/user.repository";
-import { logger } from "logger/logger";
 
 const auth =
   (...roles: string[]) =>

@@ -1,5 +1,4 @@
 import { RoleRepository } from "./role.repository";
-import { TRole } from "./role.interface";
 
 /**
  * Get all permissions for a specific role by roleId
