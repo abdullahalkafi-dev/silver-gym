@@ -1,8 +1,7 @@
 import fs from "fs/promises";
 import path from "path";
 import { StatusCodes } from "http-status-codes";
-import AppError from "../../errors/AppError";
-
+import AppError from "../../errors/AppError";
 type TLogCategory = "error" | "exceptions" | "rejections" | "success";
 
 type TLogFileSummary = {

@@ -2,8 +2,7 @@ import { StatusCodes } from "http-status-codes";
 import { Types } from "mongoose";
 import AppError from "../../errors/AppError";
 import { TBusinessProfile } from "./businessProfile.interface";
-import { BusinessProfileRepository } from "./businessProfile.repository";
-import { BranchRepository } from "../branch/branch.repository";
+import { BusinessProfileRepository } from "./businessProfile.repository";import { BranchRepository } from "../branch/branch.repository";
 import unlinkFile from "../../shared/unlinkFile";
 import { getLogoRelativePath, validateImageDimensions, validateLogoFile } from "./businessProfile.util";
 

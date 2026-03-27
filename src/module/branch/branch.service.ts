@@ -1,15 +1,11 @@
 import { StatusCodes } from "http-status-codes";
 import { Types } from "mongoose";
 import AppError from "../../errors/AppError";
-import { errorLogger } from "../../logger/logger";
 import { TBranch } from "./branch.interface";
 import { BranchRepository } from "./branch.repository";
 import { BusinessProfileRepository } from "../businessProfile/businessProfile.repository";
 import unlinkFile from "../../shared/unlinkFile";
-import { RoleService } from "../role/role.service";
-
-const SERVICE_NAME = "BranchService";
-
+import { RoleService } from "../role/role.service";
 /**
  * Extract branch logo filename from file path (relative path)
  */
@@ -41,9 +37,6 @@ const createBranch = async (
       await unlinkFile(getLogoRelativePath(logoFile.path));
     }
     
-    errorLogger.warn(
-      `${SERVICE_NAME}.createBranch: UNAUTHORIZED - User ${userId} attempted to create branch for business ${businessId} without ownership`
-    );
     
     throw new AppError(
       StatusCodes.FORBIDDEN,
@@ -67,9 +60,6 @@ const createBranch = async (
       await unlinkFile(getLogoRelativePath(logoFile.path));
     }
     
-    errorLogger.error(
-      `${SERVICE_NAME}.createBranch: CREATE FAILED - Failed to create branch for business ${businessId} after successful verification - POTENTIAL DB ISSUE`
-    );
     
     throw new AppError(
       StatusCodes.INTERNAL_SERVER_ERROR,
@@ -80,9 +70,6 @@ const createBranch = async (
   // Async role initialization (don't wait, but log any critical issues)
   RoleService.initializeBranchRoles(branch._id.toString())
     .catch((error) => {
-      errorLogger.error(
-        `${SERVICE_NAME}.createBranch: CRITICAL - Role initialization FAILED for branch ${branch._id}. Branch created but roles missing. Error: ${error instanceof Error ? error.message : String(error)}`
-      );
     });
 
   return branch;
@@ -100,9 +87,6 @@ const getBranches = async (businessId: string, userId: Types.ObjectId, options?:
   });
 
   if (!business) {
-    errorLogger.warn(
-      `${SERVICE_NAME}.getBranches: UNAUTHORIZED - User ${userId} attempted to view branches for business ${businessId} without ownership`
-    );
     
     throw new AppError(
       StatusCodes.FORBIDDEN,
@@ -130,9 +114,6 @@ const getDefaultBranch = async (businessId: string, userId: Types.ObjectId) => {
   });
 
   if (!business) {
-    errorLogger.warn(
-      `${SERVICE_NAME}.getDefaultBranch: UNAUTHORIZED - User ${userId} attempted to view default branch for business ${businessId} without ownership`
-    );
     
     throw new AppError(
       StatusCodes.FORBIDDEN,
@@ -146,9 +127,6 @@ const getDefaultBranch = async (businessId: string, userId: Types.ObjectId) => {
   });
 
   if (!branch) {
-    errorLogger.warn(
-      `${SERVICE_NAME}.getDefaultBranch: NOT FOUND - No default branch found for business ${businessId}`
-    );
     
     throw new AppError(
       StatusCodes.NOT_FOUND,
@@ -182,9 +160,6 @@ const updateBranch = async (
       await unlinkFile(getLogoRelativePath(logoFile.path));
     }
     
-    errorLogger.warn(
-      `${SERVICE_NAME}.updateBranch: BRANCH NOT FOUND - Branch ${branchId} not found for business ${businessId}`
-    );
     
     throw new AppError(
       StatusCodes.NOT_FOUND,
@@ -204,9 +179,6 @@ const updateBranch = async (
       await unlinkFile(getLogoRelativePath(logoFile.path));
     }
     
-    errorLogger.warn(
-      `${SERVICE_NAME}.updateBranch: UNAUTHORIZED - User ${userId} attempted to update branch ${branchId} for business ${businessId} without ownership`
-    );
     
     throw new AppError(
       StatusCodes.FORBIDDEN,
@@ -219,9 +191,6 @@ const updateBranch = async (
     try {
       await unlinkFile(branch.logo);
     } catch (error) {
-      errorLogger.warn(
-        `${SERVICE_NAME}.updateBranch: Failed to delete old logo for branch ${branchId}. Error: ${error instanceof Error ? error.message : String(error)}`
-      );
     }
   }
 
@@ -240,9 +209,6 @@ const updateBranch = async (
       await unlinkFile(getLogoRelativePath(logoFile.path));
     }
     
-    errorLogger.error(
-      `${SERVICE_NAME}.updateBranch: UPDATE FAILED - Failed to update branch ${branchId} after successful verification - POTENTIAL DB ISSUE`
-    );
     
     throw new AppError(
       StatusCodes.INTERNAL_SERVER_ERROR,

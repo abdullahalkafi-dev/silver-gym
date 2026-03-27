@@ -3,8 +3,7 @@ import bcrypt from "bcryptjs";
 import { OTPType, createOTPData } from "./otp.interface";
 import { OTPRepository } from "./otp.repository";
 import { StatusCodes } from "http-status-codes/build/cjs/status-codes";
-import AppError from "errors/AppError";
-import config from "config";
+import AppError from "errors/AppError";import config from "config";
 import { logger } from "logger/logger";
 
 const OTP_BCRYPT_ROUNDS = Number(config.bcrypt_salt_rounds) || 10;

@@ -1,7 +1,6 @@
 import { StatusCodes } from "http-status-codes";
 import { Types } from "mongoose";
 import AppError from "../../errors/AppError";
-import { errorLogger } from "../../logger/logger";
 import { TRole } from "./role.interface";
 import { RoleRepository } from "./role.repository";
 import {
@@ -11,9 +10,7 @@ import {
 } from "./role.util";
 
 // Default role names that can be created (system-generated only)
-const DEFAULT_ROLE_NAMES = ["Admin", "Manager", "Sales"];
-const SERVICE_NAME = "RoleService";
-
+const DEFAULT_ROLE_NAMES = ["Admin", "Manager", "Sales"];
 type CreateRolePayload = Omit<TRole, "_id" | "createdAt" | "updatedAt">;
 
 /**
@@ -36,9 +33,6 @@ const initializeBranchRoles = async (branchId: string) => {
 
   if (existingRoles.length > 0 && existingRoles.length < 3) {
     // IMPORTANT ISSUE: Partial roles exist (inconsistent DB state)
-    errorLogger.error(
-      `${SERVICE_NAME}.initializeBranchRoles: INCONSISTENT STATE - Branch ${branchId} has ${existingRoles.length}/3 roles. Attempting recovery...`
-    );
     
     // Delete incomplete roles
     await Promise.all(
@@ -101,9 +95,6 @@ const getRolesByBranch = async (branchId: string) => {
   });
 
   if (!roles || roles.length === 0) {
-    errorLogger.warn(
-      `${SERVICE_NAME}.getRolesByBranch: No roles found for branch ${branchId}`
-    );
     throw new AppError(StatusCodes.NOT_FOUND, "No roles found for this branch");
   }
 
@@ -117,9 +108,6 @@ const getRoleById = async (roleId: string) => {
   const role = await RoleRepository.findById(roleId);
 
   if (!role) {
-    errorLogger.warn(
-      `${SERVICE_NAME}.getRoleById: Role not found with ID ${roleId}`
-    );
     throw new AppError(StatusCodes.NOT_FOUND, "Role not found");
   }
 
@@ -142,9 +130,6 @@ const updateRolePermissions = async (
   });
 
   if (!role) {
-    errorLogger.warn(
-      `${SERVICE_NAME}.updateRolePermissions: Role not found - ID: ${roleId}, Branch: ${branchId}`
-    );
     throw new AppError(StatusCodes.NOT_FOUND, "Role not found for this branch");
   }
 
@@ -155,9 +140,6 @@ const updateRolePermissions = async (
   const updatedRole = await RoleRepository.updateById(roleId, updatePayload);
 
   if (!updatedRole) {
-    errorLogger.error(
-      `${SERVICE_NAME}.updateRolePermissions: UPDATE FAILED - Role ${roleId} returned null after update (potential DB issue)`
-    );
     throw new AppError(
       StatusCodes.INTERNAL_SERVER_ERROR,
       "Failed to update role permissions"
@@ -174,9 +156,6 @@ const getRolePermissions = async (roleId: string) => {
   const permissions = await getPermissionsByRoleId(roleId);
 
   if (!permissions) {
-    errorLogger.warn(
-      `${SERVICE_NAME}.getRolePermissions: Role not found - ID: ${roleId}`
-    );
     throw new AppError(StatusCodes.NOT_FOUND, "Role not found");
   }
 

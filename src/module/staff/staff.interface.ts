@@ -2,7 +2,7 @@ import { Types } from "mongoose";
 
 export interface TStaff {
 	branchId: Types.ObjectId;
-	assignedBy ?: Types.ObjectId;
+	assignedBy?: Types.ObjectId;
 	roleId: Types.ObjectId;
 	username: string;
 	displayName?: string;

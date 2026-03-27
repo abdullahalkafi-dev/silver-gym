@@ -3,8 +3,7 @@ import { StatusCodes } from "http-status-codes";
 import { Types } from "mongoose";
 
 import config from "config";
-import AppError from "errors/AppError";
-import { createJwtToken, verifyJwtToken } from "jwt";
+import AppError from "errors/AppError";import { createJwtToken, verifyJwtToken } from "jwt";
 import {  OTPType } from "module/otp/otp.interface";
 import { OTPService } from "module/otp/otp.service";
 import { LoginProvider, TUser } from "module/user/user.interface";

@@ -11,7 +11,7 @@ const staffSchema = new Schema<TStaff>(
       required: true,
       index: true,
     },
-    assignedBy : {
+    assignedBy: {
       type: Schema.Types.ObjectId,
       ref: "User",
       index: true,
@@ -27,6 +27,8 @@ const staffSchema = new Schema<TStaff>(
       required: true,
       trim: true,
       lowercase: true,
+      unique: true,
+      index: true,
     },
     displayName: {
       type: String,
@@ -62,7 +64,7 @@ const staffSchema = new Schema<TStaff>(
   },
   {
     timestamps: true,
-  }
+  },
 );
 
 staffSchema.pre("validate", async function () {
@@ -70,10 +72,15 @@ staffSchema.pre("validate", async function () {
     return;
   }
 
-  if (!this.isNew && !this.isModified("roleId") && !this.isModified("branchId")) {
+  if (
+    !this.isNew &&
+    !this.isModified("roleId") &&
+    !this.isModified("branchId")
+  ) {
     return;
   }
 
+  // Ensure role belongs to the branch
   const role = await Role.findById(this.roleId).select("_id branchId").lean();
 
   if (!role) {
@@ -85,6 +92,7 @@ staffSchema.pre("validate", async function () {
   }
 });
 
-staffSchema.index({ branchId: 1, username: 1 }, { unique: true });
+staffSchema.index({ branchId: 1, isActive: 1 });
+staffSchema.index({ username: 1 }, { unique: true, sparse: true });
 
 export const Staff = model<TStaff>("Staff", staffSchema);
