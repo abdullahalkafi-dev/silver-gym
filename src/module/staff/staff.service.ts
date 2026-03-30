@@ -136,6 +136,7 @@ const createStaff = async (
     branchId: new Types.ObjectId(branchId),
     assignedBy: userId,
     ...payload,
+    displayName: payload.displayName || payload.username,
     username: payload.username.toLowerCase(),
     email: payload.email?.toLowerCase(),
     password: payload.password
@@ -392,6 +393,38 @@ const deactivateStaff = async (staffId: string, branchId: string) => {
 };
 
 /**
+ * Activate a staff member
+ */
+const activateStaff = async (staffId: string, branchId: string) => {
+  // Verify staff exists and belongs to the branch
+  const staff = await StaffRepository.findOne({
+    _id: new Types.ObjectId(staffId),
+    branchId: new Types.ObjectId(branchId),
+  });
+
+  if (!staff) {
+    throw new AppError(
+      StatusCodes.NOT_FOUND,
+      "Staff member not found"
+    );
+  }
+
+  // Update staff to activate
+  const updatedStaff = await StaffRepository.updateById(staffId, {
+    isActive: true,
+  });
+
+  if (!updatedStaff) {
+    throw new AppError(
+      StatusCodes.INTERNAL_SERVER_ERROR,
+      "Failed to activate staff member"
+    );
+  }
+
+  return updatedStaff;
+};
+
+/**
  * Delete a staff member
  */
 const deleteStaff = async (staffId: string, branchId: string) => {
@@ -429,5 +462,6 @@ export const StaffService = {
   getStaffById,
   updateStaff,
   deactivateStaff,
+  activateStaff,
   deleteStaff,
 };

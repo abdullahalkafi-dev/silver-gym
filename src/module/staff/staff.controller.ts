@@ -131,6 +131,24 @@ const deactivate = catchAsync(async (req: Request, res: Response) => {
 });
 
 /**
+ * Activate a staff member
+ * PATCH /api/v1/staff/:branchId/staff/:staffId/activate
+ */
+const activate = catchAsync(async (req: Request, res: Response) => {
+  const branchId = req.params.branchId as string;
+  const staffId = req.params.staffId as string;
+
+  const staff = await StaffService.activateStaff(staffId, branchId);
+
+  sendResponse(res, {
+    statusCode: StatusCodes.OK,
+    success: true,
+    message: "Staff member activated successfully",
+    data: staff,
+  });
+});
+
+/**
  * Delete a staff member
  * DELETE /api/v1/staff/:branchId/staff/:staffId
  */
@@ -156,5 +174,6 @@ export const StaffController = {
   getById,
   update,
   deactivate,
+  activate,
   remove,
 };

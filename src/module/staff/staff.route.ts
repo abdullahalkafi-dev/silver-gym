@@ -82,6 +82,18 @@ router.patch(
 );
 
 /**
+ * @route   PATCH /api/v1/staff/:branchId/staff/:staffId/activate
+ * @desc    Activate a staff member
+ * @access  Private (requires authentication)
+ */
+router.patch(
+  "/:branchId/staff/:staffId/activate",
+  authLimiter,
+  auth(),
+  StaffController.activate
+);
+
+/**
  * @route   DELETE /api/v1/staff/:branchId/staff/:staffId
  * @desc    Delete a staff member
  * @access  Private (requires authentication)
