@@ -34,3 +34,31 @@ This repository uses short docs for each backend layer and API structure.
 - Keep business rules inside services (not in routes/controllers).
 - Keep DB-specific queries inside repositories.
 - Keep DTO validation close to route definitions.
+
+## Import Environment Variables
+
+Member Google Sheets import needs service-account credentials and runtime tuning values:
+
+- `GOOGLE_SERVICE_ACCOUNT_EMAIL`
+- `GOOGLE_PRIVATE_KEY`
+- `GOOGLE_SHEET_DEFAULT_RANGE` (optional, default used if omitted)
+
+Optional import tuning for low-resource deployments:
+
+- `IMPORT_CHUNK_SIZE` (default `50`)
+- `IMPORT_MAX_PREVIEW_ROWS` (default `200`)
+- `IMPORT_MAX_FAILED_ROWS_DATA` (default `500`)
+- `IMPORT_MAX_ROWS_PER_BATCH` (default `5000`)
+
+## Auth + DB Tuning Variables
+
+- `JWT_STAFF_PERMISSION_SYNC_SECONDS` (default `300`)
+	- Staff permissions are reloaded from role after this interval.
+
+Database runtime tuning:
+
+- `DB_MAX_POOL_SIZE` (default `5`)
+- `DB_SERVER_SELECTION_TIMEOUT_MS` (default `10000`)
+- `DB_SOCKET_TIMEOUT_MS` (default `30000`)
+- `DB_WAIT_QUEUE_TIMEOUT_MS` (default `5000`)
+- `DB_MAX_IDLE_TIME_MS` (default `10000`)

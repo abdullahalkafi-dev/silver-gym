@@ -233,24 +233,47 @@ const getStaffListByBranch = async (branchId: string, options?: any) => {
 /**
  * Get a single staff member by ID with role permissions
  */
-const getStaffById = async (staffId: string) => {
-  const staff = await StaffRepository.findById(staffId);
+const getStaffById = async (
+  staffId: string,
+  branchId: string,
+  userId: Types.ObjectId,
+) => {
+  const branch = await BranchRepository.findOne({
+    _id: new Types.ObjectId(branchId),
+  });
 
-  if (!staff) {
+  if (!branch) {
+    throw new AppError(StatusCodes.NOT_FOUND, "Branch not found");
+  }
+
+  const businessProfile = await BusinessProfileRepository.findOne({
+    _id: branch.businessId,
+    userId,
+  });
+
+  if (!businessProfile) {
+    throw new AppError(
+      StatusCodes.FORBIDDEN,
+      "You do not have permission to access this branch"
+    );
+  }
+
+  const staffWithRole = await StaffRepository.findOne(
+    {
+      _id: new Types.ObjectId(staffId),
+      branchId: new Types.ObjectId(branchId),
+    },
+    { populate: "roleId" },
+  );
+
+  if (!staffWithRole) {
     throw new AppError(
       StatusCodes.NOT_FOUND,
       "Staff member not found"
     );
   }
 
-  // Populate role to get permissions
-  const populatedStaff = await StaffRepository.findOne(
-    { _id: new Types.ObjectId(staffId) },
-  );
-
-  const staffWithRole = await (populatedStaff as any)?.populate("roleId");
-
-  const staffObj = staffWithRole.toObject ? staffWithRole.toObject() : staffWithRole;
+  const staffObj = (staffWithRole.toObject ? staffWithRole.toObject() : staffWithRole) as any;
 
   return {
     ...staffObj,

@@ -32,6 +32,18 @@ router.post(
 );
 
 /**
+ * @route   POST /api/v1/auth/staff/login
+ * @desc    Login staff with username and password
+ * @access  Public
+ */
+router.post(
+  "/staff/login",
+  authLimiter,
+  validateRequest(AuthDto.staffLogin),
+  AuthController.staffLogin,
+);
+
+/**
  * @route   POST /api/v1/auth/verify-account
  * @desc    Verify account with OTP for email or phone
  * @access  Public

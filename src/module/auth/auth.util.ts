@@ -1,6 +1,41 @@
 import { OTPProvider } from "module/otp/otp.interface";
 import { LoginProvider } from "module/user/user.interface";
+import { TRole } from "module/role/role.interface";
+import { TStaff } from "module/staff/staff.interface";
 import { Types } from "mongoose";
+
+export type TStaffPermissionSnapshot = {
+  canViewMembers: boolean;
+  canAddMember: boolean;
+  canEditMember: boolean;
+  canDeleteMember: boolean;
+  canViewPackages: boolean;
+  canAddPackage: boolean;
+  canEditPackage: boolean;
+  canDeletePackage: boolean;
+  canViewBilling: boolean;
+  canAddBilling: boolean;
+  canEditBilling: boolean;
+  canDeleteBilling: boolean;
+  canViewAnalytics: boolean;
+  canExportAnalytics: boolean;
+  canViewSMS: boolean;
+  canSendSMS: boolean;
+  canViewEmail: boolean;
+  canSendEmail: boolean;
+};
+
+export type TStaffPermissionKey = keyof TStaffPermissionSnapshot;
+
+export type TStaffTokenPayload = {
+  tokenType: "staff";
+  staffId: string;
+  branchId: string;
+  roleId: string;
+  roleName: string;
+  roleUpdatedAt?: string;
+  permissions: TStaffPermissionSnapshot;
+};
 
 export const getNormalizedIdentity = (payload: { email?: string; phone?: string }) => {
   return {
@@ -46,4 +81,38 @@ export const buildTokenPayload = (user: {
   phone: user.phone,
   isSuperAdmin: Boolean(user.isSuperAdmin),
   loginProvider: user.loginProvider,
+});
+
+export const getStaffPermissionSnapshot = (role: TRole): TStaffPermissionSnapshot => ({
+  canViewMembers: role.canViewMembers ?? false,
+  canAddMember: role.canAddMember ?? false,
+  canEditMember: role.canEditMember ?? false,
+  canDeleteMember: role.canDeleteMember ?? false,
+  canViewPackages: role.canViewPackages ?? false,
+  canAddPackage: role.canAddPackage ?? false,
+  canEditPackage: role.canEditPackage ?? false,
+  canDeletePackage: role.canDeletePackage ?? false,
+  canViewBilling: role.canViewBilling ?? false,
+  canAddBilling: role.canAddBilling ?? false,
+  canEditBilling: role.canEditBilling ?? false,
+  canDeleteBilling: role.canDeleteBilling ?? false,
+  canViewAnalytics: role.canViewAnalytics ?? false,
+  canExportAnalytics: role.canExportAnalytics ?? false,
+  canViewSMS: role.canViewSMS ?? false,
+  canSendSMS: role.canSendSMS ?? false,
+  canViewEmail: role.canViewEmail ?? false,
+  canSendEmail: role.canSendEmail ?? false,
+});
+
+export const buildStaffTokenPayload = (
+  staff: TStaff & { _id: string | Types.ObjectId },
+  role: TRole & { _id: string | Types.ObjectId }
+): TStaffTokenPayload => ({
+  tokenType: "staff",
+  staffId: String(staff._id),
+  branchId: String(staff.branchId),
+  roleId: String(role._id),
+  roleName: role.roleName,
+  roleUpdatedAt: role.updatedAt ? new Date(role.updatedAt).toISOString() : undefined,
+  permissions: getStaffPermissionSnapshot(role),
 });

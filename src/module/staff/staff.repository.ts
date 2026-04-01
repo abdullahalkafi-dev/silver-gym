@@ -9,6 +9,8 @@ type QueryOptions = {
   populate?: string | string[];
 };
 
+type FindOneOptions = Pick<QueryOptions, "select" | "populate">;
+
 export const StaffRepository = {
   create(payload: TStaff) {
     return Staff.create(payload);
@@ -18,8 +20,24 @@ export const StaffRepository = {
     return Staff.findById(id);
   },
 
-  findOne(filter: object) {
-    return Staff.findOne(filter);
+  findOne(filter: object, options: FindOneOptions = {}) {
+    let query = Staff.findOne(filter);
+
+    if (options.select) {
+      query = query.select(options.select);
+    }
+
+    if (options.populate) {
+      if (Array.isArray(options.populate)) {
+        options.populate.forEach((path) => {
+          query = query.populate(path);
+        });
+      } else {
+        query = query.populate(options.populate);
+      }
+    }
+
+    return query;
   },
 
   findMany(filter: object = {}, options: QueryOptions = {}) {

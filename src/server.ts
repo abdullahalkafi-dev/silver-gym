@@ -5,6 +5,7 @@ import app from "./app";
 import config from "./config";
 import { errorLogger, logger } from "./logger/logger";
 import ConnectDB from "./db";
+import { MemberImportService } from "./module/member/memberImport.service";
 
 // ============ CREATE SERVER ============
 const server = http.createServer(app);
@@ -24,7 +25,10 @@ async function main() {
     await redisClient.connect();
     logger.info("Redis connected successfully");
 
-    // 4. Start server
+    // 4. Resume pending member import batches
+    await MemberImportService.resumePendingBatches();
+
+    // 5. Start server
     const port = Number(config.port) || 5000;
 
     server.listen(port, "0.0.0.0", () => {

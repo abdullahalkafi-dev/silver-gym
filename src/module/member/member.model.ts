@@ -193,4 +193,10 @@ memberSchema.pre("validate", async function () {
   }
 });
 
+memberSchema.index({ branchId: 1, isActive: 1, createdAt: -1 });
+memberSchema.index(
+  { branchId: 1, legacyId: 1 },
+  { unique: true, sparse: true },
+);
+
 export const Member = model<TMember>("Member", memberSchema);

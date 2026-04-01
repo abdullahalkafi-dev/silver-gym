@@ -1,6 +1,6 @@
-import { TMember } from "./member.interface";
-import { Member } from "./member.model";
-import { ClientSession } from "mongoose";
+import { PipelineStage } from "mongoose";
+import { TMemberImportBatch } from "./memberImportBatch.interface";
+import { MemberImportBatch } from "./memberImportBatch.model";
 
 type QueryOptions = {
   select?: Record<string, 0 | 1> | string;
@@ -10,30 +10,21 @@ type QueryOptions = {
   populate?: string | string[];
 };
 
-type CreateOptions = {
-  session?: ClientSession;
-};
-
-export const MemberRepository = {
-  async create(payload: TMember, options: CreateOptions = {}) {
-    if (options.session) {
-      const docs = await Member.create([payload], { session: options.session });
-      return docs[0]!;
-    }
-
-    return Member.create(payload);
+export const MemberImportBatchRepository = {
+  create(payload: TMemberImportBatch) {
+    return MemberImportBatch.create(payload);
   },
 
   findById(id: string) {
-    return Member.findById(id);
+    return MemberImportBatch.findById(id);
   },
 
   findOne(filter: object) {
-    return Member.findOne(filter);
+    return MemberImportBatch.findOne(filter);
   },
 
   findMany(filter: object = {}, options: QueryOptions = {}) {
-    let query = Member.find(filter);
+    let query = MemberImportBatch.find(filter);
 
     if (options.select) {
       query = query.select(options.select);
@@ -64,23 +55,23 @@ export const MemberRepository = {
     return query;
   },
 
+  aggregate(pipeline: PipelineStage[] = []) {
+    return MemberImportBatch.aggregate(pipeline);
+  },
+
   updateById(id: string, payload: object) {
-    return Member.findByIdAndUpdate(id, payload, {
-      returnDocument: 'after',
+    return MemberImportBatch.findByIdAndUpdate(id, payload, {
+      returnDocument: "after",
       runValidators: true,
     });
   },
 
-  deleteById(id: string) {
-    return Member.findByIdAndDelete(id);
+  count(filter: object = {}) {
+    return MemberImportBatch.countDocuments(filter);
   },
 
   async exists(filter: object) {
-    const doc = await Member.exists(filter);
+    const doc = await MemberImportBatch.exists(filter);
     return Boolean(doc);
-  },
-
-  count(filter: object = {}) {
-    return Member.countDocuments(filter);
   },
 };

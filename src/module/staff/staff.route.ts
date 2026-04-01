@@ -31,7 +31,7 @@ router.post(
   authLimiter,
   auth(),
   validateRequest(StaffDto.create),
-  StaffController.create
+  StaffController.create,
 );
 
 /**
@@ -39,22 +39,14 @@ router.post(
  * @desc    Get all staff members for a branch with role permissions
  * @access  Private (requires authentication)
  */
-router.get(
-  "/:branchId/staff",
-  auth(),
-  StaffController.getAll
-);
+router.get("/:branchId/staff", auth(), StaffController.getAll);
 
 /**
  * @route   GET /api/v1/staff/:branchId/staff/:staffId
  * @desc    Get a single staff member with role permissions
  * @access  Private (requires authentication)
  */
-router.get(
-  "/:branchId/staff/:staffId",
-  auth(),
-  StaffController.getById
-);
+router.get("/:branchId/staff/:staffId", auth(), StaffController.getById);
 
 /**
  * @route   PATCH /api/v1/staff/:branchId/staff/:staffId
@@ -66,7 +58,7 @@ router.patch(
   authLimiter,
   auth(),
   validateRequest(StaffDto.update),
-  StaffController.update
+  StaffController.update,
 );
 
 /**
@@ -78,7 +70,7 @@ router.patch(
   "/:branchId/staff/:staffId/deactivate",
   authLimiter,
   auth(),
-  StaffController.deactivate
+  StaffController.deactivate,
 );
 
 /**
@@ -90,7 +82,7 @@ router.patch(
   "/:branchId/staff/:staffId/activate",
   authLimiter,
   auth(),
-  StaffController.activate
+  StaffController.activate,
 );
 
 /**
@@ -102,7 +94,7 @@ router.delete(
   "/:branchId/staff/:staffId",
   authLimiter,
   auth(),
-  StaffController.remove
+  StaffController.remove,
 );
 
 export const StaffRoutes = router;

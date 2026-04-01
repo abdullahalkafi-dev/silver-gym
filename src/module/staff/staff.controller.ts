@@ -81,9 +81,11 @@ const getAll = catchAsync(async (req: Request, res: Response) => {
  * GET /api/v1/staff/:branchId/staff/:staffId
  */
 const getById = catchAsync(async (req: Request, res: Response) => {
+  const branchId = req.params.branchId as string;
   const staffId = req.params.staffId as string;
+  const userId = new Types.ObjectId(req.user?._id);
 
-  const staff = await StaffService.getStaffById(staffId);
+  const staff = await StaffService.getStaffById(staffId, branchId, userId);
 
   sendResponse(res, {
     statusCode: StatusCodes.OK,

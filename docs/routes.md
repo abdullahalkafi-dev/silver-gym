@@ -6,7 +6,59 @@ Routes define endpoint path + HTTP method + middleware chain + controller handle
 
 - `src/module/auth/auth.route.ts`
 - `src/module/logs/logs.route.ts`
+- `src/module/member/member.route.ts`
+- `src/module/staff/staff.route.ts`
 - mounted from `src/routes/index.ts`
+
+## Member routes (new)
+
+- `POST /api/v1/members/:branchId`
+	- Create member with mandatory payment payload.
+	- Access: owner or staff with `canAddMember`.
+- `GET /api/v1/members/:branchId`
+	- List members with search/filter pagination.
+	- Access: owner or staff with `canViewMembers`.
+- `GET /api/v1/members/:branchId/:memberId`
+	- Get one member details.
+	- Access: owner or staff with `canViewMembers`.
+- `PATCH /api/v1/members/:branchId/:memberId`
+	- Update member data.
+	- Access: owner or staff with `canEditMember`.
+- `DELETE /api/v1/members/:branchId/:memberId`
+	- Soft delete member (`isActive=false`).
+	- Access: owner or staff with `canDeleteMember`.
+- `PATCH /api/v1/members/:branchId/:memberId/restore`
+	- Restore soft-deleted member.
+	- Access: owner or staff with `canEditMember`.
+
+## Member import routes (new)
+
+- `POST /api/v1/members/import/:branchId/google-sheet`
+	- Start async Google Sheets import batch.
+	- Access: owner or staff with `canAddMember`.
+- `GET /api/v1/members/import/:branchId/batches`
+	- List import batches with pagination and optional status filter.
+	- Access: owner or staff with `canViewMembers`.
+- `GET /api/v1/members/import/:branchId/metrics`
+	- Branch-level import metrics for monitoring dashboard.
+	- Access: owner or staff with `canViewMembers`.
+- `GET /api/v1/members/import/:branchId/dashboard-summary`
+	- Combined member counts + import metrics for admin dashboard.
+	- Access: owner or staff with `canViewMembers`.
+- `GET /api/v1/members/import/:branchId/batches/:batchId`
+	- Get batch status and progress.
+	- Access: owner or staff with `canViewMembers`.
+- `POST /api/v1/members/import/:branchId/batches/:batchId/retry`
+	- Retry failed rows from a completed/failed batch.
+	- Access: owner or staff with `canAddMember`.
+- `POST /api/v1/members/import/:branchId/batches/:batchId/cancel`
+	- Cancel pending/processing import batch.
+	- Access: owner or staff with `canAddMember`.
+
+## Auth routes (new)
+
+- `POST /api/v1/auth/staff/login`
+	- Staff login with username and password.
 
 ## Route responsibilities
 

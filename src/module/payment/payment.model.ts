@@ -169,4 +169,7 @@ paymentSchema.pre("validate", async function () {
   }
 });
 
+paymentSchema.index({ branchId: 1, memberId: 1, importBatchId: 1 });
+paymentSchema.index({ branchId: 1, memberLegacyId: 1, importBatchId: 1 });
+
 export const Payment = model<TPayment>("Payment", paymentSchema);

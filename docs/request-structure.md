@@ -36,3 +36,91 @@ z.object({
 - Use `.strict()` to reject unknown fields where required.
 - Use `superRefine` for cross-field validation.
 - Keep DTO close to route/controller in module folder.
+
+## Member create request (new)
+
+Route: `POST /api/v1/members/:branchId`
+
+```json
+{
+  "data": {
+    "fullName": "John Doe",
+    "contact": "017xxxxxxxx",
+    "currentPackageId": "64f...",
+    "membershipStartDate": "2026-03-30T00:00:00.000Z",
+    "payment": {
+      "paymentMethod": "cash",
+      "paidTotal": 2000,
+      "discount": 0,
+      "admissionFee": 500
+    }
+  }
+}
+```
+
+Monthly path example:
+
+```json
+{
+  "data": {
+    "fullName": "Jane Doe",
+    "customMonthlyFee": true,
+    "monthlyFeeAmount": 1500,
+    "paidMonths": 1,
+    "payment": {
+      "paymentMethod": "bkash",
+      "paidTotal": 1500
+    }
+  }
+}
+```
+
+## Member import start request (new)
+
+Route: `POST /api/v1/members/import/:branchId/google-sheet`
+
+```json
+{
+  "data": {
+    "spreadsheetId": "1AbCdEf...",
+    "range": "Members!A1:AZ"
+  }
+}
+```
+
+## Import retry/cancel params (new)
+
+- `branchId` from route params.
+- `batchId` from route params.
+
+## Import batch list query (new)
+
+Route: `GET /api/v1/members/import/:branchId/batches`
+
+Optional query params:
+
+- `page` (string number)
+- `limit` (string number, max 100)
+- `status` one of:
+  - `pending`
+  - `processing`
+  - `completed`
+  - `partial_failed`
+  - `failed`
+  - `cancelled`
+
+## Import metrics query (new)
+
+Route: `GET /api/v1/members/import/:branchId/metrics`
+
+Optional query params:
+
+- `days` (string number, default `7`, max `90`)
+
+## Dashboard summary query (new)
+
+Route: `GET /api/v1/members/import/:branchId/dashboard-summary`
+
+Optional query params:
+
+- `days` (string number, default `7`, max `90`)

@@ -137,6 +137,19 @@ const loginDto = z.object({
     }),
 });
 
+const staffLoginDto = z.object({
+  body: z
+    .object({
+      username: z
+        .string()
+        .min(3, "Username must be at least 3 characters")
+        .trim()
+        .toLowerCase(),
+      password: z.string().min(6, "Password must be at least 6 characters"),
+    })
+    .strict(),
+});
+
 const verifyAccountDto = z.object({
   body: z
     .object({
@@ -287,6 +300,7 @@ const refreshAccessTokenDto = z.object({
 export const AuthDto = {
   register: registerDto,
   login: loginDto,
+  staffLogin: staffLoginDto,
   verifyAccount: verifyAccountDto,
   resendOtp: resendOtpDto,
   forgotPassword: forgotPasswordDto,

@@ -1,5 +1,6 @@
 import { TPayment } from "./payment.interface";
 import { Payment } from "./payment.model";
+import { ClientSession } from "mongoose";
 
 type QueryOptions = {
   select?: Record<string, 0 | 1> | string;
@@ -9,8 +10,17 @@ type QueryOptions = {
   populate?: string | string[];
 };
 
+type CreateOptions = {
+  session?: ClientSession;
+};
+
 export const PaymentRepository = {
-  create(payload: TPayment) {
+  async create(payload: TPayment, options: CreateOptions = {}) {
+    if (options.session) {
+      const docs = await Payment.create([payload], { session: options.session });
+      return docs[0]!;
+    }
+
     return Payment.create(payload);
   },
 

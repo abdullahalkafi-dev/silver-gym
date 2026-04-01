@@ -1,5 +1,6 @@
 import { StatusCodes } from "http-status-codes";
 
+import AppError from "errors/AppError";
 import catchAsync from "@shared/catchAsync";
 import sendResponse from "@shared/sendResponse";
 import { AuthService } from "./auth.service";
@@ -22,6 +23,17 @@ const login = catchAsync(async (req, res) => {
     statusCode: StatusCodes.OK,
     success: true,
     message: "Login successful",
+    data: result,
+  });
+});
+
+const staffLogin = catchAsync(async (req, res) => {
+  const result = await AuthService.staffLogin(req.body);
+
+  sendResponse(res, {
+    statusCode: StatusCodes.OK,
+    success: true,
+    message: "Staff login successful",
     data: result,
   });
 });
@@ -82,8 +94,12 @@ const resetPassword = catchAsync(async (req, res) => {
 });
 
 const changePassword = catchAsync(async (req, res) => {
-  // Assuming auth() middleware sets user in req.user
   const userId = req.user?._id;
+
+  if (!userId) {
+    throw new AppError(StatusCodes.UNAUTHORIZED, "You are not authorized");
+  }
+
   const result = await AuthService.changePassword(userId, req.body);
 
   sendResponse(res, {
@@ -108,6 +124,7 @@ const refreshAccessToken = catchAsync(async (req, res) => {
 export const AuthController = {
   register,
   login,
+  staffLogin,
   verifyAccount,
   resendOtp,
   forgotPassword,

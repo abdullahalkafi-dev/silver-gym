@@ -7,14 +7,26 @@ import AppError from "errors/AppError";
 import { createJwtToken, verifyJwtToken } from "jwt";
 import {  OTPType } from "module/otp/otp.interface";
 import { OTPService } from "module/otp/otp.service";
+import { TRole } from "module/role/role.interface";
+import { StaffRepository } from "module/staff/staff.repository";
 import { LoginProvider, TUser } from "module/user/user.interface";
 import { UserRepository } from "module/user/user.repository";
-import { buildTokenPayload, getNormalizedIdentity, getOtpChannel } from "./auth.util";
+import {
+  buildStaffTokenPayload,
+  buildTokenPayload,
+  getNormalizedIdentity,
+  getOtpChannel,
+} from "./auth.util";
 import generateHashPassword from "util/generateHashPassword";
 
 type TLoginPayload = {
   email?: string;
   phone?: string;
+  password: string;
+};
+
+type TStaffLoginPayload = {
+  username: string;
   password: string;
 };
 
@@ -207,6 +219,90 @@ const login = async (payload: TLoginPayload) => {
     accessToken,
     refreshToken,
     user: sanitizedUser,
+  };
+};
+
+const staffLogin = async (payload: TStaffLoginPayload) => {
+  const username = payload.username.trim().toLowerCase();
+
+  const staff = await StaffRepository.findOne(
+    { username },
+    {
+      select: "+password",
+      populate: "roleId",
+    },
+  );
+
+  if (!staff) {
+    throw new AppError(StatusCodes.UNAUTHORIZED, "Invalid credentials");
+  }
+
+  if (!staff.isActive) {
+    throw new AppError(
+      StatusCodes.UNAUTHORIZED,
+      "Your account does not exist or is not active",
+    );
+  }
+
+  const staffWithPassword = staff as typeof staff & {
+    password?: string;
+    roleId?: TRole & { _id: Types.ObjectId };
+  };
+
+  const hashedPassword = staffWithPassword.password;
+
+  if (!hashedPassword) {
+    throw new AppError(
+      StatusCodes.UNAUTHORIZED,
+      "Password login is not available for this staff account",
+    );
+  }
+
+  const isPasswordMatched = await bcrypt.compare(payload.password, hashedPassword);
+
+  if (!isPasswordMatched) {
+    throw new AppError(StatusCodes.UNAUTHORIZED, "Invalid credentials");
+  }
+
+  const role = staffWithPassword.roleId;
+
+  if (!role) {
+    throw new AppError(
+      StatusCodes.UNAUTHORIZED,
+      "Staff role is missing. Please contact administrator",
+    );
+  }
+
+  const tokenPayload = buildStaffTokenPayload(
+    staff as typeof staff & { _id: Types.ObjectId },
+    role,
+  );
+
+  const accessToken = createJwtToken(
+    tokenPayload,
+    config.jwt.jwt_secret as string,
+    config.jwt.jwt_expire_in || "7d",
+  );
+
+  const refreshToken = createJwtToken(
+    tokenPayload,
+    (config.jwt.jwt_refresh_secret || config.jwt.jwt_secret) as string,
+    config.jwt.jwt_refresh_expire_in || "30d",
+  );
+
+  await StaffRepository.updateById(String(staff._id), { lastLogin: new Date() });
+
+  const staffObject = staff.toObject() as ReturnType<typeof staff.toObject> & {
+    password?: string;
+  };
+
+  const { password: _password, ...sanitizedStaff } = staffObject;
+
+  return {
+    accessToken,
+    refreshToken,
+    staff: sanitizedStaff,
+    permissions: tokenPayload.permissions,
   };
 };
 
@@ -433,6 +529,47 @@ const refreshAccessToken = async (payload: TRefreshAccessTokenPayload) => {
     throw new AppError(StatusCodes.UNAUTHORIZED, "Invalid or expired refresh token");
   }
 
+  if (decoded?.tokenType === "staff") {
+    const staff = await StaffRepository.findOne(
+      { _id: decoded.staffId },
+      { populate: "roleId" },
+    );
+
+    if (!staff) {
+      throw new AppError(StatusCodes.NOT_FOUND, "Staff not found");
+    }
+
+    if (!staff.isActive) {
+      throw new AppError(
+        StatusCodes.UNAUTHORIZED,
+        "Your account is not active",
+      );
+    }
+
+    const role = (staff as typeof staff & {
+      roleId?: TRole & { _id: Types.ObjectId };
+    }).roleId;
+
+    if (!role) {
+      throw new AppError(StatusCodes.NOT_FOUND, "Role not found");
+    }
+
+    const tokenPayload = buildStaffTokenPayload(
+      staff as typeof staff & { _id: Types.ObjectId },
+      role,
+    );
+
+    const newAccessToken = createJwtToken(
+      tokenPayload,
+      config.jwt.jwt_secret as string,
+      config.jwt.jwt_expire_in || "7d",
+    );
+
+    return {
+      accessToken: newAccessToken,
+    };
+  }
+
   const user = await UserRepository.findOne({ _id: decoded._id });
 
   if (!user) {
@@ -462,6 +599,7 @@ const refreshAccessToken = async (payload: TRefreshAccessTokenPayload) => {
 export const AuthService = {
   register,
   login,
+  staffLogin,
   verifyAccount,
   resendOtp,
   forgotPassword,
