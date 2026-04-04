@@ -19,6 +19,10 @@ const branchSchema = new Schema<TBranch>(
       type: String,
       trim: true,
     },
+    monthlyFeeAmount: {
+      type: Number,
+      min: 0,
+    },
     logo: {
       type: String,
     },

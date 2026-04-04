@@ -28,18 +28,30 @@ type TCreatePaymentPayload = {
   status?: PaymentStatus;
 };
 
+type TMonthlyFeeInput = number | false;
+
 type TCreateMemberPayload = Omit<
   TMember,
-  "branchId" | "photo" | "currentPackageId" | "createdAt" | "updatedAt"
+  | "branchId"
+  | "photo"
+  | "currentPackageId"
+  | "monthlyFeeAmount"
+  | "createdAt"
+  | "updatedAt"
 > & {
   currentPackageId?: string;
+  monthlyFeeAmount?: TMonthlyFeeInput;
   payment: TCreatePaymentPayload;
 };
 
 type TUpdateMemberPayload = Partial<
-  Omit<TMember, "branchId" | "photo" | "currentPackageId" | "createdAt" | "updatedAt">
+  Omit<
+    TMember,
+    "branchId" | "photo" | "currentPackageId" | "monthlyFeeAmount" | "createdAt" | "updatedAt"
+  >
 > & {
   currentPackageId?: string;
+  monthlyFeeAmount?: TMonthlyFeeInput;
 };
 
 type TAccessActor = {
@@ -252,7 +264,7 @@ const createMember = async (
   payload: TCreateMemberPayload,
   photoFile?: Express.Multer.File,
 ) => {
-  await resolveBranchAccess(branchId, actor, photoFile);
+  const branch = await resolveBranchAccess(branchId, actor, photoFile);
 
   const membershipStartDate = payload.membershipStartDate
     ? new Date(payload.membershipStartDate)
@@ -269,6 +281,8 @@ const createMember = async (
   let paymentType: PaymentType;
   let periodEnd: Date;
   let subTotal = 0;
+  let resolvedMonthlyFeeAmount: number | undefined;
+  let paidMonthsForPayment: number | undefined;
 
   if (payload.currentPackageId) {
     const packageDoc = await PackageRepository.findOne({
@@ -298,10 +312,11 @@ const createMember = async (
     periodEnd = membershipEndDate;
     nextPaymentDate = membershipEndDate;
     paymentType = PaymentType.PACKAGE;
+    paidMonthsForPayment = undefined;
 
     subTotal = packageDoc.amount + (paymentInput.admissionFee ?? 0);
   } else {
-    if (!payload.customMonthlyFee || !payload.monthlyFeeAmount) {
+    if (!payload.customMonthlyFee) {
       if (photoFile) {
         await unlinkFile(getPhotoRelativePath(photoFile.path));
       }
@@ -312,11 +327,30 @@ const createMember = async (
       );
     }
 
+    const monthlyFeeFromPayload =
+      typeof payload.monthlyFeeAmount === "number" ? payload.monthlyFeeAmount : undefined;
+    const monthlyFeeFromBranch =
+      typeof branch.monthlyFeeAmount === "number" ? branch.monthlyFeeAmount : undefined;
+
+    resolvedMonthlyFeeAmount = monthlyFeeFromPayload ?? monthlyFeeFromBranch;
+
+    if (resolvedMonthlyFeeAmount == null) {
+      if (photoFile) {
+        await unlinkFile(getPhotoRelativePath(photoFile.path));
+      }
+
+      throw new AppError(
+        StatusCodes.BAD_REQUEST,
+        "monthlyFeeAmount is required for custom monthly members. Set member monthlyFeeAmount or configure branch monthly fee",
+      );
+    }
+
     const paidMonths = payload.paidMonths && payload.paidMonths > 0 ? payload.paidMonths : 1;
+    paidMonthsForPayment = paidMonths;
     periodEnd = addMonths(membershipStartDate, paidMonths);
     nextPaymentDate = periodEnd;
     paymentType = PaymentType.MONTHLY;
-    subTotal = payload.monthlyFeeAmount * paidMonths + (paymentInput.admissionFee ?? 0);
+    subTotal = resolvedMonthlyFeeAmount * paidMonths + (paymentInput.admissionFee ?? 0);
   }
 
   const discount = paymentInput.discount ?? 0;
@@ -325,10 +359,19 @@ const createMember = async (
 
   const memberPayload = {
     ...payload,
-  } as Omit<TCreateMemberPayload, "payment" | "currentPackageId">;
+  } as Omit<TCreateMemberPayload, "payment" | "currentPackageId" | "monthlyFeeAmount"> & {
+    monthlyFeeAmount?: number;
+  };
 
   delete (memberPayload as Record<string, unknown>).payment;
   delete (memberPayload as Record<string, unknown>).currentPackageId;
+
+  if (payload.customMonthlyFee) {
+    memberPayload.customMonthlyFee = true;
+    memberPayload.monthlyFeeAmount = resolvedMonthlyFeeAmount;
+  } else {
+    delete (memberPayload as Record<string, unknown>).monthlyFeeAmount;
+  }
 
   const memberData: TMember = {
     ...memberPayload,
@@ -352,7 +395,7 @@ const createMember = async (
     paymentType,
     periodStart: membershipStartDate,
     periodEnd,
-    paidMonths: payload.paidMonths,
+    paidMonths: paidMonthsForPayment,
     year: membershipStartDate.getFullYear(),
     subTotal,
     discount,
@@ -442,7 +485,7 @@ const updateMember = async (
   payload: TUpdateMemberPayload,
   photoFile?: Express.Multer.File,
 ) => {
-  await resolveBranchAccess(branchId, actor, photoFile);
+  const branch = await resolveBranchAccess(branchId, actor, photoFile);
 
   const member = await MemberRepository.findOne({
     _id: new Types.ObjectId(memberId),
@@ -462,6 +505,12 @@ const updateMember = async (
   };
 
   const unsetPayload: Record<string, 1> = {};
+  const branchMonthlyFeeAmount =
+    typeof branch.monthlyFeeAmount === "number" ? branch.monthlyFeeAmount : undefined;
+
+  if (payload.monthlyFeeAmount === false) {
+    delete updatePayload.monthlyFeeAmount;
+  }
 
   if (payload.currentPackageId) {
     const packageDoc = await PackageRepository.findOne({
@@ -495,15 +544,62 @@ const updateMember = async (
     unsetPayload.monthlyFeeAmount = 1;
   }
 
-  if (payload.customMonthlyFee === true) {
-    if (!payload.monthlyFeeAmount && !member.monthlyFeeAmount) {
+  if (
+    !payload.currentPackageId &&
+    typeof payload.monthlyFeeAmount === "number" &&
+    payload.customMonthlyFee !== true &&
+    member.customMonthlyFee !== true
+  ) {
+    if (photoFile) {
+      await unlinkFile(getPhotoRelativePath(photoFile.path));
+    }
+
+    throw new AppError(
+      StatusCodes.BAD_REQUEST,
+      "monthlyFeeAmount can only be set for custom monthly members",
+    );
+  }
+
+  if (
+    !payload.currentPackageId &&
+    payload.monthlyFeeAmount === false &&
+    payload.customMonthlyFee !== true &&
+    member.customMonthlyFee !== true
+  ) {
+    if (photoFile) {
+      await unlinkFile(getPhotoRelativePath(photoFile.path));
+    }
+
+    throw new AppError(
+      StatusCodes.BAD_REQUEST,
+      "monthlyFeeAmount=false can only be used for custom monthly members",
+    );
+  }
+
+  const shouldApplyMonthlyFlow =
+    payload.customMonthlyFee === true ||
+    (payload.monthlyFeeAmount === false && member.customMonthlyFee === true);
+
+  if (shouldApplyMonthlyFlow) {
+    const requestedBranchFallback = payload.monthlyFeeAmount === false;
+    const requestedMonthlyFeeAmount =
+      typeof payload.monthlyFeeAmount === "number" ? payload.monthlyFeeAmount : undefined;
+
+    const resolvedMonthlyFeeAmount =
+      requestedMonthlyFeeAmount ??
+      (!requestedBranchFallback && typeof member.monthlyFeeAmount === "number"
+        ? member.monthlyFeeAmount
+        : undefined) ??
+      branchMonthlyFeeAmount;
+
+    if (resolvedMonthlyFeeAmount == null) {
       if (photoFile) {
         await unlinkFile(getPhotoRelativePath(photoFile.path));
       }
 
       throw new AppError(
         StatusCodes.BAD_REQUEST,
-        "monthlyFeeAmount is required for custom monthly members",
+        "monthlyFeeAmount is required for custom monthly members. Set member monthlyFeeAmount or configure branch monthly fee",
       );
     }
 
@@ -528,6 +624,7 @@ const updateMember = async (
       !member.nextPaymentDate;
 
     updatePayload.customMonthlyFee = true;
+    updatePayload.monthlyFeeAmount = resolvedMonthlyFeeAmount;
     updatePayload.membershipStartDate = membershipStartDate;
 
     if (hasPaidMonthsUpdate || isSwitchingToMonthly) {

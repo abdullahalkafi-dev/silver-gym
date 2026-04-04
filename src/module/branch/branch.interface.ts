@@ -4,6 +4,7 @@ export interface TBranch {
 	businessId: Types.ObjectId;
 	branchName: string;
 	branchAddress?: string;
+	monthlyFeeAmount?: number;
 	logo?: string | null;
 	favicon?: string | null;
 	isDefault?: boolean;

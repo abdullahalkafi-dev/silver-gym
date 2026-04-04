@@ -1,9 +1,26 @@
 import { Request, Response } from "express";
 import { StatusCodes } from "http-status-codes";
 import { Types } from "mongoose";
+import AppError from "../../errors/AppError";
 import catchAsync from "../../shared/catchAsync";
 import sendResponse from "../../shared/sendResponse";
 import { BranchService } from "./branch.service";
+
+const resolveActor = (req: Request) => {
+  if (req.user?._id) {
+    return {
+      userId: new Types.ObjectId(req.user._id),
+    };
+  }
+
+  if (req.staff) {
+    return {
+      staff: req.staff,
+    };
+  }
+
+  throw new AppError(StatusCodes.UNAUTHORIZED, "You are not authorized");
+};
 
 /**
  * Create new branch
@@ -97,9 +114,57 @@ const update = catchAsync(async (req: Request, res: Response) => {
   });
 });
 
+/**
+ * Get branch monthly fee
+ * GET /api/v1/branches/:businessId/branches/:branchId/monthly-fee
+ */
+const getMonthlyFee = catchAsync(async (req: Request, res: Response) => {
+  const businessId = req.params.businessId as string;
+  const branchId = req.params.branchId as string;
+
+  const result = await BranchService.getBranchMonthlyFee(
+    businessId,
+    branchId,
+    resolveActor(req)
+  );
+
+  sendResponse(res, {
+    statusCode: StatusCodes.OK,
+    success: true,
+    message: "Branch monthly fee retrieved successfully",
+    data: result,
+  });
+});
+
+/**
+ * Update branch monthly fee
+ * PATCH /api/v1/branches/:businessId/branches/:branchId/monthly-fee
+ */
+const updateMonthlyFee = catchAsync(async (req: Request, res: Response) => {
+  const businessId = req.params.businessId as string;
+  const branchId = req.params.branchId as string;
+  const payload = req.body.data || req.body;
+
+  const result = await BranchService.updateBranchMonthlyFee(
+    businessId,
+    branchId,
+    resolveActor(req),
+    payload.monthlyFeeAmount
+  );
+
+  sendResponse(res, {
+    statusCode: StatusCodes.OK,
+    success: true,
+    message: "Branch monthly fee updated successfully",
+    data: result,
+  });
+});
+
 export const BranchController = {
   create,
   getAll,
   getDefault,
   update,
+  getMonthlyFee,
+  updateMonthlyFee,
 };

@@ -6,6 +6,7 @@ import { BranchRepository } from "./branch.repository";
 import { BusinessProfileRepository } from "../businessProfile/businessProfile.repository";
 import unlinkFile from "../../shared/unlinkFile";
 import { RoleService } from "../role/role.service";
+import { TStaff } from "../staff/staff.interface";
 
 /**
  * Extract branch logo filename from file path (relative path)
@@ -16,6 +17,11 @@ const getLogoRelativePath = (fullPath: string): string => {
 };
 
 type CreateBranchPayload = Omit<TBranch, "_id" | "createdAt" | "updatedAt">;
+
+type TBranchAccessActor = {
+  userId?: Types.ObjectId;
+  staff?: TStaff;
+};
 
 /**
  * Create a new branch for a business with ownership verification
@@ -72,6 +78,57 @@ const createBranch = async (
   RoleService.initializeBranchRoles(branch._id.toString())
 
   return branch;
+};
+
+const resolveBranchMonthlyFeeAccess = async (
+  businessId: string,
+  branchId: string,
+  actor: TBranchAccessActor
+) => {
+  const branch = await BranchRepository.findOne({
+    _id: branchId,
+    businessId: new Types.ObjectId(businessId),
+  });
+
+  if (!branch) {
+    throw new AppError(
+      StatusCodes.NOT_FOUND,
+      "Branch not found or does not belong to this business"
+    );
+  }
+
+  if (actor.userId) {
+    const business = await BusinessProfileRepository.findOne({
+      _id: new Types.ObjectId(businessId),
+      userId: actor.userId,
+    });
+
+    if (!business) {
+      throw new AppError(
+        StatusCodes.FORBIDDEN,
+        "You do not have permission to access this branch"
+      );
+    }
+
+    return branch;
+  }
+
+  if (actor.staff) {
+    if (!actor.staff.isActive) {
+      throw new AppError(StatusCodes.FORBIDDEN, "Staff account is inactive");
+    }
+
+    if (String(actor.staff.branchId) !== String(branch._id)) {
+      throw new AppError(
+        StatusCodes.FORBIDDEN,
+        "You do not have permission to access this branch"
+      );
+    }
+
+    return branch;
+  }
+
+  throw new AppError(StatusCodes.UNAUTHORIZED, "You are not authorized");
 };
 
 /**
@@ -218,9 +275,48 @@ const updateBranch = async (
   return updatedBranch;
 };
 
+const getBranchMonthlyFee = async (
+  businessId: string,
+  branchId: string,
+  actor: TBranchAccessActor
+) => {
+  const branch = await resolveBranchMonthlyFeeAccess(businessId, branchId, actor);
+
+  return {
+    branchId: branch._id,
+    branchName: branch.branchName,
+    monthlyFeeAmount:
+      typeof branch.monthlyFeeAmount === "number" ? branch.monthlyFeeAmount : null,
+  };
+};
+
+const updateBranchMonthlyFee = async (
+  businessId: string,
+  branchId: string,
+  actor: TBranchAccessActor,
+  monthlyFeeAmount: number
+) => {
+  await resolveBranchMonthlyFeeAccess(businessId, branchId, actor);
+
+  const updatedBranch = await BranchRepository.updateById(branchId, {
+    monthlyFeeAmount,
+  });
+
+  if (!updatedBranch) {
+    throw new AppError(
+      StatusCodes.INTERNAL_SERVER_ERROR,
+      "Failed to update branch monthly fee"
+    );
+  }
+
+  return updatedBranch;
+};
+
 export const BranchService = {
   createBranch,
   getBranches,
   getDefaultBranch,
   updateBranch,
+  getBranchMonthlyFee,
+  updateBranchMonthlyFee,
 };

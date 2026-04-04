@@ -31,6 +31,11 @@ const createPaymentSchema = z
   })
   .strict();
 
+const monthlyFeeInputSchema = z.union([
+  z.number().nonnegative(),
+  z.literal(false),
+]);
+
 const createMemberDto = z.object({
   data: z
     .object({
@@ -55,7 +60,7 @@ const createMemberDto = z.object({
       currentPackageId: z.string().trim().optional(),
       membershipStartDate: z.coerce.date().optional(),
       customMonthlyFee: z.boolean().optional(),
-      monthlyFeeAmount: z.number().nonnegative().optional(),
+      monthlyFeeAmount: monthlyFeeInputSchema.optional(),
       paidMonths: z.number().int().min(1).optional(),
       payment: createPaymentSchema,
       metadata: z.record(z.string(), z.unknown()).optional(),
@@ -78,14 +83,6 @@ const createMemberDto = z.object({
           code: "custom",
           path: ["customMonthlyFee"],
           message: "Package and custom monthly fee cannot be used together",
-        });
-      }
-
-      if (hasMonthly && data.monthlyFeeAmount == null) {
-        ctx.addIssue({
-          code: "custom",
-          path: ["monthlyFeeAmount"],
-          message: "monthlyFeeAmount is required when customMonthlyFee is true",
         });
       }
 
@@ -122,20 +119,12 @@ const updateMemberDto = z.object({
       membershipEndDate: z.coerce.date().optional(),
       nextPaymentDate: z.coerce.date().optional(),
       customMonthlyFee: z.boolean().optional(),
-      monthlyFeeAmount: z.number().nonnegative().optional(),
+      monthlyFeeAmount: monthlyFeeInputSchema.optional(),
       paidMonths: z.number().int().min(0).optional(),
       metadata: z.record(z.string(), z.unknown()).optional(),
     })
     .strict()
     .superRefine((data, ctx) => {
-      if (data.customMonthlyFee === true && data.monthlyFeeAmount == null) {
-        ctx.addIssue({
-          code: "custom",
-          path: ["monthlyFeeAmount"],
-          message: "monthlyFeeAmount is required when customMonthlyFee is true",
-        });
-      }
-
       if (data.customMonthlyFee === false && data.monthlyFeeAmount != null) {
         ctx.addIssue({
           code: "custom",

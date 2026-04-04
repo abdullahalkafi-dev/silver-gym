@@ -75,6 +75,29 @@ Monthly path example:
 }
 ```
 
+Monthly path with branch fallback:
+
+```json
+{
+  "data": {
+    "fullName": "Jane Doe",
+    "customMonthlyFee": true,
+    "monthlyFeeAmount": false,
+    "paidMonths": 1,
+    "payment": {
+      "paymentMethod": "bkash",
+      "paidTotal": 1500
+    }
+  }
+}
+```
+
+Notes:
+
+- `monthlyFeeAmount: false` means: use branch-level default monthly fee.
+- Fallback is supported for member create/update flows.
+- If `customMonthlyFee` is `true` and no member fee + no branch fee exists, API returns `400`.
+
 ## Member import start request (new)
 
 Route: `POST /api/v1/members/import/:branchId/google-sheet`

@@ -6,9 +6,24 @@ Routes define endpoint path + HTTP method + middleware chain + controller handle
 
 - `src/module/auth/auth.route.ts`
 - `src/module/logs/logs.route.ts`
+- `src/module/branch/branch.route.ts`
 - `src/module/member/member.route.ts`
 - `src/module/staff/staff.route.ts`
 - mounted from `src/routes/index.ts`
+
+## Branch fee routes (new)
+
+- `GET /api/v1/branches/:businessId/branches/:branchId/monthly-fee`
+	- Get branch monthly fee.
+	- Access: owner or staff with `canViewBilling`.
+- `PATCH /api/v1/branches/:businessId/branches/:branchId/monthly-fee`
+	- Update branch monthly fee.
+	- Access: owner or staff with `canEditBilling`.
+
+Notes:
+
+- Existing branch update route still works for owner updates.
+- Member create/update can use branch fee fallback when `monthlyFeeAmount=false`.
 
 ## Member routes (new)
 
