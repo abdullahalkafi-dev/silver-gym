@@ -16,7 +16,6 @@ import {
 import { PaymentRepository } from "../payment/payment.repository";
 import { TStaff } from "../staff/staff.interface";
 import { TMember } from "./member.interface";
-import { Member } from "./member.model";
 import { MemberRepository } from "./member.repository";
 
 type TCreatePaymentPayload = {
@@ -434,7 +433,7 @@ const getMembers = async (
   }
 
   const queryBuilder = new QueryBuilder<TMember>(
-    Member.find(baseFilter),
+    MemberRepository.findMany(baseFilter),
     sanitizedQuery,
     {
       filterableTextFields: ["fullName", "email", "contact", "memberId", "barcode"],

@@ -9,7 +9,6 @@ import { MemberRepository } from "../member/member.repository";
 import { PackageRepository } from "../package/package.repository";
 import { TStaff } from "../staff/staff.interface";
 import { PaymentStatus, TPayment } from "./payment.interface";
-import { Payment } from "./payment.model";
 import { PaymentRepository } from "./payment.repository";
 
 type TAccessActor = {
@@ -275,7 +274,7 @@ const getAllPayments = async (
   await resolveBranchAccess(branchId, actor);
 
   const paymentQuery = new QueryBuilder(
-    Payment.find({ branchId: new Types.ObjectId(branchId) }),
+    PaymentRepository.findMany({ branchId: new Types.ObjectId(branchId) }),
     query,
   )
     .search(["invoiceNo", "memberName", "packageName"])

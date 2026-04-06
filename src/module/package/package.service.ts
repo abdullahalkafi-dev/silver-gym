@@ -7,7 +7,6 @@ import { BranchRepository } from "../branch/branch.repository";
 import { BusinessProfileRepository } from "../businessProfile/businessProfile.repository";
 import { TStaff } from "../staff/staff.interface";
 import { TPackage } from "./package.interface";
-import { Package } from "./package.model";
 import { PackageRepository } from "./package.repository";
 
 type TAccessActor = {
@@ -120,7 +119,7 @@ const getAllPackages = async (
   await resolveBranchAccess(branchId, actor);
 
   const packageQuery = new QueryBuilder(
-    Package.find({ branchId: new Types.ObjectId(branchId) }),
+    PackageRepository.findMany({ branchId: new Types.ObjectId(branchId) }),
     query,
   )
     .search(["title", "description"])
