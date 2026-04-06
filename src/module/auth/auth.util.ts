@@ -13,6 +13,11 @@ export type TStaffPermissionSnapshot = {
   canAddPackage: boolean;
   canEditPackage: boolean;
   canDeletePackage: boolean;
+  canViewPayments: boolean;
+  canAddPayment: boolean;
+  canEditPayment: boolean;
+  canDeletePayment: boolean;
+  canRefundPayment: boolean;
   canViewBilling: boolean;
   canAddBilling: boolean;
   canEditBilling: boolean;
@@ -92,6 +97,11 @@ export const getStaffPermissionSnapshot = (role: TRole): TStaffPermissionSnapsho
   canAddPackage: role.canAddPackage ?? false,
   canEditPackage: role.canEditPackage ?? false,
   canDeletePackage: role.canDeletePackage ?? false,
+  canViewPayments: role.canViewPayments ?? false,
+  canAddPayment: role.canAddPayment ?? false,
+  canEditPayment: role.canEditPayment ?? false,
+  canDeletePayment: role.canDeletePayment ?? false,
+  canRefundPayment: role.canRefundPayment ?? false,
   canViewBilling: role.canViewBilling ?? false,
   canAddBilling: role.canAddBilling ?? false,
   canEditBilling: role.canEditBilling ?? false,

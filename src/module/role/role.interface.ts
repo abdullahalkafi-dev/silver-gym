@@ -11,6 +11,11 @@ export interface TRole {
 	canAddPackage?: boolean;
 	canEditPackage?: boolean;
 	canDeletePackage?: boolean;
+	canViewPayments?: boolean;
+	canAddPayment?: boolean;
+	canEditPayment?: boolean;
+	canDeletePayment?: boolean;
+	canRefundPayment?: boolean;
 	canViewBilling?: boolean;
 	canAddBilling?: boolean;
 	canEditBilling?: boolean;
