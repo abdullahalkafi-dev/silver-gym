@@ -7,18 +7,6 @@ import AppError from "../../errors/AppError";
 import { errorLogger, logger } from "../../logger/logger";
 import { BranchRepository } from "../branch/branch.repository";
 import { BusinessProfileRepository } from "../businessProfile/businessProfile.repository";
-import {
-  PackageDurationType,
-  TPackage,
-} from "../package/package.interface";
-import { PackageRepository } from "../package/package.repository";
-import {
-  PaymentMethod,
-  PaymentStatus,
-  PaymentType,
-  TPayment,
-} from "../payment/payment.interface";
-import { PaymentRepository } from "../payment/payment.repository";
 import { TStaff } from "../staff/staff.interface";
 import { TMember } from "./member.interface";
 import {
@@ -51,15 +39,6 @@ type TImportMetricsQuery = {
 
 type TRawImportRow = Record<string, unknown>;
 
-type TPackageSnapshot = {
-  _id: Types.ObjectId;
-  legacyId?: TPackage["legacyId"];
-  title: TPackage["title"];
-  duration: TPackage["duration"];
-  durationType: TPackage["durationType"];
-  amount: TPackage["amount"];
-};
-
 type TProcessRowResult = {
   type: "success" | "failed";
   warning?: TMemberImportFailureRow;
@@ -77,37 +56,6 @@ const activeBranchImports = new Set<string>();
 const queuedBatchIds = new Set<string>();
 const importQueue: string[] = [];
 let queueRunning = false;
-
-const PAYMENT_METHOD_MAP: Record<string, PaymentMethod> = {
-  cash: PaymentMethod.CASH,
-  card: PaymentMethod.CARD,
-  bkash: PaymentMethod.Bkash,
-  nagad: PaymentMethod.Nagad,
-  rocket: PaymentMethod.Rocket,
-  bank_transfer: PaymentMethod.BankTransfer,
-  banktransfer: PaymentMethod.BankTransfer,
-  other: PaymentMethod.Other,
-};
-
-const PAYMENT_STATUS_MAP: Record<string, PaymentStatus> = {
-  pending: PaymentStatus.PENDING,
-  paid: PaymentStatus.PAID,
-  partial: PaymentStatus.PARTIAL,
-  due: PaymentStatus.DUE,
-  cancelled: PaymentStatus.CANCELLED,
-  canceled: PaymentStatus.CANCELLED,
-  refunded: PaymentStatus.REFUNDED,
-};
-
-const TRAINING_GOALS = new Set([
-  "Yoga",
-  "Cardio Endurance",
-  "Bodybuilding",
-  "Muscle Gain",
-  "Flexibility & Mobility",
-  "General Fitness",
-  "Strength Training",
-]);
 
 const IMPORT_STATUS_SET = new Set<TMemberImportStatus>([
   "pending",
@@ -173,41 +121,6 @@ const toNumberValue = (value: unknown): number | undefined => {
   return Number.isFinite(parsed) ? parsed : undefined;
 };
 
-const toBooleanValue = (value: unknown): boolean | undefined => {
-  if (value == null) {
-    return undefined;
-  }
-
-  if (typeof value === "boolean") {
-    return value;
-  }
-
-  const normalized = String(value).trim().toLowerCase();
-
-  if (["true", "yes", "1", "active"].includes(normalized)) {
-    return true;
-  }
-
-  if (["false", "no", "0", "inactive"].includes(normalized)) {
-    return false;
-  }
-
-  return undefined;
-};
-
-const toDateValue = (value: unknown): Date | undefined => {
-  if (value == null) {
-    return undefined;
-  }
-
-  if (value instanceof Date && !Number.isNaN(value.getTime())) {
-    return value;
-  }
-
-  const parsed = new Date(String(value));
-  return Number.isNaN(parsed.getTime()) ? undefined : parsed;
-};
-
 const pickValue = (row: TRawImportRow, keys: string[]): unknown => {
   for (const key of keys) {
     if (key in row) {
@@ -218,92 +131,85 @@ const pickValue = (row: TRawImportRow, keys: string[]): unknown => {
   return undefined;
 };
 
-const parsePaymentMethod = (value: unknown): PaymentMethod | undefined => {
-  const parsed = toStringValue(value);
-  if (!parsed) {
-    return undefined;
-  }
+const parseFlexibleDate = (value: unknown): Date | undefined => {
+  if (value == null) return undefined;
+  
+  const str = String(value).trim();
+  if (!str) return undefined;
 
-  return PAYMENT_METHOD_MAP[normalizeKey(parsed)];
+  // Try standard Date parsing first
+  const standard = new Date(str);
+  if (!Number.isNaN(standard.getTime())) return standard;
+
+  // Try "Month-Year" or "Month Year" format (e.g., "October-2026", "June 2026")
+  const monthYearMatch = str.match(/^([a-zA-Z]+)[-\s]?(\d{4})$/);
+  if (monthYearMatch && monthYearMatch[1] && monthYearMatch[2]) {
+    const monthStr = monthYearMatch[1];
+    const yearStr = monthYearMatch[2];
+    const months = ['january', 'february', 'march', 'april', 'may', 'june',
+                    'july', 'august', 'september', 'october', 'november', 'december'];
+    const monthIndex = months.indexOf(monthStr.toLowerCase());
+    if (monthIndex >= 0) {
+      return new Date(parseInt(yearStr), monthIndex, 1);
+    }
+  }
+  
+  return undefined;
 };
 
-const parsePaymentStatus = (value: unknown): PaymentStatus | undefined => {
-  const parsed = toStringValue(value);
-  if (!parsed) {
-    return undefined;
-  }
-
-  return PAYMENT_STATUS_MAP[normalizeKey(parsed)];
+const validateUniqueMemberIds = (
+  rows: TRawImportRow[]
+): { valid: boolean; duplicates: { memberId: string; rowIndices: number[] }[] } => {
+  const memberIdMap = new Map<string, number[]>();
+  
+  rows.forEach((row, index) => {
+    const memberId = toStringValue(pickValue(row, ['member_id', 'memberid']));
+    if (memberId) {
+      const existing = memberIdMap.get(memberId) || [];
+      existing.push(index + 2); // +2 for header row offset
+      memberIdMap.set(memberId, existing);
+    }
+  });
+  
+  const duplicates: { memberId: string; rowIndices: number[] }[] = [];
+  memberIdMap.forEach((indices, memberId) => {
+    if (indices.length > 1) {
+      duplicates.push({ memberId, rowIndices: indices });
+    }
+  });
+  
+  return { valid: duplicates.length === 0, duplicates };
 };
 
-const parseTrainingGoals = (value: unknown): TMember["trainingGoals"] => {
-  const parsed = toStringValue(value);
-
-  if (!parsed) {
-    return [];
+const calculateDueAmount = (
+  nextPaymentDate: Date,
+  monthlyFee: number,
+  sheetDueAmount: number,
+  isActive: boolean
+): { dueAmount: number; updatedNextPaymentDate: Date } => {
+  const now = new Date();
+  const currentMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+  
+  // If next payment is in the future or member is inactive, use sheet's due amount
+  if (nextPaymentDate >= currentMonthStart || !isActive) {
+    return { 
+      dueAmount: sheetDueAmount,
+      updatedNextPaymentDate: nextPaymentDate 
+    };
   }
-
-  return parsed
-    .split(",")
-    .map((item) => item.trim())
-    .filter((item) => TRAINING_GOALS.has(item)) as TMember["trainingGoals"];
-};
-
-const addDuration = (
-  date: Date,
-  duration: number,
-  durationType: PackageDurationType,
-): Date => {
-  const nextDate = new Date(date);
-
-  switch (durationType) {
-    case PackageDurationType.DAY:
-      nextDate.setDate(nextDate.getDate() + duration);
-      break;
-    case PackageDurationType.WEEK:
-      nextDate.setDate(nextDate.getDate() + duration * 7);
-      break;
-    case PackageDurationType.MONTH:
-      nextDate.setMonth(nextDate.getMonth() + duration);
-      break;
-    case PackageDurationType.YEAR:
-      nextDate.setFullYear(nextDate.getFullYear() + duration);
-      break;
-    case PackageDurationType.CUSTOM:
-      nextDate.setDate(nextDate.getDate() + duration);
-      break;
-    default:
-      nextDate.setMonth(nextDate.getMonth() + duration);
-      break;
-  }
-
-  return nextDate;
-};
-
-const addMonths = (date: Date, months: number): Date => {
-  const nextDate = new Date(date);
-  nextDate.setMonth(nextDate.getMonth() + months);
-  return nextDate;
-};
-
-const computePaymentStatus = (
-  dueAmount: number,
-  paidTotal: number,
-  requestedStatus?: PaymentStatus,
-): PaymentStatus => {
-  if (requestedStatus) {
-    return requestedStatus;
-  }
-
-  if (dueAmount <= 0) {
-    return PaymentStatus.PAID;
-  }
-
-  if (paidTotal <= 0) {
-    return PaymentStatus.DUE;
-  }
-
-  return PaymentStatus.PARTIAL;
+  
+  // Calculate FULL months from nextPaymentDate to current month
+  const monthsDiff = (now.getFullYear() - nextPaymentDate.getFullYear()) * 12 +
+                     (now.getMonth() - nextPaymentDate.getMonth());
+  
+  // Due = (full months × monthlyFee) + sheet's initial due
+  const accumulatedDue = monthsDiff * monthlyFee;
+  const totalDue = accumulatedDue + sheetDueAmount;
+  
+  // Update next payment to current month + 1
+  const updatedNextPaymentDate = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+  
+  return { dueAmount: Math.max(0, totalDue), updatedNextPaymentDate };
 };
 
 const resolveBranchAccess = async (branchId: string, actor: TImportActor) => {
@@ -412,45 +318,6 @@ const getSheetRows = async (
     .filter((row) => Object.values(row).some((value) => toStringValue(value) !== undefined));
 };
 
-const createPackageLookup = async (branchId: string) => {
-  const packageDocs = (await PackageRepository.findMany(
-    {
-      branchId: new Types.ObjectId(branchId),
-      isActive: true,
-    },
-    {
-      select: {
-        _id: 1,
-        legacyId: 1,
-        title: 1,
-        duration: 1,
-        durationType: 1,
-        amount: 1,
-      },
-    },
-  ).lean()) as (TPackageSnapshot & { _id: Types.ObjectId })[];
-
-  const byId = new Map<string, TPackageSnapshot>();
-  const byLegacy = new Map<string, TPackageSnapshot>();
-  const byTitle = new Map<string, TPackageSnapshot>();
-
-  packageDocs.forEach((item) => {
-    byId.set(String(item._id), item);
-
-    if (item.legacyId) {
-      byLegacy.set(normalizeKey(item.legacyId), item);
-    }
-
-    byTitle.set(normalizeKey(item.title), item);
-  });
-
-  return {
-    byId,
-    byLegacy,
-    byTitle,
-  };
-};
-
 const buildMemberUpsertFilter = (
   branchObjectId: Types.ObjectId,
   row: {
@@ -534,316 +401,112 @@ const persistMember = async (
   return updated;
 };
 
-const persistPayment = async (
-  paymentData: Omit<TPayment, "memberName">,
-  memberName: string,
-) => {
-  const filter = {
-    branchId: paymentData.branchId,
-    memberId: paymentData.memberId,
-    importBatchId: paymentData.importBatchId,
-  };
-
-  const existing = await PaymentRepository.findOne(filter);
-
-  if (!existing) {
-    return PaymentRepository.create({
-      ...paymentData,
-      memberName,
-    } as TPayment);
-  }
-
-  const updated = await PaymentRepository.updateById(String(existing._id), {
-    ...paymentData,
-    memberName,
-  });
-
-  if (!updated) {
-    throw new AppError(StatusCodes.INTERNAL_SERVER_ERROR, "Failed to update imported payment");
-  }
-
-  return updated;
-};
-
 const processRow = async (
   branchId: string,
   batchId: string,
   rowIndex: number,
   row: TRawImportRow,
-  packageLookup: Awaited<ReturnType<typeof createPackageLookup>>,
+  branchMonthlyFee: number,
 ): Promise<TProcessRowResult> => {
   const branchObjectId = new Types.ObjectId(branchId);
 
+  // Required: name
   const fullName = toStringValue(
     pickValue(row, ["full_name", "fullname", "name", "member_name"]),
   );
-
   if (!fullName) {
     return {
       type: "failed",
-      failure: {
-        rowIndex,
-        reason: "fullName is required",
-        raw: row,
-      },
+      failure: { rowIndex, reason: "Name is required", raw: row },
     };
   }
 
-  const legacyId = toStringValue(pickValue(row, ["legacy_id", "legacyid"]));
-  const memberId = toStringValue(pickValue(row, ["member_id", "memberid"]));
-  const barcode = toStringValue(pickValue(row, ["barcode", "bar_code"]));
+  // Required: phone OR email
   const contact = toStringValue(
     pickValue(row, ["contact", "phone", "mobile", "phone_number"]),
   );
   const email = toStringValue(pickValue(row, ["email", "mail"]))?.toLowerCase();
-
-  const packageIdInput = toStringValue(
-    pickValue(row, ["package_id", "current_package_id", "packageid"]),
-  );
-  const packageLegacyInput = toStringValue(
-    pickValue(row, ["package_legacy_id", "packagelegacyid"]),
-  );
-  const packageNameInput = toStringValue(
-    pickValue(row, ["package_name", "package", "package_title"]),
-  );
-
-  let selectedPackage: TPackageSnapshot | undefined;
-
-  if (packageIdInput) {
-    selectedPackage = packageLookup.byId.get(packageIdInput);
-  }
-
-  if (!selectedPackage && packageLegacyInput) {
-    selectedPackage = packageLookup.byLegacy.get(normalizeKey(packageLegacyInput));
-  }
-
-  if (!selectedPackage && packageNameInput) {
-    selectedPackage = packageLookup.byTitle.get(normalizeKey(packageNameInput));
-  }
-
-  if ((packageIdInput || packageLegacyInput || packageNameInput) && !selectedPackage) {
+  
+  if (!contact && !email) {
     return {
       type: "failed",
-      failure: {
-        rowIndex,
-        reason: "Package reference not found for branch",
-        memberName: fullName,
-        raw: row,
-      },
+      failure: { rowIndex, reason: "Phone number or email is required", raw: row },
     };
   }
 
-  const monthlyFeeAmount = toNumberValue(
-    pickValue(row, ["monthly_fee_amount", "monthly_fee", "monthlyamount"]),
+  // MemberId (validated for uniqueness at batch level - both sheet and DB)
+  const memberId = toStringValue(pickValue(row, ["member_id", "memberid"]));
+
+  // Monthly fee: use sheet value, fallback to branch default
+  const sheetMonthlyFee = toNumberValue(
+    pickValue(row, ["monthly_fee", "monthly_fee_amount", "monthlyamount"]),
   );
-  const customMonthlyFlag = toBooleanValue(
-    pickValue(row, ["custom_monthly_fee", "custommonthlyfee", "monthly_member"]),
-  );
-
-  const wantsMonthly =
-    customMonthlyFlag === true ||
-    (monthlyFeeAmount !== undefined && Number.isFinite(monthlyFeeAmount));
-
-  const paymentMethod = parsePaymentMethod(
-    pickValue(row, ["payment_method", "paymentmethod"]),
-  );
-  const paidTotal = toNumberValue(
-    pickValue(row, ["paid_total", "paid_amount", "paid"]),
-  );
-  const discount = toNumberValue(pickValue(row, ["discount"]));
-  const admissionFee = toNumberValue(
-    pickValue(row, ["admission_fee", "admissionfee", "registration_fee"]),
-  );
-  const paymentDate = toDateValue(pickValue(row, ["payment_date", "paymentdate"]));
-  const paymentStatus = parsePaymentStatus(
-    pickValue(row, ["payment_status", "status"]),
-  );
-
-  const hasPaymentInfo = paymentMethod !== undefined && paidTotal !== undefined;
-
-  const startDate =
-    toDateValue(pickValue(row, ["membership_start_date", "start_date", "startdate"])) ||
-    new Date();
-
-  const paidMonthsRaw = toNumberValue(pickValue(row, ["paid_months", "months"]));
-  const paidMonths = paidMonthsRaw && paidMonthsRaw > 0 ? Math.floor(paidMonthsRaw) : 1;
-
-  const warningMessages: string[] = [];
-
-  let currentPackageId: Types.ObjectId | undefined;
-  let currentPackageName: string | undefined;
-  let membershipEndDate: Date | undefined;
-  let nextPaymentDate: Date | undefined;
-  let paymentType: PaymentType | undefined;
-  let periodEnd: Date | undefined;
-  let subTotal = 0;
-  let packageDuration: number | undefined;
-  let packageDurationType: string | undefined;
-
-  if (selectedPackage) {
-    currentPackageId = selectedPackage._id as Types.ObjectId;
-    currentPackageName = selectedPackage.title;
-    membershipEndDate = addDuration(
-      startDate,
-      selectedPackage.duration,
-      selectedPackage.durationType,
-    );
-    nextPaymentDate = membershipEndDate;
-    paymentType = PaymentType.PACKAGE;
-    periodEnd = membershipEndDate;
-    packageDuration = selectedPackage.duration;
-    packageDurationType = selectedPackage.durationType;
-    subTotal = selectedPackage.amount + (admissionFee || 0);
-  } else if (wantsMonthly && monthlyFeeAmount && monthlyFeeAmount > 0) {
-    paymentType = PaymentType.MONTHLY;
-    periodEnd = addMonths(startDate, paidMonths);
-    nextPaymentDate = periodEnd;
-    subTotal = monthlyFeeAmount * paidMonths + (admissionFee || 0);
-  } else {
-    warningMessages.push("No valid package or monthly plan found; member saved as draft");
+  const monthlyFeeAmount = sheetMonthlyFee ?? branchMonthlyFee;
+  
+  if (!monthlyFeeAmount || monthlyFeeAmount <= 0) {
+    return {
+      type: "failed",
+      failure: { rowIndex, reason: "Monthly fee is required (not in sheet or branch settings)", raw: row },
+    };
   }
 
-  if (!hasPaymentInfo) {
-    warningMessages.push("Payment information missing; member saved as inactive draft");
+  // Due amount from sheet (initial due)
+  const sheetDueAmount = toNumberValue(
+    pickValue(row, ["due_amount", "due", "dueamount"]),
+  ) || 0;
+
+  // REQUIRED: Next payment date (flexible parsing)
+  const nextPaymentDateRaw = pickValue(row, [
+    "next_payment_date", "next_payment", "nextpaymentdate", "payment_date"
+  ]);
+  const nextPaymentDate = parseFlexibleDate(nextPaymentDateRaw);
+  
+  if (!nextPaymentDate) {
+    return {
+      type: "failed",
+      failure: { rowIndex, reason: "NextPaymentDate is required", raw: row },
+    };
   }
 
-  const isActive = warningMessages.length === 0;
+  // Status (active/inactive)
+  const statusRaw = toStringValue(pickValue(row, ["status", "member_status"]));
+  const isActive = statusRaw?.toLowerCase() !== "inactive";
+
+  // Calculate dues (full months only)
+  const { dueAmount, updatedNextPaymentDate } = calculateDueAmount(
+    nextPaymentDate,
+    monthlyFeeAmount,
+    sheetDueAmount,
+    isActive
+  );
 
   const memberData: TMember = {
     branchId: branchObjectId,
-    legacyId,
+    legacyId: memberId,
     memberId,
-    barcode,
     fullName,
     contact,
     email,
-    dateOfBirth: toDateValue(pickValue(row, ["date_of_birth", "dob"])),
-    country: toStringValue(pickValue(row, ["country"])),
-    nid: toStringValue(pickValue(row, ["nid", "national_id"])),
-    gender: toStringValue(pickValue(row, ["gender"])),
-    bloodGroup: toStringValue(pickValue(row, ["blood_group", "bloodgroup"])),
-    height: toNumberValue(pickValue(row, ["height"])),
-    heightUnit: toStringValue(pickValue(row, ["height_unit", "heightunit"])) as
-      | "cm"
-      | "in"
-      | "ft"
-      | undefined,
-    weight: toNumberValue(pickValue(row, ["weight"])),
-    weightUnit: toStringValue(pickValue(row, ["weight_unit", "weightunit"])) as
-      | "kg"
-      | "lb"
-      | undefined,
-    address: toStringValue(pickValue(row, ["address"])),
-    emergencyContact:
-      toStringValue(pickValue(row, ["emergency_contact_number", "emergency_number"]))
-        ? {
-            relationship:
-              toStringValue(
-                pickValue(row, ["emergency_contact_relationship", "emergency_relationship"]),
-              ) || "Unknown",
-            contactNumber:
-              toStringValue(
-                pickValue(row, ["emergency_contact_number", "emergency_number"]),
-              ) || "",
-          }
-        : undefined,
-    trainingGoals: parseTrainingGoals(
-      pickValue(row, ["training_goals", "training_goal", "goals"]),
-    ),
-    currentPackageId,
-    currentPackageName,
-    membershipStartDate: startDate,
-    membershipEndDate,
-    nextPaymentDate,
+    monthlyFeeAmount,
+    customMonthlyFee: true,
+    nextPaymentDate: updatedNextPaymentDate,
+    currentDueAmount: dueAmount,
     isActive,
-    customMonthlyFee: !selectedPackage && wantsMonthly,
-    monthlyFeeAmount: !selectedPackage ? monthlyFeeAmount : undefined,
-    paidMonths: !selectedPackage ? paidMonths : undefined,
     source: "google_sheet",
     importBatchId: batchId,
     metadata: {
       importRowIndex: rowIndex,
-      importWarnings: warningMessages,
-      rawPackageInput: packageNameInput || packageLegacyInput || packageIdInput,
+      originalNextPaymentDate: nextPaymentDate.toISOString(),
+      sheetDueAmount,
     },
   };
 
-  const member = await persistMember(branchObjectId, memberData, {
-    legacyId,
+  await persistMember(branchObjectId, memberData, {
     memberId,
-    barcode,
     email,
     contact,
     fullName,
   });
-
-  if (hasPaymentInfo && paymentType && periodEnd && member._id) {
-    const dueAmount = Math.max(subTotal - (discount || 0) - (paidTotal || 0), 0);
-
-    try {
-      await persistPayment(
-        {
-          branchId: branchObjectId,
-          memberId: member._id as Types.ObjectId,
-          memberLegacyId: legacyId,
-          packageId: currentPackageId,
-          packageLegacyId: selectedPackage?.legacyId,
-          packageName: currentPackageName,
-          packageDuration,
-          packageDurationType,
-          paymentType,
-          periodStart: startDate,
-          periodEnd,
-          paidMonths: !selectedPackage ? paidMonths : undefined,
-          year: startDate.getFullYear(),
-          subTotal,
-          discount,
-          dueAmount,
-          paidTotal,
-          admissionFee,
-          paymentMethod,
-          paymentDate: paymentDate || new Date(),
-          nextPaymentDate,
-          status: computePaymentStatus(dueAmount, paidTotal || 0, paymentStatus),
-          source: "google_sheet",
-          importBatchId: batchId,
-        },
-        fullName,
-      );
-    } catch (error) {
-      await MemberRepository.updateById(String(member._id), {
-        isActive: false,
-        metadata: {
-          ...(member.metadata || {}),
-          importWarnings: [
-            ...(Array.isArray((member.metadata as any)?.importWarnings)
-              ? ((member.metadata as any).importWarnings as string[])
-              : []),
-            "Payment could not be saved; member moved to draft",
-          ],
-        },
-      });
-
-      warningMessages.push("Payment could not be saved; member moved to draft");
-      errorLogger.error("Member import payment save failed", {
-        batchId,
-        rowIndex,
-        message: error instanceof Error ? error.message : String(error),
-      });
-    }
-  }
-
-  if (warningMessages.length > 0) {
-    return {
-      type: "success",
-      warning: {
-        rowIndex,
-        memberName: fullName,
-        reason: warningMessages.join("; "),
-        raw: row,
-      },
-    };
-  }
 
   return { type: "success" };
 };
@@ -937,7 +600,81 @@ const processBatch = async (batchId: string) => {
       );
     }
 
-    const packageLookup = await createPackageLookup(String(batch.branchId));
+    // Get branch monthlyFee for fallback
+    const branch = await BranchRepository.findById(String(batch.branchId));
+    const branchMonthlyFee = branch?.monthlyFeeAmount || 0;
+
+    // Pre-validate that all rows have monthlyFee OR branch has default
+    const rowsMissingFee: number[] = [];
+    rowsFromSource.forEach((row, index) => {
+      const sheetFee = toNumberValue(pickValue(row, ['monthly_fee', 'monthly_fee_amount', 'monthlyamount']));
+      if (!sheetFee && !branchMonthlyFee) {
+        rowsMissingFee.push(index + 2); // +2 for header offset
+      }
+    });
+
+    if (rowsMissingFee.length > 0) {
+      await updateBatchProgress(batchId, {
+        status: 'failed',
+        endedAt: new Date(),
+      });
+      
+      throw new AppError(
+        StatusCodes.BAD_REQUEST,
+        `Monthly fee missing in rows ${rowsMissingFee.join(', ')} and no branch default set - import aborted`
+      );
+    }
+
+    // Collect all memberIds from sheet
+    const sheetMemberIds: string[] = [];
+    rowsFromSource.forEach((row) => {
+      const memberId = toStringValue(pickValue(row, ['member_id', 'memberid']));
+      if (memberId) sheetMemberIds.push(memberId);
+    });
+
+    // Check for duplicates within the sheet
+    const sheetDuplicates = validateUniqueMemberIds(rowsFromSource);
+    if (!sheetDuplicates.valid) {
+      const errorDetails = sheetDuplicates.duplicates
+        .map(d => `MemberId "${d.memberId}" found in rows: ${d.rowIndices.join(', ')}`)
+        .join('; ');
+      
+      await updateBatchProgress(batchId, {
+        status: 'failed',
+        endedAt: new Date(),
+      });
+      
+      throw new AppError(
+        StatusCodes.BAD_REQUEST,
+        `Duplicate MemberIDs in sheet - import aborted: ${errorDetails}`
+      );
+    }
+
+    // Check for existing memberIds in database for this branch
+    const uniqueSheetIds = [...new Set(sheetMemberIds)];
+    if (uniqueSheetIds.length > 0) {
+      const existingMembers = await MemberRepository.findMany(
+        { 
+          branchId: batch.branchId, 
+          memberId: { $in: uniqueSheetIds } 
+        },
+        { select: { memberId: 1 } }
+      ).lean();
+      
+      if (existingMembers.length > 0) {
+        const existingIds = existingMembers.map((m: any) => m.memberId).join(', ');
+        
+        await updateBatchProgress(batchId, {
+          status: 'failed',
+          endedAt: new Date(),
+        });
+        
+        throw new AppError(
+          StatusCodes.BAD_REQUEST,
+          `MemberIDs already exist in branch - import aborted: ${existingIds}`
+        );
+      }
+    }
 
     let processedRows = batch.processedRows || 0;
     let successRows = batch.successRows || 0;
@@ -991,7 +728,7 @@ const processBatch = async (batchId: string) => {
           batchId,
           rowIndex,
           raw,
-          packageLookup,
+          branchMonthlyFee,
         );
 
         processedRows += 1;

@@ -148,6 +148,11 @@ const memberSchema = new Schema<TMember>(
       type: Number,
       min: 0,
     },
+    currentDueAmount: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
     source: {
       type: String,
       trim: true,

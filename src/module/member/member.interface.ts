@@ -44,6 +44,7 @@ export interface TMember {
 	customMonthlyFee?: boolean;
 	monthlyFeeAmount?: number;
 	paidMonths?: number;
+	currentDueAmount?: number;
 	source?: string;
 	importBatchId?: string;
 	metadata?: Record<string, unknown>;
