@@ -265,6 +265,71 @@ const ensureGoogleSheetsConfig = () => {
   }
 };
 
+/**
+ * Parse CSV file content into rows with normalized headers
+ * Handles both comma and semicolon delimiters, with or without quotes
+ */
+const parseCSVContent = (content: string): TRawImportRow[] => {
+  const lines = content.split("\n").filter((line) => line.trim().length > 0);
+
+  if (lines.length === 0) {
+    return [];
+  }
+
+  // Detect delimiter (comma or semicolon)
+  const headerLine = lines[0] || "";
+  const hasComma = headerLine.includes(",");
+  const hasSemicolon = headerLine.includes(";");
+  const delimiter = hasSemicolon && !hasComma ? ";" : ",";
+
+  // Parse CSV line by line, handling quoted values
+  const parseCSVLine = (line: string): string[] => {
+    const result: string[] = [];
+    let current = "";
+    let inQuotes = false;
+
+    for (let i = 0; i < line.length; i++) {
+      const char = line[i];
+      const nextChar = line[i + 1];
+
+      if (char === '"') {
+        if (inQuotes && nextChar === '"') {
+          current += '"';
+          i++; // Skip next quote
+        } else {
+          inQuotes = !inQuotes;
+        }
+      } else if (char === delimiter && !inQuotes) {
+        result.push(current.trim());
+        current = "";
+      } else {
+        current += char;
+      }
+    }
+
+    result.push(current.trim());
+    return result;
+  };
+
+  const headerRow = parseCSVLine(lines[0] || "");
+  const headers = headerRow.map((header, index) => {
+    const normalized = normalizeKey(header);
+    return normalized || `column_${index + 1}`;
+  });
+
+  return lines
+    .slice(1)
+    .map((line) => {
+      const values = parseCSVLine(line);
+      const normalized: TRawImportRow = {};
+      headers.forEach((header, index) => {
+        normalized[header] = values[index];
+      });
+      return normalized;
+    })
+    .filter((row) => Object.values(row).some((value) => toStringValue(value) !== undefined));
+};
+
 const getSheetRows = async (
   spreadsheetId: string,
   range: string,
@@ -591,7 +656,18 @@ const processBatch = async (batchId: string) => {
     const rowsFromSource =
       Array.isArray(batch.retryRows) && batch.retryRows.length > 0
         ? batch.retryRows
-        : await getSheetRows(batch.spreadsheetId, batch.range);
+        : Array.isArray((batch as any).csvData) && (batch as any).csvData.length > 0
+          ? (batch as any).csvData
+          : batch.spreadsheetId && batch.range
+            ? await getSheetRows(batch.spreadsheetId, batch.range)
+            : [];
+
+    if (rowsFromSource.length === 0 && batch.source === "google_sheet") {
+      throw new AppError(
+        StatusCodes.BAD_REQUEST,
+        "No rows found in Google Sheet"
+      );
+    }
 
     if (rowsFromSource.length > runtimeConfig.maxRowsPerBatch) {
       throw new AppError(
@@ -606,7 +682,7 @@ const processBatch = async (batchId: string) => {
 
     // Pre-validate that all rows have monthlyFee OR branch has default
     const rowsMissingFee: number[] = [];
-    rowsFromSource.forEach((row, index) => {
+    rowsFromSource.forEach((row: Record<string, unknown>, index: number) => {
       const sheetFee = toNumberValue(pickValue(row, ['monthly_fee', 'monthly_fee_amount', 'monthlyamount']));
       if (!sheetFee && !branchMonthlyFee) {
         rowsMissingFee.push(index + 2); // +2 for header offset
@@ -627,7 +703,7 @@ const processBatch = async (batchId: string) => {
 
     // Collect all memberIds from sheet
     const sheetMemberIds: string[] = [];
-    rowsFromSource.forEach((row) => {
+    rowsFromSource.forEach((row: Record<string, unknown>) => {
       const memberId = toStringValue(pickValue(row, ['member_id', 'memberid']));
       if (memberId) sheetMemberIds.push(memberId);
     });
@@ -888,6 +964,84 @@ const startGoogleSheetImport = async (
     batchId: String(batch._id),
     branchId,
     source: "google_sheet",
+  });
+
+  return batch;
+};
+
+const startCSVImport = async (
+  branchId: string,
+  actor: TImportActor,
+  csvFile: Express.Multer.File,
+) => {
+  await resolveBranchAccess(branchId, actor);
+
+  const branchObjectId = new Types.ObjectId(branchId);
+
+  const pendingBatch = await MemberImportBatchRepository.findOne({
+    branchId: branchObjectId,
+    status: { $in: ["pending", "processing"] },
+    cancelRequested: false,
+  });
+
+  if (pendingBatch || activeBranchImports.has(branchId)) {
+    throw new AppError(
+      StatusCodes.CONFLICT,
+      "Another import is already running for this branch",
+    );
+  }
+
+  // Parse CSV file content
+  let csvRows: TRawImportRow[];
+  try {
+    const csvContent = csvFile.buffer.toString("utf-8");
+    csvRows = parseCSVContent(csvContent);
+  } catch (error) {
+    throw new AppError(StatusCodes.BAD_REQUEST, "Failed to parse CSV file");
+  }
+
+  if (csvRows.length === 0) {
+    throw new AppError(StatusCodes.BAD_REQUEST, "CSV file is empty or has no valid data rows");
+  }
+
+  // Create batch record with CSV source
+  const batch = await MemberImportBatchRepository.create({
+    branchId: branchObjectId,
+    source: "csv_upload",
+    fileName: csvFile.originalname,
+    status: "pending",
+    cancelRequested: false,
+    totalRows: 0,
+    processedRows: 0,
+    successRows: 0,
+    failedRows: 0,
+    warningRows: 0,
+    cursor: 0,
+    failuresPreview: [],
+    warningsPreview: [],
+    failedRowsData: [],
+    retryRows: [],
+    metadata: {
+      requestedAt: new Date().toISOString(),
+      csvRowCount: csvRows.length,
+    },
+    ...getActorInfo(actor),
+  } as TMemberImportBatch);
+
+  // Store CSV rows in memory for processing
+  // We'll process them using the same logic as Google Sheets
+  await MemberImportBatchRepository.updateById(String(batch._id), {
+    csvData: csvRows,
+  } as any);
+
+  enqueueBatch(String(batch._id));
+  void processQueue();
+
+  logger.info("CSV import batch queued", {
+    batchId: String(batch._id),
+    branchId,
+    fileName: csvFile.originalname,
+    rowCount: csvRows.length,
   });
 
   return batch;
@@ -1264,6 +1418,7 @@ const resumePendingBatches = async () => {
 
 export const MemberImportService = {
   startGoogleSheetImport,
+  startCSVImport,
   listImportBatches,
   getImportMetrics,
   getImportBatchById,

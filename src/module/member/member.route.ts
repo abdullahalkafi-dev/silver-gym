@@ -25,6 +25,21 @@ router.post(
 );
 
 /**
+ * @route   POST /api/v1/members/import/:branchId/csv
+ * @desc    Start async member import from CSV file upload
+ * @access  Private (Owner or Staff with canAddMember)
+ */
+router.post(
+  "/import/:branchId/csv",
+  authLimiter,
+  authStaff({ allowOwner: true }),
+  requirePermission("canAddMember"),
+  fileUploadHandler,
+  validateRequest(MemberDto.startCSVImport),
+  MemberController.startCSVImport,
+);
+
+/**
  * @route   GET /api/v1/members/import/:branchId/batches
  * @desc    List import batches with optional status filter
  * @access  Private (Owner or Staff with canViewMembers)

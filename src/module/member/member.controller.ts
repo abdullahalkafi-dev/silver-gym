@@ -159,6 +159,28 @@ const startGoogleSheetImport = catchAsync(async (req: Request, res: Response) =>
   });
 });
 
+const startCSVImport = catchAsync(async (req: Request, res: Response) => {
+  const branchId = req.params.branchId as string;
+  const csvFile = (req.files as any)?.csv?.[0] as Express.Multer.File | undefined;
+
+  if (!csvFile) {
+    throw new AppError(StatusCodes.BAD_REQUEST, "CSV file is required");
+  }
+
+  const batch = await MemberImportService.startCSVImport(
+    branchId,
+    resolveActor(req),
+    csvFile,
+  );
+
+  sendResponse(res, {
+    statusCode: StatusCodes.ACCEPTED,
+    success: true,
+    message: "CSV import started successfully",
+    data: batch,
+  });
+});
+
 const getImportBatchStatus = catchAsync(async (req: Request, res: Response) => {
   const branchId = req.params.branchId as string;
   const batchId = req.params.batchId as string;
@@ -275,6 +297,7 @@ export const MemberController = {
   remove,
   restore,
   startGoogleSheetImport,
+  startCSVImport,
   listImportBatches,
   getImportMetrics,
   getDashboardSummary,

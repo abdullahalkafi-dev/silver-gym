@@ -1,6 +1,6 @@
 import { Types } from "mongoose";
 
-export type TMemberImportSource = "google_sheet";
+export type TMemberImportSource = "google_sheet" | "csv_upload";
 
 export type TMemberImportStatus =
   | "pending"
@@ -20,8 +20,9 @@ export interface TMemberImportFailureRow {
 export interface TMemberImportBatch {
   branchId: Types.ObjectId;
   source: TMemberImportSource;
-  spreadsheetId: string;
-  range: string;
+  spreadsheetId?: string;
+  range?: string;
+  fileName?: string;
   status: TMemberImportStatus;
   createdByUserId?: Types.ObjectId;
   createdByStaffId?: Types.ObjectId;

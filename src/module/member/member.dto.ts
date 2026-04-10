@@ -211,10 +211,19 @@ const dashboardSummaryDto = z.object({
     .strict(),
 });
 
+const startCSVImportDto = z.object({
+  params: z
+    .object({
+      branchId: z.string().min(1, "branchId is required"),
+    })
+    .strict(),
+});
+
 export const MemberDto = {
   create: createMemberDto,
   update: updateMemberDto,
   startGoogleSheetImport: startGoogleSheetImportDto,
+  startCSVImport: startCSVImportDto,
   retryImport: retryImportDto,
   listImportBatches: listImportBatchesDto,
   importMetrics: importMetricsDto,
