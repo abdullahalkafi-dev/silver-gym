@@ -11,6 +11,7 @@ import { TRole } from "module/role/role.interface";
 import { StaffRepository } from "module/staff/staff.repository";
 import { LoginProvider, TUser } from "module/user/user.interface";
 import { UserRepository } from "module/user/user.repository";
+import { BusinessProfileRepository } from "module/businessProfile/businessProfile.repository";
 import {
   buildStaffTokenPayload,
   buildTokenPayload,
@@ -140,7 +141,19 @@ const register = async (payload: TUser) => {
     });
   }
 
-  return user;
+  // Fetch business profile
+  const businessProfile = await BusinessProfileRepository.findOne({
+    userId: user._id,
+  });
+
+  const userObject = user.toObject() as ReturnType<typeof user.toObject> & {
+    businessProfile?: any;
+  };
+
+  return {
+    ...userObject,
+    businessProfile: businessProfile ? { id: businessProfile._id } : null,
+  };
 };
 
 const login = async (payload: TLoginPayload) => {
@@ -215,10 +228,16 @@ const login = async (payload: TLoginPayload) => {
   };
   const { password: _password, ...sanitizedUser } = userObject;
 
+  // Fetch business profile
+  const businessProfile = await BusinessProfileRepository.findOne({
+    userId: user._id,
+  });
+
   return {
     accessToken,
     refreshToken,
     user: sanitizedUser,
+    businessProfile: businessProfile ? { id: businessProfile._id } : null,
   };
 };
 
@@ -340,7 +359,21 @@ const verifyAccount = async (payload: TVerifyAccountPayload) => {
     throw new AppError(StatusCodes.NOT_FOUND, "User not found");
   }
 
-  return updatedUser;
+  // Fetch business profile
+  const businessProfile = await BusinessProfileRepository.findOne({
+    userId: updatedUser._id,
+  });
+
+  const userObject = updatedUser.toObject() as ReturnType<
+    typeof updatedUser.toObject
+  > & {
+    businessProfile?: any;
+  };
+
+  return {
+    ...userObject,
+    businessProfile: businessProfile ? { id: businessProfile._id } : null,
+  };
 };
 
 const resendOtp = async (payload: TResendOtpPayload) => {
