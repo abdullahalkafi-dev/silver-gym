@@ -17,16 +17,7 @@ const createPackageDto = z.object({
       source: z.string().trim().optional(),
       metadata: z.record(z.string(), z.unknown()).optional(),
     })
-    .strict()
-    .superRefine((data, ctx) => {
-      if (data.includeAdmissionFee && !data.admissionFeeAmount) {
-        ctx.addIssue({
-          code: "custom",
-          path: ["admissionFeeAmount"],
-          message: "Admission fee amount is required when includeAdmissionFee is true",
-        });
-      }
-    }),
+    .strict(),
 });
 
 const updatePackageDto = z.object({
@@ -43,16 +34,7 @@ const updatePackageDto = z.object({
       isActive: z.boolean().optional(),
       metadata: z.record(z.string(), z.unknown()).optional(),
     })
-    .strict()
-    .superRefine((data, ctx) => {
-      if (data.includeAdmissionFee && !data.admissionFeeAmount) {
-        ctx.addIssue({
-          code: "custom",
-          path: ["admissionFeeAmount"],
-          message: "Admission fee amount is required when includeAdmissionFee is true",
-        });
-      }
-    }),
+    .strict(),
 });
 
 const queryPackageDto = z.object({

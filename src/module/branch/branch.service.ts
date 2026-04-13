@@ -1,6 +1,7 @@
 import { StatusCodes } from "http-status-codes";
 import { Types } from "mongoose";
 import AppError from "../../errors/AppError";
+import { TStaffPermissionSnapshot } from "../auth/auth.util";
 import { TBranch } from "./branch.interface";
 import { BranchRepository } from "./branch.repository";
 import { BusinessProfileRepository } from "../businessProfile/businessProfile.repository";
@@ -22,7 +23,12 @@ type CreateBranchPayload = Omit<TBranch, "_id" | "createdAt" | "updatedAt">;
 type TBranchAccessActor = {
   userId?: Types.ObjectId;
   staff?: TStaff;
+  staffPermissions?: Partial<TStaffPermissionSnapshot>;
 };
+
+type TBranchFeeSnapshot = Pick<TBranch, "monthlyFeeAmount" | "admissionFeeAmount">;
+
+type TBranchFeeType = "monthly" | "admission";
 
 /**
  * Create a new branch for a business with ownership verification
@@ -79,7 +85,7 @@ const createBranch = async (
   return branch;
 };
 
-const resolveBranchMonthlyFeeAccess = async (
+const resolveBranchFeeAccess = async (
   businessId: string,
   branchId: string,
   actor: TBranchAccessActor,
@@ -128,6 +134,62 @@ const resolveBranchMonthlyFeeAccess = async (
   }
 
   throw new AppError(StatusCodes.UNAUTHORIZED, "You are not authorized");
+};
+
+const ensureBranchFeesConfigured = (
+  branch: TBranchFeeSnapshot,
+  entityLabel: "package" | "member",
+) => {
+  const hasMonthlyFee = typeof branch.monthlyFeeAmount === "number";
+  const hasAdmissionFee = typeof branch.admissionFeeAmount === "number";
+
+  if (hasMonthlyFee && hasAdmissionFee) {
+    return;
+  }
+
+  throw new AppError(
+    StatusCodes.BAD_REQUEST,
+    `Configure branch monthly fee and admission fee before creating a ${entityLabel}`,
+  );
+};
+
+const ensureBranchFeePermission = (
+  branch: TBranchFeeSnapshot,
+  actor: TBranchAccessActor,
+  feeType: TBranchFeeType,
+) => {
+  if (actor.userId) {
+    return;
+  }
+
+  const permissionMap = {
+    monthly: {
+      currentValue: branch.monthlyFeeAmount,
+      add: "canAddMonthlyFee" as const,
+      edit: "canEditMonthlyFee" as const,
+      label: "monthly fee",
+    },
+    admission: {
+      currentValue: branch.admissionFeeAmount,
+      add: "canAddAdmissionFee" as const,
+      edit: "canEditAdmissionFee" as const,
+      label: "admission fee",
+    },
+  };
+
+  const targetFee = permissionMap[feeType];
+  const isConfigured = typeof targetFee.currentValue === "number";
+  const requiredPermission = isConfigured ? targetFee.edit : targetFee.add;
+  const actionLabel = isConfigured ? "edit" : "add";
+
+  if (actor.staffPermissions?.[requiredPermission]) {
+    return;
+  }
+
+  throw new AppError(
+    StatusCodes.FORBIDDEN,
+    `You do not have permission to ${actionLabel} the branch ${targetFee.label}`,
+  );
 };
 
 /**
@@ -298,7 +360,7 @@ const getBranchMonthlyFee = async (
   branchId: string,
   actor: TBranchAccessActor,
 ) => {
-  const branch = await resolveBranchMonthlyFeeAccess(
+  const branch = await resolveBranchFeeAccess(
     businessId,
     branchId,
     actor,
@@ -320,7 +382,8 @@ const updateBranchMonthlyFee = async (
   actor: TBranchAccessActor,
   monthlyFeeAmount: number,
 ) => {
-  await resolveBranchMonthlyFeeAccess(businessId, branchId, actor);
+  const branch = await resolveBranchFeeAccess(businessId, branchId, actor);
+  ensureBranchFeePermission(branch, actor, "monthly");
 
   const updatedBranch = await BranchRepository.updateById(branchId, {
     monthlyFeeAmount,
@@ -336,11 +399,58 @@ const updateBranchMonthlyFee = async (
   return updatedBranch;
 };
 
+const getBranchAdmissionFee = async (
+  businessId: string,
+  branchId: string,
+  actor: TBranchAccessActor,
+) => {
+  const branch = await resolveBranchFeeAccess(
+    businessId,
+    branchId,
+    actor,
+  );
+
+  return {
+    branchId: branch._id,
+    branchName: branch.branchName,
+    admissionFeeAmount:
+      typeof branch.admissionFeeAmount === "number"
+        ? branch.admissionFeeAmount
+        : null,
+  };
+};
+
+const updateBranchAdmissionFee = async (
+  businessId: string,
+  branchId: string,
+  actor: TBranchAccessActor,
+  admissionFeeAmount: number,
+) => {
+  const branch = await resolveBranchFeeAccess(businessId, branchId, actor);
+  ensureBranchFeePermission(branch, actor, "admission");
+
+  const updatedBranch = await BranchRepository.updateById(branchId, {
+    admissionFeeAmount,
+  });
+
+  if (!updatedBranch) {
+    throw new AppError(
+      StatusCodes.INTERNAL_SERVER_ERROR,
+      "Failed to update branch admission fee",
+    );
+  }
+
+  return updatedBranch;
+};
+
 export const BranchService = {
   createBranch,
   getBranches,
   getDefaultBranch,
   updateBranch,
+  ensureBranchFeesConfigured,
   getBranchMonthlyFee,
   updateBranchMonthlyFee,
+  getBranchAdmissionFee,
+  updateBranchAdmissionFee,
 };

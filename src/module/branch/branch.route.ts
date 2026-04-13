@@ -6,7 +6,6 @@ import { authLimiter } from "@middlewares/security";
 import auth from "@middlewares/auth";
 import authStaff from "@middlewares/authStaff";
 import fileUploadHandler from "@middlewares/fileUploadHandler";
-import requirePermission from "@middlewares/requirePermission";
 
 const router = Router();
 
@@ -63,27 +62,49 @@ router.patch(
 /**
  * @route   GET /api/v1/branches/:businessId/branches/:branchId/monthly-fee
  * @desc    Get branch monthly fee
- * @access  Private (Owner or Staff with canViewBilling)
+ * @access  Private (Owner or authenticated branch staff)
  */
 router.get(
   "/:businessId/branches/:branchId/monthly-fee",
   authStaff({ allowOwner: true }),
-  requirePermission("canViewBilling"),
   BranchController.getMonthlyFee
 );
 
 /**
  * @route   PATCH /api/v1/branches/:businessId/branches/:branchId/monthly-fee
  * @desc    Update branch monthly fee
- * @access  Private (Owner or Staff with canEditBilling)
+ * @access  Private (Owner or authenticated branch staff; service enforces add/edit fee permissions)
  */
 router.patch(
   "/:businessId/branches/:branchId/monthly-fee",
   authLimiter,
   authStaff({ allowOwner: true }),
-  requirePermission("canEditBilling"),
   validateRequest(BranchDto.updateMonthlyFee),
   BranchController.updateMonthlyFee
+);
+
+/**
+ * @route   GET /api/v1/branches/:businessId/branches/:branchId/admission-fee
+ * @desc    Get branch admission fee
+ * @access  Private (Owner or authenticated branch staff)
+ */
+router.get(
+  "/:businessId/branches/:branchId/admission-fee",
+  authStaff({ allowOwner: true }),
+  BranchController.getAdmissionFee
+);
+
+/**
+ * @route   PATCH /api/v1/branches/:businessId/branches/:branchId/admission-fee
+ * @desc    Update branch admission fee
+ * @access  Private (Owner or authenticated branch staff; service enforces add/edit fee permissions)
+ */
+router.patch(
+  "/:businessId/branches/:branchId/admission-fee",
+  authLimiter,
+  authStaff({ allowOwner: true }),
+  validateRequest(BranchDto.updateAdmissionFee),
+  BranchController.updateAdmissionFee
 );
 
 export const BranchRoutes = router;

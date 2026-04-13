@@ -23,6 +23,10 @@ const branchSchema = new Schema<TBranch>(
       type: Number,
       min: 0,
     },
+    admissionFeeAmount: {
+      type: Number,
+      min: 0,
+    },
     logo: {
       type: String,
     },

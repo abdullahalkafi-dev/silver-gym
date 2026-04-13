@@ -22,6 +22,10 @@ export type TStaffPermissionSnapshot = {
   canAddBilling: boolean;
   canEditBilling: boolean;
   canDeleteBilling: boolean;
+  canAddMonthlyFee: boolean;
+  canEditMonthlyFee: boolean;
+  canAddAdmissionFee: boolean;
+  canEditAdmissionFee: boolean;
   canViewAnalytics: boolean;
   canExportAnalytics: boolean;
   canViewSMS: boolean;
@@ -106,6 +110,10 @@ export const getStaffPermissionSnapshot = (role: TRole): TStaffPermissionSnapsho
   canAddBilling: role.canAddBilling ?? false,
   canEditBilling: role.canEditBilling ?? false,
   canDeleteBilling: role.canDeleteBilling ?? false,
+  canAddMonthlyFee: role.canAddMonthlyFee ?? false,
+  canEditMonthlyFee: role.canEditMonthlyFee ?? false,
+  canAddAdmissionFee: role.canAddAdmissionFee ?? false,
+  canEditAdmissionFee: role.canEditAdmissionFee ?? false,
   canViewAnalytics: role.canViewAnalytics ?? false,
   canExportAnalytics: role.canExportAnalytics ?? false,
   canViewSMS: role.canViewSMS ?? false,

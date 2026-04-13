@@ -13,6 +13,10 @@ const createBranchDto = z.object({
         .number()
         .min(0, "Monthly fee amount cannot be negative")
         .optional(),
+      admissionFeeAmount: z
+        .number()
+        .min(0, "Admission fee amount cannot be negative")
+        .optional(),
     })
     .strict(),
 });
@@ -30,6 +34,10 @@ const updateBranchDto = z.object({
         .number()
         .min(0, "Monthly fee amount cannot be negative")
         .optional(),
+      admissionFeeAmount: z
+        .number()
+        .min(0, "Admission fee amount cannot be negative")
+        .optional(),
     })
     .strict(),
 });
@@ -44,8 +52,19 @@ const updateBranchMonthlyFeeDto = z.object({
     .strict(),
 });
 
+const updateBranchAdmissionFeeDto = z.object({
+  data: z
+    .object({
+      admissionFeeAmount: z
+        .number()
+        .min(0, "Admission fee amount cannot be negative"),
+    })
+    .strict(),
+});
+
 export const BranchDto = {
   create: createBranchDto,
   update: updateBranchDto,
   updateMonthlyFee: updateBranchMonthlyFeeDto,
+  updateAdmissionFee: updateBranchAdmissionFeeDto,
 };

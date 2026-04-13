@@ -20,6 +20,10 @@ export interface TRole {
 	canAddBilling?: boolean;
 	canEditBilling?: boolean;
 	canDeleteBilling?: boolean;
+	canAddMonthlyFee?: boolean;
+	canEditMonthlyFee?: boolean;
+	canAddAdmissionFee?: boolean;
+	canEditAdmissionFee?: boolean;
 	canViewAnalytics?: boolean;
 	canExportAnalytics?: boolean;
 	canViewSMS?: boolean;

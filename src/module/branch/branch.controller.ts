@@ -16,6 +16,7 @@ const resolveActor = (req: Request) => {
   if (req.staff) {
     return {
       staff: req.staff,
+      staffPermissions: req.staffPermissions,
     };
   }
 
@@ -160,6 +161,52 @@ const updateMonthlyFee = catchAsync(async (req: Request, res: Response) => {
   });
 });
 
+/**
+ * Get branch admission fee
+ * GET /api/v1/branches/:businessId/branches/:branchId/admission-fee
+ */
+const getAdmissionFee = catchAsync(async (req: Request, res: Response) => {
+  const businessId = req.params.businessId as string;
+  const branchId = req.params.branchId as string;
+
+  const result = await BranchService.getBranchAdmissionFee(
+    businessId,
+    branchId,
+    resolveActor(req)
+  );
+
+  sendResponse(res, {
+    statusCode: StatusCodes.OK,
+    success: true,
+    message: "Branch admission fee retrieved successfully",
+    data: result,
+  });
+});
+
+/**
+ * Update branch admission fee
+ * PATCH /api/v1/branches/:businessId/branches/:branchId/admission-fee
+ */
+const updateAdmissionFee = catchAsync(async (req: Request, res: Response) => {
+  const businessId = req.params.businessId as string;
+  const branchId = req.params.branchId as string;
+  const payload = req.body.data || req.body;
+
+  const result = await BranchService.updateBranchAdmissionFee(
+    businessId,
+    branchId,
+    resolveActor(req),
+    payload.admissionFeeAmount
+  );
+
+  sendResponse(res, {
+    statusCode: StatusCodes.OK,
+    success: true,
+    message: "Branch admission fee updated successfully",
+    data: result,
+  });
+});
+
 export const BranchController = {
   create,
   getAll,
@@ -167,4 +214,6 @@ export const BranchController = {
   update,
   getMonthlyFee,
   updateMonthlyFee,
+  getAdmissionFee,
+  updateAdmissionFee,
 };

@@ -54,7 +54,9 @@ const createOTP = async (createOtpData: createOTPData) => {
         theme: "theme-blue",
       };
       const data = emailTemplate.createAccount(mailSendingData);
-      await emailHelper.sendEmail(data);
+      console.log(data);
+      //TODO - reenable email sending before production release
+      // await emailHelper.sendEmail(data);
     }
   }
 

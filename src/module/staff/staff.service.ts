@@ -207,6 +207,16 @@ const getStaffListByBranch = async (branchId: string, options?: any) => {
                 canEdit: staffObj.roleId.canEditBilling,
                 canDelete: staffObj.roleId.canDeleteBilling,
               },
+              fees: {
+                monthly: {
+                  canAdd: staffObj.roleId.canAddMonthlyFee,
+                  canEdit: staffObj.roleId.canEditMonthlyFee,
+                },
+                admission: {
+                  canAdd: staffObj.roleId.canAddAdmissionFee,
+                  canEdit: staffObj.roleId.canEditAdmissionFee,
+                },
+              },
               analytics: {
                 canView: staffObj.roleId.canViewAnalytics,
                 canExport: staffObj.roleId.canExportAnalytics,
@@ -299,6 +309,16 @@ const getStaffById = async (
               canAdd: staffObj.roleId.canAddBilling,
               canEdit: staffObj.roleId.canEditBilling,
               canDelete: staffObj.roleId.canDeleteBilling,
+            },
+            fees: {
+              monthly: {
+                canAdd: staffObj.roleId.canAddMonthlyFee,
+                canEdit: staffObj.roleId.canEditMonthlyFee,
+              },
+              admission: {
+                canAdd: staffObj.roleId.canAddAdmissionFee,
+                canEdit: staffObj.roleId.canEditAdmissionFee,
+              },
             },
             analytics: {
               canView: staffObj.roleId.canViewAnalytics,

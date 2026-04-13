@@ -3,6 +3,7 @@ import { Types } from "mongoose";
 
 import { QueryBuilder } from "../../Builder/QueryBuilder";
 import AppError from "../../errors/AppError";
+import { BranchService } from "../branch/branch.service";
 import { BranchRepository } from "../branch/branch.repository";
 import { BusinessProfileRepository } from "../businessProfile/businessProfile.repository";
 import { TStaff } from "../staff/staff.interface";
@@ -83,7 +84,8 @@ const createPackage = async (
   actor: TAccessActor,
   payload: TCreatePackagePayload,
 ) => {
-  await resolveBranchAccess(branchId, actor);
+  const branch = await resolveBranchAccess(branchId, actor);
+  BranchService.ensureBranchFeesConfigured(branch, "package");
 
   // Check for duplicate package title in the same branch
   const existingPackage = await PackageRepository.findOne({
@@ -99,9 +101,16 @@ const createPackage = async (
     );
   }
 
+  const {
+    admissionFeeAmount: _ignoredAdmissionFeeAmount,
+    includeAdmissionFee,
+    ...restPayload
+  } = payload;
+
   const packageData: TPackage = {
-    ...payload,
+    ...restPayload,
     branchId: new Types.ObjectId(branchId),
+    includeAdmissionFee: Boolean(includeAdmissionFee),
     isActive: payload.isActive ?? true,
     source: payload.source || "MANUAL",
   };
@@ -190,7 +199,14 @@ const updatePackage = async (
     }
   }
 
-  const updatedPackage = await PackageRepository.updateById(packageId, payload);
+  const { admissionFeeAmount: _ignoredAdmissionFeeAmount, ...restPayload } = payload;
+
+  const updateOperation = {
+    ...(Object.keys(restPayload).length ? { $set: restPayload } : {}),
+    $unset: { admissionFeeAmount: 1 },
+  };
+
+  const updatedPackage = await PackageRepository.updateById(packageId, updateOperation);
 
   if (!updatedPackage) {
     throw new AppError(StatusCodes.INTERNAL_SERVER_ERROR, "Failed to update package");

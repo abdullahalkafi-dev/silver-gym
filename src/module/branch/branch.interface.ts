@@ -5,6 +5,7 @@ export interface TBranch {
 	branchName: string;
 	branchAddress?: string;
 	monthlyFeeAmount?: number;
+	admissionFeeAmount?: number;
 	logo?: string | null;
 	favicon?: string | null;
 	isDefault?: boolean;

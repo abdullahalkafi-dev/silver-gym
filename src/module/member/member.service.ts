@@ -5,6 +5,7 @@ import { QueryBuilder } from "../../Builder/QueryBuilder";
 import AppError from "../../errors/AppError";
 import unlinkFile from "../../shared/unlinkFile";
 import { BranchRepository } from "../branch/branch.repository";
+import { BranchService } from "../branch/branch.service";
 import { BusinessProfileRepository } from "../businessProfile/businessProfile.repository";
 import { PackageDurationType } from "../package/package.interface";
 import { PackageRepository } from "../package/package.repository";
@@ -264,6 +265,7 @@ const createMember = async (
   photoFile?: Express.Multer.File,
 ) => {
   const branch = await resolveBranchAccess(branchId, actor, photoFile);
+  BranchService.ensureBranchFeesConfigured(branch, "member");
 
   const membershipStartDate = payload.membershipStartDate
     ? new Date(payload.membershipStartDate)
@@ -282,6 +284,7 @@ const createMember = async (
   let subTotal = 0;
   let resolvedMonthlyFeeAmount: number | undefined;
   let paidMonthsForPayment: number | undefined;
+  let resolvedAdmissionFeeAmount: number | undefined;
 
   if (payload.currentPackageId) {
     const packageDoc = await PackageRepository.findOne({
@@ -312,8 +315,12 @@ const createMember = async (
     nextPaymentDate = membershipEndDate;
     paymentType = PaymentType.PACKAGE;
     paidMonthsForPayment = undefined;
+    resolvedAdmissionFeeAmount =
+      packageDoc.includeAdmissionFee && typeof branch.admissionFeeAmount === "number"
+        ? branch.admissionFeeAmount
+        : undefined;
 
-    subTotal = packageDoc.amount + (paymentInput.admissionFee ?? 0);
+    subTotal = packageDoc.amount + (resolvedAdmissionFeeAmount ?? 0);
   } else {
     if (!payload.customMonthlyFee) {
       if (photoFile) {
@@ -349,7 +356,8 @@ const createMember = async (
     periodEnd = addMonths(membershipStartDate, paidMonths);
     nextPaymentDate = periodEnd;
     paymentType = PaymentType.MONTHLY;
-    subTotal = resolvedMonthlyFeeAmount * paidMonths + (paymentInput.admissionFee ?? 0);
+    resolvedAdmissionFeeAmount = paymentInput.admissionFee;
+    subTotal = resolvedMonthlyFeeAmount * paidMonths + (resolvedAdmissionFeeAmount ?? 0);
   }
 
   const discount = paymentInput.discount ?? 0;
@@ -400,7 +408,7 @@ const createMember = async (
     discount,
     dueAmount,
     paidTotal,
-    admissionFee: paymentInput.admissionFee,
+    admissionFee: resolvedAdmissionFeeAmount,
     paymentMethod: paymentInput.paymentMethod,
     paymentDate: paymentInput.paymentDate || new Date(),
     nextPaymentDate,
