@@ -7,6 +7,7 @@ import { BusinessProfileRepository } from "../businessProfile/businessProfile.re
 import unlinkFile from "../../shared/unlinkFile";
 import { RoleService } from "../role/role.service";
 import { TStaff } from "../staff/staff.interface";
+import { logger } from "logger/logger";
 
 /**
  * Extract branch logo filename from file path (relative path)
@@ -30,7 +31,7 @@ const createBranch = async (
   businessId: string,
   userId: Types.ObjectId,
   payload: Omit<CreateBranchPayload, "businessId" | "logo">,
-  logoFile?: Express.Multer.File
+  logoFile?: Express.Multer.File,
 ) => {
   // Query 1: Verify business exists AND user owns it (combined for efficiency)
   const business = await BusinessProfileRepository.findOne({
@@ -43,11 +44,10 @@ const createBranch = async (
     if (logoFile) {
       await unlinkFile(getLogoRelativePath(logoFile.path));
     }
-    
-    
+
     throw new AppError(
       StatusCodes.FORBIDDEN,
-      "You do not have permission to create branches for this business"
+      "You do not have permission to create branches for this business",
     );
   }
 
@@ -66,16 +66,15 @@ const createBranch = async (
     if (logoFile) {
       await unlinkFile(getLogoRelativePath(logoFile.path));
     }
-    
-    
+
     throw new AppError(
       StatusCodes.INTERNAL_SERVER_ERROR,
-      "Failed to create branch"
+      "Failed to create branch",
     );
   }
 
-  // Async role initialization 
-  RoleService.initializeBranchRoles(branch._id.toString())
+  // Async role initialization
+  RoleService.initializeBranchRoles(branch._id.toString());
 
   return branch;
 };
@@ -83,7 +82,7 @@ const createBranch = async (
 const resolveBranchMonthlyFeeAccess = async (
   businessId: string,
   branchId: string,
-  actor: TBranchAccessActor
+  actor: TBranchAccessActor,
 ) => {
   const branch = await BranchRepository.findOne({
     _id: branchId,
@@ -93,7 +92,7 @@ const resolveBranchMonthlyFeeAccess = async (
   if (!branch) {
     throw new AppError(
       StatusCodes.NOT_FOUND,
-      "Branch not found or does not belong to this business"
+      "Branch not found or does not belong to this business",
     );
   }
 
@@ -106,7 +105,7 @@ const resolveBranchMonthlyFeeAccess = async (
     if (!business) {
       throw new AppError(
         StatusCodes.FORBIDDEN,
-        "You do not have permission to access this branch"
+        "You do not have permission to access this branch",
       );
     }
 
@@ -121,7 +120,7 @@ const resolveBranchMonthlyFeeAccess = async (
     if (String(actor.staff.branchId) !== String(branch._id)) {
       throw new AppError(
         StatusCodes.FORBIDDEN,
-        "You do not have permission to access this branch"
+        "You do not have permission to access this branch",
       );
     }
 
@@ -135,7 +134,11 @@ const resolveBranchMonthlyFeeAccess = async (
  * Get all branches for a business with ownership verification
  * Performance: 2 DB queries
  */
-const getBranches = async (businessId: string, userId: Types.ObjectId, options?: any) => {
+const getBranches = async (
+  businessId: string,
+  userId: Types.ObjectId,
+  options?: any,
+) => {
   // Verify user owns the business
   const business = await BusinessProfileRepository.findOne({
     _id: new Types.ObjectId(businessId),
@@ -143,16 +146,15 @@ const getBranches = async (businessId: string, userId: Types.ObjectId, options?:
   });
 
   if (!business) {
-    
     throw new AppError(
       StatusCodes.FORBIDDEN,
-      "You do not have permission to view branches for this business"
+      "You do not have permission to view branches for this business",
     );
   }
 
   const branches = await BranchRepository.findMany(
     { businessId: new Types.ObjectId(businessId) },
-    { sort: { isDefault: -1, createdAt: -1 }, ...options }
+    { sort: { isDefault: -1, createdAt: -1 }, ...options },
   );
 
   return branches;
@@ -160,7 +162,8 @@ const getBranches = async (businessId: string, userId: Types.ObjectId, options?:
 
 /**
  * Get default branch for a business with ownership verification
- * Performance: 2 DB queries
+ * If no default branch exists, create one automatically
+ * Performance: 2-3 DB queries (3 if creating new default branch)
  */
 const getDefaultBranch = async (businessId: string, userId: Types.ObjectId) => {
   // Verify user owns the business
@@ -170,10 +173,9 @@ const getDefaultBranch = async (businessId: string, userId: Types.ObjectId) => {
   });
 
   if (!business) {
-    
     throw new AppError(
       StatusCodes.FORBIDDEN,
-      "You do not have permission to view branches for this business"
+      "You do not have permission to view branches for this business",
     );
   }
 
@@ -182,12 +184,32 @@ const getDefaultBranch = async (businessId: string, userId: Types.ObjectId) => {
     isDefault: true,
   });
 
+  logger.info(business);
   if (!branch) {
-    
-    throw new AppError(
-      StatusCodes.NOT_FOUND,
-      "Default branch not found"
-    );
+    // Auto-create default branch if it doesn't exist
+    const defaultBranchData: CreateBranchPayload = {
+      businessId: new Types.ObjectId(businessId),
+      branchName: `${business.businessName}`,
+      branchAddress: business.businessAddress || undefined,
+      isDefault: true,
+      isActive: true,
+      logo: business.logo || null,
+      favicon: business.logo || null,
+    };
+
+    const newDefaultBranch = await BranchRepository.create(defaultBranchData);
+
+    if (!newDefaultBranch) {
+      throw new AppError(
+        StatusCodes.INTERNAL_SERVER_ERROR,
+        "Failed to create default branch",
+      );
+    }
+
+    // Async role initialization for the new branch
+    RoleService.initializeBranchRoles(newDefaultBranch._id.toString());
+
+    return newDefaultBranch;
   }
 
   return branch;
@@ -202,7 +224,7 @@ const updateBranch = async (
   businessId: string,
   userId: Types.ObjectId,
   payload: Partial<Omit<CreateBranchPayload, "businessId">>,
-  logoFile?: Express.Multer.File
+  logoFile?: Express.Multer.File,
 ) => {
   // Query 1: Verify branch exists AND belongs to the specified business (combined for efficiency)
   const branch = await BranchRepository.findOne({
@@ -215,11 +237,10 @@ const updateBranch = async (
     if (logoFile) {
       await unlinkFile(getLogoRelativePath(logoFile.path));
     }
-    
-    
+
     throw new AppError(
       StatusCodes.NOT_FOUND,
-      "Branch not found or does not belong to this business"
+      "Branch not found or does not belong to this business",
     );
   }
 
@@ -234,11 +255,10 @@ const updateBranch = async (
     if (logoFile) {
       await unlinkFile(getLogoRelativePath(logoFile.path));
     }
-    
-    
+
     throw new AppError(
       StatusCodes.FORBIDDEN,
-      "You do not have permission to update this branch"
+      "You do not have permission to update this branch",
     );
   }
 
@@ -246,8 +266,7 @@ const updateBranch = async (
   if (logoFile && branch.logo) {
     try {
       await unlinkFile(branch.logo);
-    } catch (error) {
-    }
+    } catch (error) {}
   }
 
   // Prepare update data
@@ -264,11 +283,10 @@ const updateBranch = async (
     if (logoFile) {
       await unlinkFile(getLogoRelativePath(logoFile.path));
     }
-    
-    
+
     throw new AppError(
       StatusCodes.INTERNAL_SERVER_ERROR,
-      "Failed to update branch"
+      "Failed to update branch",
     );
   }
 
@@ -278,15 +296,21 @@ const updateBranch = async (
 const getBranchMonthlyFee = async (
   businessId: string,
   branchId: string,
-  actor: TBranchAccessActor
+  actor: TBranchAccessActor,
 ) => {
-  const branch = await resolveBranchMonthlyFeeAccess(businessId, branchId, actor);
+  const branch = await resolveBranchMonthlyFeeAccess(
+    businessId,
+    branchId,
+    actor,
+  );
 
   return {
     branchId: branch._id,
     branchName: branch.branchName,
     monthlyFeeAmount:
-      typeof branch.monthlyFeeAmount === "number" ? branch.monthlyFeeAmount : null,
+      typeof branch.monthlyFeeAmount === "number"
+        ? branch.monthlyFeeAmount
+        : null,
   };
 };
 
@@ -294,7 +318,7 @@ const updateBranchMonthlyFee = async (
   businessId: string,
   branchId: string,
   actor: TBranchAccessActor,
-  monthlyFeeAmount: number
+  monthlyFeeAmount: number,
 ) => {
   await resolveBranchMonthlyFeeAccess(businessId, branchId, actor);
 
@@ -305,7 +329,7 @@ const updateBranchMonthlyFee = async (
   if (!updatedBranch) {
     throw new AppError(
       StatusCodes.INTERNAL_SERVER_ERROR,
-      "Failed to update branch monthly fee"
+      "Failed to update branch monthly fee",
     );
   }
 

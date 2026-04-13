@@ -3,13 +3,17 @@ import bcrypt from "bcryptjs";
 import { OTPType, createOTPData } from "./otp.interface";
 import { OTPRepository } from "./otp.repository";
 import { StatusCodes } from "http-status-codes/build/cjs/status-codes";
-import AppError from "errors/AppError";import config from "config";
+import AppError from "errors/AppError";
+import config from "config";
 import { logger } from "logger/logger";
+import { TCreateAccount, TResetPassword } from "mail/emailTemplate.type";
+import { emailTemplate } from "mail/emailTemplate";
+import { emailHelper } from "mail/emailHelper";
 
 const OTP_BCRYPT_ROUNDS = Number(config.bcrypt_salt_rounds) || 10;
 
 const createOTP = async (createOtpData: createOTPData) => {
-  const { userId, type, provider, target } = createOtpData;
+  const { userId, type, provider, target, name } = createOtpData;
   // Delete any existing unused OTPs of same type
   await OTPRepository.deleteMany({ userId, type, isUsed: false });
   //TODO- for development purposes
@@ -32,14 +36,26 @@ const createOTP = async (createOtpData: createOTPData) => {
 
   if (provider === "email" && target) {
     //TODO - temporarily disable email sending in development to avoid spamming real email accounts. Make sure to test email sending functionality before production deployment.
-    // const mailSendingData: TCreateAccount = {
-    //   name: name,
-    //   email: target,
-    //   otp,
-    //   theme: "theme-blue",
-    // };
-    // const data = emailTemplate.createAccount(mailSendingData);
-    // emailHelper.sendEmail(data);
+    if (type === "password_reset") {
+      const mailSendingData: TResetPassword = {
+        name: name || "User",
+        email: target,
+        otp,
+        theme: "theme-blue",
+        expiresIn: 30,
+      };
+      const data = emailTemplate.resetPassword(mailSendingData);
+      await emailHelper.sendEmail(data);
+    } else {
+      const mailSendingData: TCreateAccount = {
+        name: name || "User",
+        email: target,
+        otp,
+        theme: "theme-blue",
+      };
+      const data = emailTemplate.createAccount(mailSendingData);
+      await emailHelper.sendEmail(data);
+    }
   }
 
   return { otp, otpDoc };

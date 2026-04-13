@@ -14,7 +14,12 @@ const create = catchAsync(async (req: Request, res: Response) => {
   const logoFile = (req.files as any)?.image?.[0] as Express.Multer.File | undefined;
 
   // Use parsed data if available, otherwise use body
-  const payload = req.body.data || req.body;
+  let payload = req.body.data || req.body;
+  
+  // If payload is a string (from FormData), parse it as JSON
+  if (typeof payload === "string") {
+    payload = JSON.parse(payload);
+  }
 
   const profile = await BusinessProfileService.createBusinessProfile(
     userId,
@@ -56,7 +61,12 @@ const update = catchAsync(async (req: Request, res: Response) => {
   const logoFile = (req.files as any)?.image?.[0] as Express.Multer.File | undefined;
 
   // Use parsed data if available, otherwise use body
-  const payload = req.body.data || req.body;
+  let payload = req.body.data || req.body;
+  
+  // If payload is a string (from FormData), parse it as JSON
+  if (typeof payload === "string") {
+    payload = JSON.parse(payload);
+  }
 
   const profile = await BusinessProfileService.updateBusinessProfile(
     userId,
