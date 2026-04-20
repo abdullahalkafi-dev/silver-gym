@@ -31,10 +31,7 @@ const createPaymentSchema = z
   })
   .strict();
 
-const monthlyFeeInputSchema = z.union([
-  z.number().nonnegative(),
-  z.literal(false),
-]);
+const monthlyFeeInputSchema = z.number().nonnegative();
 
 const createMemberDto = z.object({
   data: z
@@ -59,8 +56,8 @@ const createMemberDto = z.object({
       trainingGoals: z.array(z.enum(TRAINING_GOALS)).optional(),
       currentPackageId: z.string().trim().optional(),
       membershipStartDate: z.coerce.date().optional(),
-      customMonthlyFee: z.boolean().optional(),
-      monthlyFeeAmount: monthlyFeeInputSchema.optional(),
+      isCustomMonthlyFee: z.boolean().optional(),
+      customMonthlyFeeAmount: monthlyFeeInputSchema.optional(),
       paidMonths: z.number().int().min(1).optional(),
       payment: createPaymentSchema,
       metadata: z.record(z.string(), z.unknown()).optional(),
@@ -68,29 +65,35 @@ const createMemberDto = z.object({
     .strict()
     .superRefine((data, ctx) => {
       const hasPackage = Boolean(data.currentPackageId);
-      const hasMonthly = data.customMonthlyFee === true;
+      const hasPaidMonths = typeof data.paidMonths === "number" && data.paidMonths > 0;
 
-      if (!hasPackage && !hasMonthly) {
+      // Must provide either a package or paidMonths (monthly billing trigger)
+      if (!hasPackage && !hasPaidMonths) {
         ctx.addIssue({
           code: "custom",
           path: ["currentPackageId"],
-          message: "Provide either currentPackageId or customMonthlyFee=true",
+          message: "Provide either currentPackageId or paidMonths (for monthly billing)",
         });
       }
 
-      if (hasPackage && hasMonthly) {
+      // isCustomMonthlyFee and currentPackageId CAN coexist — it stores the member's
+      // personal monthly rate that applies after the package ends.
+
+      // If isCustomMonthlyFee is true, customMonthlyFeeAmount is required
+      if (data.isCustomMonthlyFee === true && data.customMonthlyFeeAmount == null) {
         ctx.addIssue({
           code: "custom",
-          path: ["customMonthlyFee"],
-          message: "Package and custom monthly fee cannot be used together",
+          path: ["customMonthlyFeeAmount"],
+          message: "customMonthlyFeeAmount is required when isCustomMonthlyFee is true",
         });
       }
 
-      if (!hasMonthly && data.monthlyFeeAmount != null) {
+      // customMonthlyFeeAmount only makes sense when isCustomMonthlyFee is true
+      if (data.isCustomMonthlyFee !== true && data.customMonthlyFeeAmount != null) {
         ctx.addIssue({
           code: "custom",
-          path: ["monthlyFeeAmount"],
-          message: "monthlyFeeAmount can only be provided for custom monthly members",
+          path: ["customMonthlyFeeAmount"],
+          message: "customMonthlyFeeAmount can only be provided when isCustomMonthlyFee is true",
         });
       }
     }),
@@ -118,26 +121,30 @@ const updateMemberDto = z.object({
       membershipStartDate: z.coerce.date().optional(),
       membershipEndDate: z.coerce.date().optional(),
       nextPaymentDate: z.coerce.date().optional(),
-      customMonthlyFee: z.boolean().optional(),
-      monthlyFeeAmount: monthlyFeeInputSchema.optional(),
+      isCustomMonthlyFee: z.boolean().optional(),
+      customMonthlyFeeAmount: monthlyFeeInputSchema.optional(),
       paidMonths: z.number().int().min(0).optional(),
       metadata: z.record(z.string(), z.unknown()).optional(),
     })
     .strict()
     .superRefine((data, ctx) => {
-      if (data.customMonthlyFee === false && data.monthlyFeeAmount != null) {
+      // isCustomMonthlyFee and currentPackageId CAN coexist.
+
+      // If isCustomMonthlyFee is explicitly set to false, customMonthlyFeeAmount must not be present
+      if (data.isCustomMonthlyFee === false && data.customMonthlyFeeAmount != null) {
         ctx.addIssue({
           code: "custom",
-          path: ["monthlyFeeAmount"],
-          message: "monthlyFeeAmount can only be provided for custom monthly members",
+          path: ["customMonthlyFeeAmount"],
+          message: "customMonthlyFeeAmount can only be provided when isCustomMonthlyFee is true",
         });
       }
 
-      if (data.currentPackageId && data.customMonthlyFee === true) {
+      // If customMonthlyFeeAmount is provided, isCustomMonthlyFee must be true
+      if (data.customMonthlyFeeAmount != null && data.isCustomMonthlyFee !== true) {
         ctx.addIssue({
           code: "custom",
-          path: ["currentPackageId"],
-          message: "currentPackageId cannot be combined with customMonthlyFee=true",
+          path: ["customMonthlyFeeAmount"],
+          message: "customMonthlyFeeAmount requires isCustomMonthlyFee to be true",
         });
       }
     }),

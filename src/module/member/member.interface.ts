@@ -41,8 +41,8 @@ export interface TMember {
 	membershipEndDate?: Date;
 	nextPaymentDate?: Date;
 	isActive?: boolean;
-	customMonthlyFee?: boolean;
-	monthlyFeeAmount?: number;
+	isCustomMonthlyFee?: boolean;
+	customMonthlyFeeAmount?: number;
 	paidMonths?: number;
 	currentDueAmount?: number;
 	source?: string;

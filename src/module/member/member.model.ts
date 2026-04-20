@@ -136,11 +136,11 @@ const memberSchema = new Schema<TMember>(
       type: Boolean,
       default: true,
     },
-    customMonthlyFee: {
+    isCustomMonthlyFee: {
       type: Boolean,
       default: false,
     },
-    monthlyFeeAmount: {
+    customMonthlyFeeAmount: {
       type: Number,
       min: 0,
     },
@@ -171,14 +171,16 @@ const memberSchema = new Schema<TMember>(
 );
 
 memberSchema.pre("validate", async function () {
-  if (this.customMonthlyFee) {
-    if (this.monthlyFeeAmount == null) {
-      throw new Error("monthlyFeeAmount is required when customMonthlyFee is true.");
+  if (this.isCustomMonthlyFee) {
+    if (this.customMonthlyFeeAmount == null) {
+      throw new Error("customMonthlyFeeAmount is required when isCustomMonthlyFee is true.");
     }
-  } else if (this.monthlyFeeAmount != null) {
-    throw new Error("monthlyFeeAmount can only be set when customMonthlyFee is true.");
+  } else if (this.customMonthlyFeeAmount != null) {
+    throw new Error("customMonthlyFeeAmount can only be set when isCustomMonthlyFee is true.");
   }
 
+  // NOTE: isCustomMonthlyFee + customMonthlyFeeAmount CAN coexist with currentPackageId.
+  // They represent the member's personal rate that will apply after the package ends.
   if (!this.currentPackageId || !this.branchId) {
     return;
   }

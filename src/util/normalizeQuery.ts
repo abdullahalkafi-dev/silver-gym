@@ -21,3 +21,4 @@ export const normalizeQuery = (query: Record<string, unknown>) => {
         return obj;
       }, {} as Record<string, unknown>);
   };
+  

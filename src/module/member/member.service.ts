@@ -28,30 +28,28 @@ type TCreatePaymentPayload = {
   status?: PaymentStatus;
 };
 
-type TMonthlyFeeInput = number | false;
-
 type TCreateMemberPayload = Omit<
   TMember,
   | "branchId"
   | "photo"
   | "currentPackageId"
-  | "monthlyFeeAmount"
+  | "customMonthlyFeeAmount"
   | "createdAt"
   | "updatedAt"
 > & {
   currentPackageId?: string;
-  monthlyFeeAmount?: TMonthlyFeeInput;
+  customMonthlyFeeAmount?: number;
   payment: TCreatePaymentPayload;
 };
 
 type TUpdateMemberPayload = Partial<
   Omit<
     TMember,
-    "branchId" | "photo" | "currentPackageId" | "monthlyFeeAmount" | "createdAt" | "updatedAt"
+    "branchId" | "photo" | "currentPackageId" | "customMonthlyFeeAmount" | "createdAt" | "updatedAt"
   >
 > & {
   currentPackageId?: string;
-  monthlyFeeAmount?: TMonthlyFeeInput;
+  customMonthlyFeeAmount?: number;
 };
 
 type TAccessActor = {
@@ -322,19 +320,9 @@ const createMember = async (
 
     subTotal = packageDoc.amount + (resolvedAdmissionFeeAmount ?? 0);
   } else {
-    if (!payload.customMonthlyFee) {
-      if (photoFile) {
-        await unlinkFile(getPhotoRelativePath(photoFile.path));
-      }
-
-      throw new AppError(
-        StatusCodes.BAD_REQUEST,
-        "Custom monthly members require monthlyFeeAmount",
-      );
-    }
-
+    // Monthly billing mode: triggered when no package is provided + paidMonths given
     const monthlyFeeFromPayload =
-      typeof payload.monthlyFeeAmount === "number" ? payload.monthlyFeeAmount : undefined;
+      typeof payload.customMonthlyFeeAmount === "number" ? payload.customMonthlyFeeAmount : undefined;
     const monthlyFeeFromBranch =
       typeof branch.monthlyFeeAmount === "number" ? branch.monthlyFeeAmount : undefined;
 
@@ -347,7 +335,7 @@ const createMember = async (
 
       throw new AppError(
         StatusCodes.BAD_REQUEST,
-        "monthlyFeeAmount is required for custom monthly members. Set member monthlyFeeAmount or configure branch monthly fee",
+        "Monthly fee is required. Set customMonthlyFeeAmount or configure branch monthly fee",
       );
     }
 
@@ -366,18 +354,24 @@ const createMember = async (
 
   const memberPayload = {
     ...payload,
-  } as Omit<TCreateMemberPayload, "payment" | "currentPackageId" | "monthlyFeeAmount"> & {
-    monthlyFeeAmount?: number;
+  } as Omit<TCreateMemberPayload, "payment" | "currentPackageId" | "customMonthlyFeeAmount"> & {
+    customMonthlyFeeAmount?: number;
   };
 
   delete (memberPayload as Record<string, unknown>).payment;
   delete (memberPayload as Record<string, unknown>).currentPackageId;
 
-  if (payload.customMonthlyFee) {
-    memberPayload.customMonthlyFee = true;
-    memberPayload.monthlyFeeAmount = resolvedMonthlyFeeAmount;
+  if (payload.isCustomMonthlyFee && payload.customMonthlyFeeAmount != null) {
+    // Package member with a pre-stored custom monthly rate, OR monthly member with custom rate.
+    memberPayload.isCustomMonthlyFee = true;
+    memberPayload.customMonthlyFeeAmount = payload.customMonthlyFeeAmount;
+  } else if (!payload.currentPackageId) {
+    // Monthly billing with no custom rate override — store resolved branch rate
+    memberPayload.isCustomMonthlyFee = false;
+    memberPayload.customMonthlyFeeAmount = resolvedMonthlyFeeAmount;
   } else {
-    delete (memberPayload as Record<string, unknown>).monthlyFeeAmount;
+    // Package-only member, no custom fee configured yet
+    delete (memberPayload as Record<string, unknown>).customMonthlyFeeAmount;
   }
 
   const memberData: TMember = {
@@ -515,10 +509,7 @@ const updateMember = async (
   const branchMonthlyFeeAmount =
     typeof branch.monthlyFeeAmount === "number" ? branch.monthlyFeeAmount : undefined;
 
-  if (payload.monthlyFeeAmount === false) {
-    delete updatePayload.monthlyFeeAmount;
-  }
-
+  // ─── PACKAGE UPDATE BRANCH ──────────────────────────────────────────────────
   if (payload.currentPackageId) {
     const packageDoc = await PackageRepository.findOne({
       _id: new Types.ObjectId(payload.currentPackageId),
@@ -540,7 +531,8 @@ const updateMember = async (
 
     updatePayload.currentPackageId = packageDoc._id as Types.ObjectId;
     updatePayload.currentPackageName = packageDoc.title;
-    updatePayload.customMonthlyFee = false;
+    // NOTE: do NOT touch isCustomMonthlyFee / customMonthlyFeeAmount — they
+    // store the member's personal rate that will apply after the package ends.
     updatePayload.membershipStartDate = membershipStartDate;
     updatePayload.membershipEndDate = addDuration(
       membershipStartDate,
@@ -548,14 +540,13 @@ const updateMember = async (
       packageDoc.durationType,
     );
     updatePayload.nextPaymentDate = updatePayload.membershipEndDate;
-    unsetPayload.monthlyFeeAmount = 1;
   }
 
+  // ─── VALIDATION: standalone customMonthlyFeeAmount requires isCustomMonthlyFee ─
   if (
-    !payload.currentPackageId &&
-    typeof payload.monthlyFeeAmount === "number" &&
-    payload.customMonthlyFee !== true &&
-    member.customMonthlyFee !== true
+    typeof payload.customMonthlyFeeAmount === "number" &&
+    payload.isCustomMonthlyFee !== true &&
+    member.isCustomMonthlyFee !== true
   ) {
     if (photoFile) {
       await unlinkFile(getPhotoRelativePath(photoFile.path));
@@ -563,39 +554,23 @@ const updateMember = async (
 
     throw new AppError(
       StatusCodes.BAD_REQUEST,
-      "monthlyFeeAmount can only be set for custom monthly members",
+      "customMonthlyFeeAmount can only be set when isCustomMonthlyFee is true",
     );
   }
 
-  if (
-    !payload.currentPackageId &&
-    payload.monthlyFeeAmount === false &&
-    payload.customMonthlyFee !== true &&
-    member.customMonthlyFee !== true
-  ) {
-    if (photoFile) {
-      await unlinkFile(getPhotoRelativePath(photoFile.path));
-    }
+  // ─── MONTHLY BILLING TRANSITION ─────────────────────────────────────────────
+  // Triggered when paidMonths is provided and no package is being assigned.
+  const isSwitchingToMonthly =
+    typeof payload.paidMonths === "number" &&
+    payload.paidMonths > 0 &&
+    !payload.currentPackageId;
 
-    throw new AppError(
-      StatusCodes.BAD_REQUEST,
-      "monthlyFeeAmount=false can only be used for custom monthly members",
-    );
-  }
-
-  const shouldApplyMonthlyFlow =
-    payload.customMonthlyFee === true ||
-    (payload.monthlyFeeAmount === false && member.customMonthlyFee === true);
-
-  if (shouldApplyMonthlyFlow) {
-    const requestedBranchFallback = payload.monthlyFeeAmount === false;
-    const requestedMonthlyFeeAmount =
-      typeof payload.monthlyFeeAmount === "number" ? payload.monthlyFeeAmount : undefined;
-
+  if (isSwitchingToMonthly) {
+    // Fee resolution priority: new customMonthlyFeeAmount in payload → stored member rate → branch default
     const resolvedMonthlyFeeAmount =
-      requestedMonthlyFeeAmount ??
-      (!requestedBranchFallback && typeof member.monthlyFeeAmount === "number"
-        ? member.monthlyFeeAmount
+      (typeof payload.customMonthlyFeeAmount === "number" ? payload.customMonthlyFeeAmount : undefined) ??
+      (member.isCustomMonthlyFee && typeof member.customMonthlyFeeAmount === "number"
+        ? member.customMonthlyFeeAmount
         : undefined) ??
       branchMonthlyFeeAmount;
 
@@ -606,7 +581,7 @@ const updateMember = async (
 
       throw new AppError(
         StatusCodes.BAD_REQUEST,
-        "monthlyFeeAmount is required for custom monthly members. Set member monthlyFeeAmount or configure branch monthly fee",
+        "Monthly fee is required. Set customMonthlyFeeAmount or configure branch monthly fee",
       );
     }
 
@@ -614,34 +589,18 @@ const updateMember = async (
       ? new Date(payload.membershipStartDate)
       : member.membershipStartDate || new Date();
 
-    const isSwitchingToMonthly = member.customMonthlyFee !== true;
-    const hasPaidMonthsUpdate =
-      typeof payload.paidMonths === "number" && payload.paidMonths > 0;
-    const existingPaidMonths =
-      typeof member.paidMonths === "number" && member.paidMonths > 0
-        ? member.paidMonths
-        : 1;
-    const paidMonths = hasPaidMonthsUpdate
-      ? Number(payload.paidMonths)
-      : existingPaidMonths;
-    const shouldRecalculateNextPaymentDate =
-      isSwitchingToMonthly ||
-      Boolean(payload.membershipStartDate) ||
-      hasPaidMonthsUpdate ||
-      !member.nextPaymentDate;
+    const paidMonths = Number(payload.paidMonths);
 
-    updatePayload.customMonthlyFee = true;
-    updatePayload.monthlyFeeAmount = resolvedMonthlyFeeAmount;
     updatePayload.membershipStartDate = membershipStartDate;
-
-    if (hasPaidMonthsUpdate || isSwitchingToMonthly) {
-      updatePayload.paidMonths = paidMonths;
+    updatePayload.paidMonths = paidMonths;
+    updatePayload.nextPaymentDate = addMonths(membershipStartDate, paidMonths);
+    // If the member had a custom rate, preserve/update it on the stored field
+    if (member.isCustomMonthlyFee || payload.isCustomMonthlyFee) {
+      updatePayload.isCustomMonthlyFee = true;
+      updatePayload.customMonthlyFeeAmount = resolvedMonthlyFeeAmount;
     }
 
-    if (shouldRecalculateNextPaymentDate) {
-      updatePayload.nextPaymentDate = addMonths(membershipStartDate, paidMonths);
-    }
-
+    // Clear package fields when transitioning to monthly billing
     unsetPayload.currentPackageId = 1;
     unsetPayload.currentPackageName = 1;
     unsetPayload.membershipEndDate = 1;
