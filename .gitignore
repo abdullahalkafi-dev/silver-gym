@@ -1,0 +1,9 @@
+node_modules
+node_modules/
+.env
+/logs
+/logs/*
+/uploads/
+dist/
+.pnpm-store/
+Package and custom monthly fee cannot be used together
