@@ -24,6 +24,7 @@ import {
   reconcileMemberBillingState,
 } from "./member.billing";
 import {
+  createAdmissionDueLedgerItem,
   hasMemberBillingLedgerChanged,
   mergeMemberBillingLedgerMetadata,
   reconcileMemberBillingLedger,
@@ -47,7 +48,6 @@ type TCreateMemberPayload = Omit<
   | "currentPackageId"
   | "customMonthlyFeeAmount"
   | "currentDueAmount"
-  | "currentAdvanceAmount"
   | "createdAt"
   | "updatedAt"
 > & {
@@ -64,7 +64,6 @@ type TUpdateMemberPayload = Partial<
     | "currentPackageId"
     | "customMonthlyFeeAmount"
     | "currentDueAmount"
-    | "currentAdvanceAmount"
     | "createdAt"
     | "updatedAt"
   >
@@ -149,7 +148,7 @@ const getBillingReconcileCacheKey = (branchId: string) =>
 const toPlainMember = (
   doc: TMember & { _id?: unknown },
 ): TMember & { _id?: unknown } => {
-  const raw = doc as Record<string, unknown>;
+  const raw = doc as unknown as Record<string, unknown>;
   if (typeof raw.toObject === "function") {
     return (raw.toObject as () => TMember & { _id?: unknown })();
   }
@@ -232,7 +231,7 @@ const reconcileBranchMemberBilling = async (
     },
     {
       select:
-        "currentDueAmount currentAdvanceAmount nextPaymentDate isActive isCustomMonthlyFee customMonthlyFeeAmount _id",
+        "currentDueAmount nextPaymentDate isActive isCustomMonthlyFee customMonthlyFeeAmount _id",
     },
   ).lean();
 
@@ -521,6 +520,17 @@ const createMember = async (
     discount,
   });
 
+  if (settlement.overpaidAmount > 0.01) {
+    if (photoFile) {
+      await unlinkFile(getPhotoRelativePath(photoFile.path));
+    }
+
+    throw new AppError(
+      StatusCodes.BAD_REQUEST,
+      "Paid amount cannot exceed the bill total after discount",
+    );
+  }
+
   const memberPayload = {
     ...payload,
   } as Omit<TCreateMemberPayload, "payment" | "currentPackageId" | "customMonthlyFeeAmount"> & {
@@ -543,6 +553,20 @@ const createMember = async (
     delete (memberPayload as Record<string, unknown>).customMonthlyFeeAmount;
   }
 
+  const now = new Date();
+
+  const admissionDueLedgerMetadata =
+    settlement.dueAmount > 0
+      ? mergeMemberBillingLedgerMetadata(
+          (memberPayload as Record<string, unknown>).metadata ?? {},
+          {
+            version: 1,
+            items: [createAdmissionDueLedgerItem(settlement.dueAmount, now)],
+            updatedAt: now.toISOString(),
+          },
+        )
+      : undefined;
+
   const memberData: TMember = {
     ...memberPayload,
     branchId: new Types.ObjectId(branchId),
@@ -552,10 +576,10 @@ const createMember = async (
     membershipEndDate,
     nextPaymentDate,
     currentDueAmount: settlement.dueAmount,
-    currentAdvanceAmount: settlement.advanceAmount,
     isActive: true,
     source: payload.source || "app",
     photo: photoFile ? getPhotoRelativePath(photoFile.path) : undefined,
+    ...(admissionDueLedgerMetadata ? { metadata: admissionDueLedgerMetadata } : {}),
   };
 
   const paymentData: Omit<TPayment, "memberId" | "memberName"> = {
@@ -572,7 +596,6 @@ const createMember = async (
     subTotal,
     discount,
     dueAmount: settlement.dueAmount,
-    advanceAmount: settlement.advanceAmount,
     paidTotal,
     admissionFee: resolvedAdmissionFeeAmount,
     paymentMethod: paymentInput.paymentMethod,

@@ -25,7 +25,6 @@ const createPaymentDto = z.object({
       subTotal: z.number().min(0, "Subtotal cannot be negative"),
       discount: z.number().min(0, "Discount cannot be negative").optional(),
       dueAmount: z.number().min(0, "Due amount cannot be negative").optional(),
-      advanceAmount: z.number().min(0, "Advance amount cannot be negative").optional(),
       paidTotal: z.number().min(0, "Paid amount cannot be negative"),
       admissionFee: z.number().min(0, "Admission fee cannot be negative").optional(),
       paymentMethod: z.enum(Object.values(PaymentMethod) as [string, ...string[]]),
@@ -87,14 +86,12 @@ const createPaymentDto = z.object({
         }
       }
 
-      if (data.advanceAmount !== undefined) {
-        if (Math.abs(settlement.advanceAmount - data.advanceAmount) > 0.01) {
-          ctx.addIssue({
-            code: "custom",
-            path: ["advanceAmount"],
-            message: "Advance amount must equal the extra amount paid beyond the bill total",
-          });
-        }
+      if (settlement.overpaidAmount > 0.01) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["paidTotal"],
+          message: "Paid amount cannot exceed the bill total after discount",
+        });
       }
     }),
 });
@@ -115,7 +112,6 @@ const updatePaymentDto = z.object({
       subTotal: z.number().min(0, "Subtotal cannot be negative").optional(),
       discount: z.number().min(0, "Discount cannot be negative").optional(),
       dueAmount: z.number().min(0, "Due amount cannot be negative").optional(),
-      advanceAmount: z.number().min(0, "Advance amount cannot be negative").optional(),
       paidTotal: z.number().min(0, "Paid amount cannot be negative").optional(),
       admissionFee: z.number().min(0, "Admission fee cannot be negative").optional(),
       paymentMethod: z.enum(Object.values(PaymentMethod) as [string, ...string[]]).optional(),

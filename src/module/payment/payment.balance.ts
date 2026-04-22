@@ -14,18 +14,16 @@ type TRecurringBillingInput = {
 
 type TMemberBalanceLike = {
   currentDueAmount?: number | null;
-  currentAdvanceAmount?: number | null;
 };
 
 export type TPaymentSettlement = {
   netAmount: number;
   dueAmount: number;
-  advanceAmount: number;
+  overpaidAmount: number;
 };
 
 export type TMemberBalanceSnapshot = {
   currentDueAmount: number;
-  currentAdvanceAmount: number;
 };
 
 export type TRecurringBillingBalance = TMemberBalanceSnapshot & {
@@ -49,7 +47,7 @@ export const computePaymentSettlement = ({
   return {
     netAmount,
     dueAmount: netAmount > 0 ? netAmount : 0,
-    advanceAmount: netAmount < 0 ? Math.abs(netAmount) : 0,
+    overpaidAmount: netAmount < 0 ? Math.abs(netAmount) : 0,
   };
 };
 
@@ -124,9 +122,7 @@ export const reconcileRecurringBillingBalance = ({
 };
 
 export const getMemberNetBalance = (member: TMemberBalanceLike): number => {
-  return normalizeMoney(
-    (member.currentDueAmount ?? 0) - (member.currentAdvanceAmount ?? 0),
-  );
+  return normalizeMoney(member.currentDueAmount ?? 0);
 };
 
 export const toMemberBalanceSnapshot = (netAmount: number): TMemberBalanceSnapshot => {
@@ -134,7 +130,6 @@ export const toMemberBalanceSnapshot = (netAmount: number): TMemberBalanceSnapsh
 
   return {
     currentDueAmount: normalizedNet > 0 ? normalizedNet : 0,
-    currentAdvanceAmount: normalizedNet < 0 ? Math.abs(normalizedNet) : 0,
   };
 };
 

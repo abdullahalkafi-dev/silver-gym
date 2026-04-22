@@ -1,7 +1,6 @@
 import { TBranch } from "../branch/branch.interface";
 import {
   addMonthsPreservingDay,
-  getMemberNetBalance,
   normalizeMoney,
   reconcileRecurringBillingBalance,
 } from "../payment/payment.balance";
@@ -12,7 +11,6 @@ type TBranchBillingConfig = Pick<TBranch, "monthlyFeeAmount">;
 type TMemberBillingLike = Pick<
   TMember,
   | "currentDueAmount"
-  | "currentAdvanceAmount"
   | "nextPaymentDate"
   | "isActive"
   | "isCustomMonthlyFee"
@@ -23,11 +21,9 @@ type TMemberBillingLike = Pick<
 
 export type TReconciledMemberBilling = {
   currentDueAmount: number;
-  currentAdvanceAmount: number;
   updatedNextPaymentDate?: Date;
   monthlyFeeAmount?: number;
   openingDueAmount: number;
-  openingAdvanceAmount: number;
   openingNextPaymentDate?: Date;
   overdueMonths: number;
   accruedAmount: number;
@@ -77,11 +73,10 @@ export const resolveMemberMonthlyFeeAmount = (
 export const buildMemberBillingUpdate = (
   billing: Pick<
     TReconciledMemberBilling,
-    "currentDueAmount" | "currentAdvanceAmount" | "updatedNextPaymentDate"
+    "currentDueAmount" | "updatedNextPaymentDate"
   >,
 ) => ({
   currentDueAmount: billing.currentDueAmount,
-  currentAdvanceAmount: billing.currentAdvanceAmount,
   ...(billing.updatedNextPaymentDate
     ? { nextPaymentDate: billing.updatedNextPaymentDate }
     : {}),
@@ -91,16 +86,14 @@ export const applyBillingToMember = <T extends TMemberBillingLike>(
   member: T,
   billing: Pick<
     TReconciledMemberBilling,
-    "currentDueAmount" | "currentAdvanceAmount" | "updatedNextPaymentDate"
+    "currentDueAmount" | "updatedNextPaymentDate"
   >,
 ): T & {
   currentDueAmount: number;
-  currentAdvanceAmount: number;
   nextPaymentDate?: Date;
 } => ({
   ...member,
   currentDueAmount: billing.currentDueAmount,
-  currentAdvanceAmount: billing.currentAdvanceAmount,
   ...(billing.updatedNextPaymentDate
     ? { nextPaymentDate: billing.updatedNextPaymentDate }
     : {}),
@@ -114,27 +107,23 @@ export const reconcileMemberBillingState = (
   const monthlyFeeAmount = resolveMemberMonthlyFeeAmount(member, branch);
   const openingNextPaymentDate = toOptionalDate(member.nextPaymentDate);
   const openingDueAmount = normalizeMoney(member.currentDueAmount ?? 0);
-  const openingAdvanceAmount = normalizeMoney(member.currentAdvanceAmount ?? 0);
   const snapshot = reconcileRecurringBillingBalance({
     nextPaymentDate: openingNextPaymentDate,
     recurringChargeAmount: monthlyFeeAmount,
-    openingNetBalance: getMemberNetBalance(member),
+    openingNetBalance: openingDueAmount,
     isActive: member.isActive !== false,
     now,
   });
 
   const shouldPersist =
     snapshot.currentDueAmount !== openingDueAmount ||
-    snapshot.currentAdvanceAmount !== openingAdvanceAmount ||
     !areDatesEqual(openingNextPaymentDate, snapshot.updatedNextPaymentDate);
 
   return {
     currentDueAmount: snapshot.currentDueAmount,
-    currentAdvanceAmount: snapshot.currentAdvanceAmount,
     updatedNextPaymentDate: snapshot.updatedNextPaymentDate,
     monthlyFeeAmount,
     openingDueAmount,
-    openingAdvanceAmount,
     openingNextPaymentDate,
     overdueMonths: snapshot.overdueMonths,
     accruedAmount: snapshot.accruedAmount,

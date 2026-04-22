@@ -131,7 +131,6 @@ type TCollectBillInvoiceLine = {
 };
 
 type TResolvedCollectBillInvoiceLine = TCollectBillInvoiceLine & {
-  advanceAppliedAmount: number;
   discountAppliedAmount: number;
   paidAppliedAmount: number;
   resolvedAmount: number;
@@ -271,6 +270,14 @@ const addPackageDuration = (
   }
 };
 
+const isShortTermPackageDuration = (durationType?: string) =>
+  durationType === PackageDurationType.DAY ||
+  durationType === PackageDurationType.WEEK;
+
+const isLongTermPackageDuration = (durationType?: string) =>
+  durationType === PackageDurationType.MONTH ||
+  durationType === PackageDurationType.YEAR;
+
 const mapDueLedgerItemToResponse = (item: TMemberBillingLedgerItem) => ({
   ledgerItemId: item.key,
   type: item.type,
@@ -285,27 +292,18 @@ const mapDueLedgerItemToResponse = (item: TMemberBillingLedgerItem) => ({
 
 const allocateCollectBillCoverage = ({
   lines,
-  advanceAmount = 0,
   discount = 0,
   paidTotal = 0,
 }: {
   lines: TCollectBillInvoiceLine[];
-  advanceAmount?: number;
   discount?: number;
   paidTotal?: number;
 }) => {
-  let remainingAdvanceAmount = normalizeMoney(advanceAmount);
   let remainingDiscount = normalizeMoney(discount);
   let remainingPaidTotal = normalizeMoney(paidTotal);
 
   return lines.map<TResolvedCollectBillInvoiceLine>((line) => {
     let unresolvedAmount = normalizeMoney(line.amount);
-
-    const advanceAppliedAmount = Math.min(unresolvedAmount, remainingAdvanceAmount);
-    unresolvedAmount = normalizeMoney(unresolvedAmount - advanceAppliedAmount);
-    remainingAdvanceAmount = normalizeMoney(
-      remainingAdvanceAmount - advanceAppliedAmount,
-    );
 
     const discountAppliedAmount = Math.min(unresolvedAmount, remainingDiscount);
     unresolvedAmount = normalizeMoney(unresolvedAmount - discountAppliedAmount);
@@ -317,12 +315,9 @@ const allocateCollectBillCoverage = ({
 
     return {
       ...line,
-      advanceAppliedAmount,
       discountAppliedAmount,
       paidAppliedAmount,
-      resolvedAmount: normalizeMoney(
-        advanceAppliedAmount + discountAppliedAmount + paidAppliedAmount,
-      ),
+      resolvedAmount: normalizeMoney(discountAppliedAmount + paidAppliedAmount),
       unresolvedAmount,
     };
   });
@@ -649,6 +644,38 @@ const resolveCollectBillCycleDetails = async (
         throw new AppError(StatusCodes.NOT_FOUND, "Package not found in this branch");
       }
 
+      const currentPackageDurationType = member?.currentPackageId
+        ? (
+            await PackageRepository.findOne({
+              _id: member.currentPackageId,
+              branchId: new Types.ObjectId(branchId),
+            })
+          )?.durationType
+        : undefined;
+
+      if (
+        member &&
+        (!member.currentPackageId ||
+          isLongTermPackageDuration(currentPackageDurationType)) &&
+        !isLongTermPackageDuration(packageDoc.durationType)
+      ) {
+        throw new AppError(
+          StatusCodes.BAD_REQUEST,
+          "Monthly and yearly members can only switch to monthly or yearly packages",
+        );
+      }
+
+      if (
+        member?.isActive !== false &&
+        isShortTermPackageDuration(currentPackageDurationType) &&
+        isShortTermPackageDuration(packageDoc.durationType)
+      ) {
+        throw new AppError(
+          StatusCodes.BAD_REQUEST,
+          "Active day or weekly packages must finish before another day or weekly package can start",
+        );
+      }
+
       const admissionFeeAmount = packageDoc.includeAdmissionFee
         ? typeof packageDoc.admissionFeeAmount === "number"
           ? packageDoc.admissionFeeAmount
@@ -749,7 +776,7 @@ const persistCollectedBill = async (
 };
 
 const getPaymentNetEffect = (
-  payment: Pick<TPayment, "dueAmount" | "advanceAmount" | "status">,
+  payment: Pick<TPayment, "dueAmount" | "status">,
 ): number => {
   if (
     payment.status === PaymentStatus.CANCELLED ||
@@ -758,7 +785,7 @@ const getPaymentNetEffect = (
     return 0;
   }
 
-  return normalizeMoney((payment.dueAmount ?? 0) - (payment.advanceAmount ?? 0));
+  return normalizeMoney(payment.dueAmount ?? 0);
 };
 
 const syncMemberBalanceDelta = async (
@@ -916,6 +943,13 @@ const createPayment = async (
     discount,
   });
 
+  if (settlement.overpaidAmount > 0.01) {
+    throw new AppError(
+      StatusCodes.BAD_REQUEST,
+      "Paid amount cannot exceed the bill total after discount",
+    );
+  }
+
   // Determine payment status
   const status = computePaymentStatus(
     settlement.dueAmount,
@@ -930,7 +964,6 @@ const createPayment = async (
     branchId: new Types.ObjectId(branchId),
     invoiceNo,
     dueAmount: settlement.dueAmount,
-    advanceAmount: settlement.advanceAmount,
     status,
     paymentDate: payload.paymentDate || new Date(),
     source: payload.source || "MANUAL",
@@ -971,8 +1004,6 @@ const getCollectBillContext = async (
     member,
     billing: {
       currentDueAmount: member.currentDueAmount ?? billing.currentDueAmount,
-      currentAdvanceAmount:
-        member.currentAdvanceAmount ?? billing.currentAdvanceAmount,
       overdueMonths: dueLedger.items.filter((item) => item.type === "monthly_due").length,
       accruedAmount: overdueAmount,
       monthlyFeeAmount: billing.monthlyFeeAmount,
@@ -1008,11 +1039,7 @@ const collectBill = async (
         ? new Date(payload.paymentDate)
         : new Date();
 
-  const openingNetBalance = normalizeMoney(
-    (member.currentDueAmount ?? 0) - (member.currentAdvanceAmount ?? 0),
-  );
   const openingDueAmount = normalizeMoney(member.currentDueAmount ?? 0);
-  const openingAdvanceAmount = normalizeMoney(member.currentAdvanceAmount ?? 0);
   const discount = normalizeMoney(payload.discount ?? 0);
   const paidTotal = normalizeMoney(payload.paidTotal ?? 0);
   const selectedDueItems = resolveCollectBillDueSelections(dueLedger, payload);
@@ -1081,21 +1108,40 @@ const collectBill = async (
     paidTotal,
     discount,
   });
+
+  if (settlement.overpaidAmount > 0.01) {
+    throw new AppError(
+      StatusCodes.BAD_REQUEST,
+      "Paid amount cannot exceed the selected bill total after discount",
+    );
+  }
+
   const resolvedInvoiceLines = allocateCollectBillCoverage({
     lines: invoiceLines,
-    advanceAmount: openingAdvanceAmount,
     discount,
     paidTotal,
   });
+
+  const hasUnresolvedCycleAmount = resolvedInvoiceLines.some(
+    (line) => line.kind === "cycle" && line.unresolvedAmount > 0.01,
+  );
+
+  if (hasUnresolvedCycleAmount) {
+    throw new AppError(
+      StatusCodes.BAD_REQUEST,
+      "New monthly or package billing must be fully paid in the same transaction",
+    );
+  }
+
   const effectiveDuePaymentAmount = normalizeMoney(
     resolvedInvoiceLines
       .filter((line) => line.kind === "selected_due")
       .reduce((total, line) => total + line.resolvedAmount, 0),
   );
-  const finalNetBalance = normalizeMoney(
-    openingNetBalance - selectedDueAmount + settlement.netAmount,
+  const finalDueAmount = normalizeMoney(
+    openingDueAmount - selectedDueAmount + settlement.dueAmount,
   );
-  const finalBalanceSnapshot = toMemberBalanceSnapshot(finalNetBalance);
+  const finalBalanceSnapshot = toMemberBalanceSnapshot(finalDueAmount);
   const finalNextPaymentDate =
     cycleDetails.nextPaymentDate ?? billing.updatedNextPaymentDate ?? member.nextPaymentDate;
   const updatedDueLedger = updateCollectBillDueLedger({
@@ -1108,7 +1154,6 @@ const collectBill = async (
   const memberUpdatePayload: Record<string, unknown> = {
     ...buildMemberBillingUpdate({
       currentDueAmount: finalBalanceSnapshot.currentDueAmount,
-      currentAdvanceAmount: finalBalanceSnapshot.currentAdvanceAmount,
       updatedNextPaymentDate: finalNextPaymentDate,
     }),
     ...cycleDetails.memberUpdate,
@@ -1138,7 +1183,6 @@ const collectBill = async (
     subTotal,
     discount,
     dueAmount: settlement.dueAmount,
-    advanceAmount: settlement.advanceAmount,
     paidTotal,
     admissionFee: cycleDetails.admissionFeeAmount,
     paymentMethod: payload.paymentMethod,
@@ -1150,7 +1194,6 @@ const collectBill = async (
       entryKind: "collect_bill",
       collectionMode: payload.collectionMode,
       currentDueAmountBeforeCollection: openingDueAmount,
-      currentAdvanceAmountBeforeCollection: openingAdvanceAmount,
       overdueMonthsApplied: dueLedger.items.filter((item) => item.type === "monthly_due").length,
       accruedAmountApplied: normalizeMoney(
         dueLedger.items
@@ -1173,14 +1216,12 @@ const collectBill = async (
         packageId: line.packageId,
         packageName: line.packageName,
         paidMonths: line.paidMonths,
-        advanceAppliedAmount: line.advanceAppliedAmount,
         discountAppliedAmount: line.discountAppliedAmount,
         paidAppliedAmount: line.paidAppliedAmount,
         resolvedAmount: line.resolvedAmount,
         unresolvedAmount: line.unresolvedAmount,
       })),
       remainingDueAmount: finalBalanceSnapshot.currentDueAmount,
-      remainingAdvanceAmount: finalBalanceSnapshot.currentAdvanceAmount,
       previousNextPaymentDate: member.nextPaymentDate,
       newNextPaymentDate: finalNextPaymentDate,
       reactivatedMember:
@@ -1211,7 +1252,6 @@ const collectBill = async (
     member: updatedMember,
     billing: {
       currentDueAmount: updatedMember.currentDueAmount ?? 0,
-      currentAdvanceAmount: updatedMember.currentAdvanceAmount ?? 0,
       nextPaymentDate: updatedMember.nextPaymentDate,
       monthlyFeeAmount: resolveMemberMonthlyFeeAmount(updatedMember, branch),
       overdueMonths: updatedDueLedger.items.filter(
@@ -1237,6 +1277,16 @@ const getAllPayments = async (
 
   if (query.packageId && Types.ObjectId.isValid(query.packageId)) {
     normalizedQuery.packageId = new Types.ObjectId(query.packageId);
+  }
+
+  // Convert startDate/endDate to a paymentDate range filter
+  if (query.startDate || query.endDate) {
+    const paymentDateFilter: Record<string, Date> = {};
+    if (query.startDate) paymentDateFilter.$gte = new Date(query.startDate);
+    if (query.endDate) paymentDateFilter.$lte = new Date(query.endDate);
+    normalizedQuery.paymentDate = paymentDateFilter;
+    delete normalizedQuery.startDate;
+    delete normalizedQuery.endDate;
   }
 
   const paymentQuery = new QueryBuilder(
@@ -1306,20 +1356,26 @@ const updatePayment = async (
     payload.subTotal !== undefined ||
     payload.paidTotal !== undefined ||
     payload.discount !== undefined ||
-    payload.dueAmount !== undefined ||
-    payload.advanceAmount !== undefined
+    payload.dueAmount !== undefined
   ) {
     const settlement = computePaymentSettlement({
       subTotal,
       paidTotal,
       discount,
     });
+
+    if (settlement.overpaidAmount > 0.01) {
+      throw new AppError(
+        StatusCodes.BAD_REQUEST,
+        "Paid amount cannot exceed the bill total after discount",
+      );
+    }
+
     const status = payload.status ?? computePaymentStatus(settlement.dueAmount, paidTotal);
 
     updatedPayload = {
       ...updatedPayload,
       dueAmount: settlement.dueAmount,
-      advanceAmount: settlement.advanceAmount,
       status,
     };
   }

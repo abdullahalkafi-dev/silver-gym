@@ -22,6 +22,10 @@ import { PaymentRepository } from "../payment/payment.repository";
 import { TStaff } from "../staff/staff.interface";
 import { TMember } from "./member.interface";
 import {
+  createAdmissionDueLedgerItem,
+  mergeMemberBillingLedgerMetadata,
+} from "./member.billingLedger";
+import {
   TMemberImportBatch,
   TMemberImportFailureRow,
   TMemberImportStatus,
@@ -218,7 +222,6 @@ const calculateBalanceSnapshot = (
   isActive: boolean
 ): {
   currentDueAmount: number;
-  currentAdvanceAmount: number;
   updatedNextPaymentDate: Date;
 } => {
   const snapshot = reconcileRecurringBillingBalance({
@@ -230,7 +233,6 @@ const calculateBalanceSnapshot = (
 
   return {
     currentDueAmount: snapshot.currentDueAmount,
-    currentAdvanceAmount: snapshot.currentAdvanceAmount,
     updatedNextPaymentDate: snapshot.updatedNextPaymentDate || nextPaymentDate,
   };
 };
@@ -278,7 +280,6 @@ const ensureOpeningImportPayment = async ({
     subTotal: 0,
     discount: 0,
     dueAmount: member.currentDueAmount ?? 0,
-    advanceAmount: member.currentAdvanceAmount ?? 0,
     paidTotal: 0,
     paymentMethod: PaymentMethod.Other,
     paymentDate: new Date(),
@@ -292,7 +293,6 @@ const ensureOpeningImportPayment = async ({
       importRowIndex: rowIndex,
       originalNextPaymentDate: originalNextPaymentDate.toISOString(),
       openingDueAmount: member.currentDueAmount ?? 0,
-      openingAdvanceAmount: member.currentAdvanceAmount ?? 0,
       sheetDueAmount,
       monthlyFeeAmount,
     },
@@ -741,7 +741,6 @@ const processRow = async (
   // Calculate opening member balance using elapsed months and any imported carry-over.
   const {
     currentDueAmount,
-    currentAdvanceAmount,
     updatedNextPaymentDate,
   } = calculateBalanceSnapshot(
     nextPaymentDate,
@@ -749,6 +748,23 @@ const processRow = async (
     sheetDueAmount,
     isActive
   );
+
+  const importNow = new Date();
+
+  const baseImportMetadata: Record<string, unknown> = {
+    importRowIndex: rowIndex,
+    originalNextPaymentDate: nextPaymentDate.toISOString(),
+    sheetDueAmount,
+  };
+
+  const importMemberMetadata =
+    currentDueAmount > 0
+      ? mergeMemberBillingLedgerMetadata(baseImportMetadata, {
+          version: 1,
+          items: [createAdmissionDueLedgerItem(currentDueAmount, importNow)],
+          updatedAt: importNow.toISOString(),
+        })
+      : baseImportMetadata;
 
   const memberData: TMember = {
     branchId: branchObjectId,
@@ -761,15 +777,10 @@ const processRow = async (
     isCustomMonthlyFee: true,
     nextPaymentDate: updatedNextPaymentDate,
     currentDueAmount,
-    currentAdvanceAmount,
     isActive,
     source,
     importBatchId: batchId,
-    metadata: {
-      importRowIndex: rowIndex,
-      originalNextPaymentDate: nextPaymentDate.toISOString(),
-      sheetDueAmount,
-    },
+    metadata: importMemberMetadata,
   };
 
   try {

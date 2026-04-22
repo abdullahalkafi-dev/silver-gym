@@ -4,6 +4,7 @@ import { TReconciledMemberBilling } from "./member.billing";
 export const BILLING_LEDGER_METADATA_KEY = "billingDueLedger";
 
 export type TMemberBillingLedgerItemType =
+  | "admission_due"
   | "monthly_due"
   | "carry_forward"
   | "monthly_cycle_due"
@@ -48,15 +49,19 @@ const isRecord = (value: unknown): value is Record<string, unknown> => {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 };
 
+const PRIORITY_TYPES: TMemberBillingLedgerItemType[] = ["admission_due", "carry_forward"];
+
 const sortLedgerItems = (items: TMemberBillingLedgerItem[]) => {
   return [...items].sort((left, right) => {
-    if (left.type === "carry_forward" && right.type !== "carry_forward") {
-      return -1;
-    }
+    const leftPriority = PRIORITY_TYPES.indexOf(left.type);
+    const rightPriority = PRIORITY_TYPES.indexOf(right.type);
 
-    if (left.type !== "carry_forward" && right.type === "carry_forward") {
-      return 1;
-    }
+    const leftIsPriority = leftPriority !== -1;
+    const rightIsPriority = rightPriority !== -1;
+
+    if (leftIsPriority && !rightIsPriority) return -1;
+    if (!leftIsPriority && rightIsPriority) return 1;
+    if (leftIsPriority && rightIsPriority) return leftPriority - rightPriority;
 
     const leftDate = left.dueDate || left.createdAt;
     const rightDate = right.dueDate || right.createdAt;
@@ -153,6 +158,18 @@ export const sumMemberBillingLedger = (items: TMemberBillingLedgerItem[]) => {
     items.reduce((total, item) => total + normalizeMoney(item.remainingAmount), 0),
   );
 };
+
+export const createAdmissionDueLedgerItem = (
+  amount: number,
+  now: Date = new Date(),
+): TMemberBillingLedgerItem => ({
+  key: `admission_due:${now.getTime()}`,
+  type: "admission_due",
+  label: "Admission Due",
+  originalAmount: normalizeMoney(amount),
+  remainingAmount: normalizeMoney(amount),
+  createdAt: now.toISOString(),
+});
 
 export const createMemberBillingLedgerItem = ({
   key,
@@ -276,6 +293,8 @@ export const reconcileMemberBillingLedger = (
   let nextItems = readMemberBillingLedger(member).items;
 
   if (nextItems.length === 0 && billing.openingDueAmount > 0) {
+    // Legacy fallback: if member has no ledger yet but has a due amount,
+    // represent it as a carry_forward so the reconciliation math still works.
     nextItems = [createCarryForwardLedgerItem(billing.openingDueAmount, now)];
   }
 

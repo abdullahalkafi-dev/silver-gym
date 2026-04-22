@@ -153,11 +153,6 @@ const memberSchema = new Schema<TMember>(
       default: 0,
       min: 0,
     },
-    currentAdvanceAmount: {
-      type: Number,
-      default: 0,
-      min: 0,
-    },
     source: {
       type: String,
       trim: true,
