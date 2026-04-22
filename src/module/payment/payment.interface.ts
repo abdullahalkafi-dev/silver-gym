@@ -46,6 +46,7 @@ export interface TPayment {
 	subTotal?: number;
 	discount?: number;
 	dueAmount?: number;
+	advanceAmount?: number;
 	paidTotal?: number;
 	admissionFee?: number;
 	paymentMethod?: PaymentMethod;

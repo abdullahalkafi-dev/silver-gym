@@ -3,6 +3,7 @@ import mongoose, { Types } from "mongoose";
 
 import { QueryBuilder } from "../../Builder/QueryBuilder";
 import AppError from "../../errors/AppError";
+import cacheService from "../../redis/cacheService";
 import unlinkFile from "../../shared/unlinkFile";
 import { BranchRepository } from "../branch/branch.repository";
 import { BranchService } from "../branch/branch.service";
@@ -14,8 +15,19 @@ import {
   PaymentType,
   TPayment,
 } from "../payment/payment.interface";
+import { computePaymentSettlement } from "../payment/payment.balance";
 import { PaymentRepository } from "../payment/payment.repository";
 import { TStaff } from "../staff/staff.interface";
+import {
+  applyBillingToMember,
+  buildMemberBillingUpdate,
+  reconcileMemberBillingState,
+} from "./member.billing";
+import {
+  hasMemberBillingLedgerChanged,
+  mergeMemberBillingLedgerMetadata,
+  reconcileMemberBillingLedger,
+} from "./member.billingLedger";
 import { TMember } from "./member.interface";
 import { MemberRepository } from "./member.repository";
 
@@ -34,6 +46,8 @@ type TCreateMemberPayload = Omit<
   | "photo"
   | "currentPackageId"
   | "customMonthlyFeeAmount"
+  | "currentDueAmount"
+  | "currentAdvanceAmount"
   | "createdAt"
   | "updatedAt"
 > & {
@@ -45,7 +59,14 @@ type TCreateMemberPayload = Omit<
 type TUpdateMemberPayload = Partial<
   Omit<
     TMember,
-    "branchId" | "photo" | "currentPackageId" | "customMonthlyFeeAmount" | "createdAt" | "updatedAt"
+    | "branchId"
+    | "photo"
+    | "currentPackageId"
+    | "customMonthlyFeeAmount"
+    | "currentDueAmount"
+    | "currentAdvanceAmount"
+    | "createdAt"
+    | "updatedAt"
   >
 > & {
   currentPackageId?: string;
@@ -86,11 +107,8 @@ const addDuration = (
     case PackageDurationType.YEAR:
       nextDate.setFullYear(nextDate.getFullYear() + duration);
       break;
-    case PackageDurationType.CUSTOM:
-      nextDate.setDate(nextDate.getDate() + duration);
-      break;
     default:
-      nextDate.setMonth(nextDate.getMonth() + duration);
+      nextDate.setDate(nextDate.getDate() + duration);
       break;
   }
 
@@ -114,6 +132,153 @@ const isTransactionNotSupported = (error: unknown): boolean => {
     message.includes("transaction numbers are only allowed") ||
     message.includes("transactions are not supported") ||
     message.includes("replica set")
+  );
+};
+
+const BRANCH_BILLING_RECONCILE_TTL_SECONDS = 60;
+
+const getBillingReconcileCacheKey = (branchId: string) =>
+  `members:${branchId}:billing-reconciled`;
+
+/**
+ * Convert a Mongoose document to a plain object so that spreading it does not
+ * leak internal Mongoose properties ($__, _doc, $isNew, etc.) into the
+ * response payload.  When the value is already a plain object (e.g. coming
+ * from the Redis cache) it is returned as-is.
+ */
+const toPlainMember = (
+  doc: TMember & { _id?: unknown },
+): TMember & { _id?: unknown } => {
+  const raw = doc as Record<string, unknown>;
+  if (typeof raw.toObject === "function") {
+    return (raw.toObject as () => TMember & { _id?: unknown })();
+  }
+  return doc;
+};
+
+const reconcileMemberRecord = async (
+  branchId: string,
+  branch: Awaited<ReturnType<typeof BranchRepository.findOne>>,
+  member: TMember & { _id?: unknown },
+) => {
+  if (!branch) {
+    return member;
+  }
+
+  // Ensure we work with a plain object — Mongoose documents serialise poorly
+  // when spread (their schema-field getters are not own-enumerable properties
+  // so `{ ...doc }` copies $__, _doc, $isNew instead of fullName, contact, …)
+  const memberPlain = toPlainMember(member);
+
+  const billing = reconcileMemberBillingState(memberPlain, branch);
+  const dueLedger = reconcileMemberBillingLedger(memberPlain, billing);
+  const shouldPersistLedger = hasMemberBillingLedgerChanged(
+    memberPlain.metadata,
+    dueLedger,
+  );
+
+  if ((!billing.shouldPersist && !shouldPersistLedger) || !memberPlain._id) {
+    return {
+      ...applyBillingToMember(memberPlain, billing),
+      metadata: mergeMemberBillingLedgerMetadata(memberPlain.metadata, dueLedger),
+    };
+  }
+
+  const updatedMember = await MemberRepository.updateById(
+    String(memberPlain._id),
+    {
+      ...buildMemberBillingUpdate(billing),
+      metadata: mergeMemberBillingLedgerMetadata(memberPlain.metadata, dueLedger),
+    },
+  );
+
+  await Promise.all([
+    cacheService.deleteCache(`members:${branchId}:${String(memberPlain._id)}`),
+    cacheService.deleteCache(getBillingReconcileCacheKey(branchId)),
+    cacheService.invalidateByPattern(`members:${branchId}:list:*`),
+  ]);
+
+  // updatedMember is a Mongoose document — convert it too so the return value
+  // is always a plain object regardless of which code path was taken.
+  const updatedPlain = updatedMember
+    ? toPlainMember(updatedMember as unknown as TMember & { _id?: unknown })
+    : undefined;
+
+  return updatedPlain ?? applyBillingToMember(memberPlain, billing);
+};
+
+const reconcileBranchMemberBilling = async (
+  branchId: string,
+  branch: Awaited<ReturnType<typeof BranchRepository.findOne>>,
+) => {
+  if (!branch) {
+    return;
+  }
+
+  const reconcileCacheKey = getBillingReconcileCacheKey(branchId);
+  const alreadyReconciled = await cacheService.getCache<{ at: number }>(
+    reconcileCacheKey,
+  );
+
+  if (alreadyReconciled) {
+    return;
+  }
+
+  const overdueMembers = await MemberRepository.findMany(
+    {
+      branchId: new Types.ObjectId(branchId),
+      isActive: true,
+      nextPaymentDate: { $lte: new Date() },
+    },
+    {
+      select:
+        "currentDueAmount currentAdvanceAmount nextPaymentDate isActive isCustomMonthlyFee customMonthlyFeeAmount _id",
+    },
+  ).lean();
+
+  const changedMemberIds = (
+    await Promise.all(
+      overdueMembers.map(async (member) => {
+        const billing = reconcileMemberBillingState(member as TMember, branch);
+        const dueLedger = reconcileMemberBillingLedger(member as TMember, billing);
+        const shouldPersistLedger = hasMemberBillingLedgerChanged(
+          (member as TMember).metadata,
+          dueLedger,
+        );
+
+        if ((!billing.shouldPersist && !shouldPersistLedger) || !member._id) {
+          return null;
+        }
+
+        await MemberRepository.updateById(
+          String(member._id),
+          {
+            ...buildMemberBillingUpdate(billing),
+            metadata: mergeMemberBillingLedgerMetadata(
+              (member as TMember).metadata,
+              dueLedger,
+            ),
+          },
+        );
+
+        return String(member._id);
+      }),
+    )
+  ).filter((memberId): memberId is string => Boolean(memberId));
+
+  if (changedMemberIds.length > 0) {
+    await Promise.all([
+      ...changedMemberIds.map((memberId) =>
+        cacheService.deleteCache(`members:${branchId}:${memberId}`),
+      ),
+      cacheService.invalidateByPattern(`members:${branchId}:list:*`),
+    ]);
+  }
+
+  await cacheService.setCache(
+    reconcileCacheKey,
+    { at: Date.now() },
+    BRANCH_BILLING_RECONCILE_TTL_SECONDS,
   );
 };
 
@@ -350,7 +515,11 @@ const createMember = async (
 
   const discount = paymentInput.discount ?? 0;
   const paidTotal = paymentInput.paidTotal ?? 0;
-  const dueAmount = Math.max(subTotal - discount - paidTotal, 0);
+  const settlement = computePaymentSettlement({
+    subTotal,
+    paidTotal,
+    discount,
+  });
 
   const memberPayload = {
     ...payload,
@@ -382,6 +551,8 @@ const createMember = async (
     membershipStartDate,
     membershipEndDate,
     nextPaymentDate,
+    currentDueAmount: settlement.dueAmount,
+    currentAdvanceAmount: settlement.advanceAmount,
     isActive: true,
     source: payload.source || "app",
     photo: photoFile ? getPhotoRelativePath(photoFile.path) : undefined,
@@ -400,17 +571,21 @@ const createMember = async (
     year: membershipStartDate.getFullYear(),
     subTotal,
     discount,
-    dueAmount,
+    dueAmount: settlement.dueAmount,
+    advanceAmount: settlement.advanceAmount,
     paidTotal,
     admissionFee: resolvedAdmissionFeeAmount,
     paymentMethod: paymentInput.paymentMethod,
     paymentDate: paymentInput.paymentDate || new Date(),
     nextPaymentDate,
-    status: computePaymentStatus(dueAmount, paidTotal, paymentInput.status),
+    status: computePaymentStatus(settlement.dueAmount, paidTotal, paymentInput.status),
     source: payload.source || "app",
   };
 
-  return createMemberAndPayment(memberData, paymentData);
+  return createMemberAndPayment(memberData, paymentData).then(async (result) => {
+    await cacheService.invalidateByPattern(`members:${branchId}:list:*`);
+    return result;
+  });
 };
 
 const getMembers = async (
@@ -418,21 +593,46 @@ const getMembers = async (
   actor: TAccessActor,
   query: Record<string, unknown>,
 ) => {
-  await resolveBranchAccess(branchId, actor);
+  const branch = await resolveBranchAccess(branchId, actor);
 
   const includeInactive =
     typeof query.includeInactive === "string" && query.includeInactive === "true";
+  const requestedIsActive =
+    typeof query.isActive === "string" && ["true", "false"].includes(query.isActive)
+      ? query.isActive === "true"
+      : undefined;
+  const paymentStatus =
+    query.paymentStatus === "due" || query.paymentStatus === "complete"
+      ? query.paymentStatus
+      : undefined;
 
   const sanitizedQuery = { ...query };
   delete sanitizedQuery.includeInactive;
+  delete sanitizedQuery.isActive;
+  delete sanitizedQuery.paymentStatus;
+  delete sanitizedQuery.sort;
+
+  await reconcileBranchMemberBilling(branchId, branch);
 
   const baseFilter: Record<string, unknown> = {
     branchId: new Types.ObjectId(branchId),
   };
 
-  if (!includeInactive) {
+  if (typeof requestedIsActive === "boolean") {
+    baseFilter.isActive = requestedIsActive;
+  } else if (!includeInactive) {
     baseFilter.isActive = true;
   }
+
+  if (paymentStatus === "due") {
+    baseFilter.currentDueAmount = { $gt: 0 };
+  } else if (paymentStatus === "complete") {
+    baseFilter.currentDueAmount = { $lte: 0 };
+  }
+
+  const cacheKey = `members:${branchId}:list:${JSON.stringify(Object.entries(query).sort())}`;
+  const cached = await cacheService.getCache<{ meta: unknown; data: unknown }>(cacheKey);
+  if (cached) return cached;
 
   const queryBuilder = new QueryBuilder<TMember>(
     MemberRepository.findMany(baseFilter),
@@ -452,10 +652,9 @@ const getMembers = async (
   const data = await queryBuilder.modelQuery.lean();
   const meta = await queryBuilder.countTotal();
 
-  return {
-    meta,
-    data,
-  };
+  const result = { meta, data };
+  await cacheService.setCache(cacheKey, result, 300);
+  return result;
 };
 
 const getMemberById = async (
@@ -464,7 +663,15 @@ const getMemberById = async (
   actor: TAccessActor,
   includeInactive = true,
 ) => {
-  await resolveBranchAccess(branchId, actor);
+  const branch = await resolveBranchAccess(branchId, actor);
+
+  const cacheKey = `members:${branchId}:${memberId}`;
+  const cached = await cacheService.getCache<TMember>(cacheKey);
+  if (cached) {
+    const reconciledCachedMember = await reconcileMemberRecord(branchId, branch, cached);
+    await cacheService.setCache(cacheKey, reconciledCachedMember, 600);
+    return reconciledCachedMember;
+  }
 
   const member = await MemberRepository.findOne({
     _id: new Types.ObjectId(memberId),
@@ -476,7 +683,9 @@ const getMemberById = async (
     throw new AppError(StatusCodes.NOT_FOUND, "Member not found");
   }
 
-  return member;
+  const reconciledMember = await reconcileMemberRecord(branchId, branch, member);
+  await cacheService.setCache(cacheKey, reconciledMember, 600);
+  return reconciledMember;
 };
 
 const updateMember = async (
@@ -627,6 +836,11 @@ const updateMember = async (
     throw new AppError(StatusCodes.INTERNAL_SERVER_ERROR, "Failed to update member");
   }
 
+  await Promise.all([
+    cacheService.deleteCache(`members:${branchId}:${memberId}`),
+    cacheService.invalidateByPattern(`members:${branchId}:list:*`),
+  ]);
+
   return updatedMember;
 };
 
@@ -649,6 +863,11 @@ const deleteMember = async (branchId: string, memberId: string, actor: TAccessAc
   if (!deletedMember) {
     throw new AppError(StatusCodes.INTERNAL_SERVER_ERROR, "Failed to delete member");
   }
+
+  await Promise.all([
+    cacheService.deleteCache(`members:${branchId}:${memberId}`),
+    cacheService.invalidateByPattern(`members:${branchId}:list:*`),
+  ]);
 
   return deletedMember;
 };
@@ -673,6 +892,11 @@ const restoreMember = async (branchId: string, memberId: string, actor: TAccessA
     throw new AppError(StatusCodes.INTERNAL_SERVER_ERROR, "Failed to restore member");
   }
 
+  await Promise.all([
+    cacheService.deleteCache(`members:${branchId}:${memberId}`),
+    cacheService.invalidateByPattern(`members:${branchId}:list:*`),
+  ]);
+
   return restoredMember;
 };
 
@@ -681,7 +905,7 @@ const getDashboardMemberSummary = async (
   actor: TAccessActor,
   query: TDashboardSummaryQuery,
 ) => {
-  await resolveBranchAccess(branchId, actor);
+  const branch = await resolveBranchAccess(branchId, actor);
 
   const branchObjectId = new Types.ObjectId(branchId);
   const parsedDays = Number(query.days);
@@ -692,6 +916,8 @@ const getDashboardMemberSummary = async (
   const now = new Date();
   const dueSoonDate = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
   const windowStart = new Date(now.getTime() - days * 24 * 60 * 60 * 1000);
+
+  await reconcileBranchMemberBilling(branchId, branch);
 
   const [
     totalMembers,
@@ -717,11 +943,12 @@ const getDashboardMemberSummary = async (
     MemberRepository.count({
       branchId: branchObjectId,
       isActive: true,
-      nextPaymentDate: { $lte: now },
+      currentDueAmount: { $gt: 0 },
     }),
     MemberRepository.count({
       branchId: branchObjectId,
       isActive: true,
+      currentDueAmount: { $lte: 0 },
       nextPaymentDate: {
         $gt: now,
         $lte: dueSoonDate,

@@ -5,7 +5,6 @@ export enum PackageDurationType {
 	WEEK = "week",
 	MONTH = "month",
 	YEAR = "year",
-	CUSTOM = "custom",
 }
 
 export interface TPackage {

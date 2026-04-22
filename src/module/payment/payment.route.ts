@@ -37,6 +37,33 @@ router.get(
 );
 
 /**
+ * @route   GET /api/v1/payments/:branchId/collect-bill/:memberId
+ * @desc    Get collect bill context for a member
+ * @access  Private (Owner or Staff with canAddPayment)
+ */
+router.get(
+  "/:branchId/collect-bill/:memberId",
+  authStaff({ allowOwner: true }),
+  requirePermission("canAddPayment"),
+  validateRequest(PaymentDto.collectBillContext),
+  PaymentController.getCollectBillContext,
+);
+
+/**
+ * @route   POST /api/v1/payments/:branchId/collect-bill
+ * @desc    Collect a member bill and update membership atomically
+ * @access  Private (Owner or Staff with canAddPayment)
+ */
+router.post(
+  "/:branchId/collect-bill",
+  authLimiter,
+  authStaff({ allowOwner: true }),
+  requirePermission("canAddPayment"),
+  validateRequest(PaymentDto.collectBill),
+  PaymentController.collectBill,
+);
+
+/**
  * @route   GET /api/v1/payments/:branchId/:paymentId
  * @desc    Get a single payment by ID
  * @access  Private (Owner or Staff with canViewPayments)

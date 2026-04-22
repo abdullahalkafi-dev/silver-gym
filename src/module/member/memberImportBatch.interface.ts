@@ -40,6 +40,7 @@ export interface TMemberImportBatch {
   warningsPreview?: TMemberImportFailureRow[];
   failedRowsData?: TMemberImportFailureRow[];
   retryRows?: Record<string, unknown>[];
+  csvData?: Record<string, unknown>[];
   metadata?: Record<string, unknown>;
   createdAt?: Date;
   updatedAt?: Date;

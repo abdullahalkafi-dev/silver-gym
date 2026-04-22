@@ -111,6 +111,18 @@ Route: `POST /api/v1/members/import/:branchId/google-sheet`
 }
 ```
 
+## Member list query (new)
+
+Route: `GET /api/v1/members/:branchId`
+
+Supported query params:
+
+- `searchTerm`: search across member name, email, contact, member ID, and barcode.
+- `page` and `limit`: pagination controls.
+- `includeInactive=true`: include inactive members in list results.
+- `isActive=true|false`: explicitly filter active or inactive members.
+- `paymentStatus=due|complete`: filter by current due amount.
+
 ## Import retry/cancel params (new)
 
 - `branchId` from route params.

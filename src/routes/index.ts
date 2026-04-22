@@ -8,6 +8,7 @@ import { StaffRoutes } from "../module/staff/staff.route";
 import { MemberRoutes } from "../module/member/member.route";
 import PackageRoutes from "../module/package/package.route";
 import PaymentRoutes from "../module/payment/payment.route";
+import { ExpenseRoutes } from "../module/expense/expense.route";
 
 const router: Router = express.Router();
 
@@ -47,6 +48,10 @@ const apiRoutes = [
   {
     path: "/payments",
     route: PaymentRoutes,
+  },
+  {
+    path: "/expenses",
+    route: ExpenseRoutes,
   },
 ];
 

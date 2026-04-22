@@ -37,19 +37,16 @@ const memberImportBatchSchema = new Schema<TMemberImportBatch>(
     },
     source: {
       type: String,
-      enum: ["google_sheet"],
-      default: "google_sheet",
+      enum: ["google_sheet", "csv_upload"],
       required: true,
       trim: true,
     },
     spreadsheetId: {
       type: String,
-      required: true,
       trim: true,
     },
     range: {
       type: String,
-      required: true,
       trim: true,
     },
     status: {
@@ -137,6 +134,10 @@ const memberImportBatchSchema = new Schema<TMemberImportBatch>(
       default: [],
     },
     retryRows: {
+      type: [Schema.Types.Mixed],
+      default: [],
+    },
+    csvData: {
       type: [Schema.Types.Mixed],
       default: [],
     },

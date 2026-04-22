@@ -7,7 +7,7 @@ import AppError from "../errors/AppError";
 import sharp from "sharp";
 import generateUploadFileName from "../util/generateUploadFileName";
 
-type UploadField = "image" | "media" | "doc" | "docs";
+type UploadField = "image" | "media" | "doc" | "docs" | "csv";
 
 const BASE_UPLOAD_DIR = path.join(process.cwd(), "uploads");
 
@@ -19,6 +19,7 @@ const FIELD_CONFIG: Record<
   media: { folder: "medias", maxCount: 10 },
   doc: { folder: "docs", maxCount: 10, forcedExtension: ".pdf" },
   docs: { folder: "docs", maxCount: 10, forcedExtension: ".pdf" },
+  csv: { folder: "csvs", maxCount: 1 },
 };
 
 const ALLOWED_MIME_TYPES: Record<UploadField, Set<string>> = {
@@ -35,6 +36,7 @@ const ALLOWED_MIME_TYPES: Record<UploadField, Set<string>> = {
   media: new Set(["video/mp4", "audio/mpeg"]),
   doc: new Set(["application/pdf"]),
   docs: new Set(["application/pdf"]),
+  csv: new Set(["text/csv", "application/vnd.ms-excel", "text/plain", "application/octet-stream"]),
 };
 
 const ALLOWED_MIME_MESSAGES: Record<UploadField, string> = {
@@ -42,6 +44,7 @@ const ALLOWED_MIME_MESSAGES: Record<UploadField, string> = {
   media: "Only .mp4, .mp3 file supported",
   doc: "Only pdf supported",
   docs: "Only pdf supported",
+  csv: "Only .csv files are supported",
 };
 
 const SUPPORTED_FIELDS = Object.keys(FIELD_CONFIG) as UploadField[];

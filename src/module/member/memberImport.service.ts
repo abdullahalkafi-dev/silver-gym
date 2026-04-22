@@ -1,3 +1,4 @@
+import fs from "fs";
 import { google } from "googleapis";
 import { StatusCodes } from "http-status-codes";
 import { Types } from "mongoose";
@@ -5,8 +6,19 @@ import { Types } from "mongoose";
 import config from "../../config";
 import AppError from "../../errors/AppError";
 import { errorLogger, logger } from "../../logger/logger";
+import cacheService from "../../redis/cacheService";
 import { BranchRepository } from "../branch/branch.repository";
 import { BusinessProfileRepository } from "../businessProfile/businessProfile.repository";
+import {
+  reconcileRecurringBillingBalance,
+} from "../payment/payment.balance";
+import {
+  PaymentMethod,
+  PaymentStatus,
+  PaymentType,
+  TPayment,
+} from "../payment/payment.interface";
+import { PaymentRepository } from "../payment/payment.repository";
 import { TStaff } from "../staff/staff.interface";
 import { TMember } from "./member.interface";
 import {
@@ -52,6 +64,20 @@ type TImportRuntimeConfig = {
   maxRowsPerBatch: number;
 };
 
+type TMemberImportIdentifier = {
+  legacyId?: string;
+  memberId?: string;
+  barcode?: string;
+  email?: string;
+  contact?: string;
+  fullName: string;
+};
+
+type TMemberConflictDetails = {
+  fieldLabel: string;
+  value: string;
+};
+
 const activeBranchImports = new Set<string>();
 const queuedBatchIds = new Set<string>();
 const importQueue: string[] = [];
@@ -89,6 +115,7 @@ const getRuntimeConfig = (): TImportRuntimeConfig => {
 
 const normalizeKey = (value: string): string =>
   value
+    .replace(/^\uFEFF/, "")
     .trim()
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "_")
@@ -141,14 +168,17 @@ const parseFlexibleDate = (value: unknown): Date | undefined => {
   const standard = new Date(str);
   if (!Number.isNaN(standard.getTime())) return standard;
 
-  // Try "Month-Year" or "Month Year" format (e.g., "October-2026", "June 2026")
+  // Try "Month-Year" or "Month Year" format (e.g., "October-2026", "Jun 2026", "Sep-2026")
   const monthYearMatch = str.match(/^([a-zA-Z]+)[-\s]?(\d{4})$/);
   if (monthYearMatch && monthYearMatch[1] && monthYearMatch[2]) {
     const monthStr = monthYearMatch[1];
     const yearStr = monthYearMatch[2];
     const months = ['january', 'february', 'march', 'april', 'may', 'june',
                     'july', 'august', 'september', 'october', 'november', 'december'];
-    const monthIndex = months.indexOf(monthStr.toLowerCase());
+    const monthAbbrs = ['jan', 'feb', 'mar', 'apr', 'may', 'jun',
+                        'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+    const key = monthStr.toLowerCase();
+    const monthIndex = months.indexOf(key) !== -1 ? months.indexOf(key) : monthAbbrs.indexOf(key);
     if (monthIndex >= 0) {
       return new Date(parseInt(yearStr), monthIndex, 1);
     }
@@ -181,35 +211,94 @@ const validateUniqueMemberIds = (
   return { valid: duplicates.length === 0, duplicates };
 };
 
-const calculateDueAmount = (
+const calculateBalanceSnapshot = (
   nextPaymentDate: Date,
   monthlyFee: number,
   sheetDueAmount: number,
   isActive: boolean
-): { dueAmount: number; updatedNextPaymentDate: Date } => {
-  const now = new Date();
-  const currentMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-  
-  // If next payment is in the future or member is inactive, use sheet's due amount
-  if (nextPaymentDate >= currentMonthStart || !isActive) {
-    return { 
-      dueAmount: sheetDueAmount,
-      updatedNextPaymentDate: nextPaymentDate 
-    };
+): {
+  currentDueAmount: number;
+  currentAdvanceAmount: number;
+  updatedNextPaymentDate: Date;
+} => {
+  const snapshot = reconcileRecurringBillingBalance({
+    nextPaymentDate,
+    recurringChargeAmount: monthlyFee,
+    openingNetBalance: sheetDueAmount,
+    isActive,
+  });
+
+  return {
+    currentDueAmount: snapshot.currentDueAmount,
+    currentAdvanceAmount: snapshot.currentAdvanceAmount,
+    updatedNextPaymentDate: snapshot.updatedNextPaymentDate || nextPaymentDate,
+  };
+};
+
+const ensureOpeningImportPayment = async ({
+  branchId,
+  batchId,
+  source,
+  rowIndex,
+  member,
+  monthlyFeeAmount,
+  sheetDueAmount,
+  originalNextPaymentDate,
+}: {
+  branchId: Types.ObjectId;
+  batchId: string;
+  source: TMemberImportBatch["source"];
+  rowIndex: number;
+  member: TMember & { _id?: unknown };
+  monthlyFeeAmount: number;
+  sheetDueAmount: number;
+  originalNextPaymentDate: Date;
+}) => {
+  if (!member._id) {
+    return;
   }
-  
-  // Calculate FULL months from nextPaymentDate to current month
-  const monthsDiff = (now.getFullYear() - nextPaymentDate.getFullYear()) * 12 +
-                     (now.getMonth() - nextPaymentDate.getMonth());
-  
-  // Due = (full months × monthlyFee) + sheet's initial due
-  const accumulatedDue = monthsDiff * monthlyFee;
-  const totalDue = accumulatedDue + sheetDueAmount;
-  
-  // Update next payment to current month + 1
-  const updatedNextPaymentDate = new Date(now.getFullYear(), now.getMonth() + 1, 1);
-  
-  return { dueAmount: Math.max(0, totalDue), updatedNextPaymentDate };
+
+  const existingOpeningEntry = await PaymentRepository.findOne({
+    branchId,
+    importBatchId: batchId,
+    memberId: member._id,
+    "metadata.entryKind": "opening_import_balance",
+  });
+
+  if (existingOpeningEntry) {
+    return;
+  }
+
+  const paymentData: TPayment = {
+    branchId,
+    memberId: member._id as Types.ObjectId,
+    memberLegacyId: member.legacyId,
+    memberName: member.fullName,
+    paymentType: PaymentType.OTHER,
+    subTotal: 0,
+    discount: 0,
+    dueAmount: member.currentDueAmount ?? 0,
+    advanceAmount: member.currentAdvanceAmount ?? 0,
+    paidTotal: 0,
+    paymentMethod: PaymentMethod.Other,
+    paymentDate: new Date(),
+    nextPaymentDate: member.nextPaymentDate,
+    status:
+      (member.currentDueAmount ?? 0) > 0 ? PaymentStatus.DUE : PaymentStatus.PAID,
+    source,
+    importBatchId: batchId,
+    metadata: {
+      entryKind: "opening_import_balance",
+      importRowIndex: rowIndex,
+      originalNextPaymentDate: originalNextPaymentDate.toISOString(),
+      openingDueAmount: member.currentDueAmount ?? 0,
+      openingAdvanceAmount: member.currentAdvanceAmount ?? 0,
+      sheetDueAmount,
+      monthlyFeeAmount,
+    },
+  };
+
+  await PaymentRepository.create(paymentData);
 };
 
 const resolveBranchAccess = async (branchId: string, actor: TImportActor) => {
@@ -385,14 +474,7 @@ const getSheetRows = async (
 
 const buildMemberUpsertFilter = (
   branchObjectId: Types.ObjectId,
-  row: {
-    legacyId?: string;
-    memberId?: string;
-    barcode?: string;
-    email?: string;
-    contact?: string;
-    fullName: string;
-  },
+  row: TMemberImportIdentifier,
 ): Record<string, unknown> | null => {
   if (row.legacyId) {
     return {
@@ -433,18 +515,131 @@ const buildMemberUpsertFilter = (
   return null;
 };
 
+const findExistingMemberConflict = async (
+  branchObjectId: Types.ObjectId,
+  row: TMemberImportIdentifier,
+): Promise<TMemberConflictDetails | null> => {
+  const filters: Record<string, unknown>[] = [];
+
+  if (row.legacyId) {
+    filters.push({ legacyId: row.legacyId }, { memberId: row.legacyId });
+  }
+
+  if (row.memberId && row.memberId !== row.legacyId) {
+    filters.push({ memberId: row.memberId }, { legacyId: row.memberId });
+  }
+
+  if (row.barcode) {
+    filters.push({ barcode: row.barcode });
+  }
+
+  if (row.email) {
+    filters.push({ email: row.email });
+  }
+
+  if (row.contact) {
+    filters.push({ contact: row.contact, fullName: row.fullName });
+  }
+
+  if (filters.length === 0) {
+    return null;
+  }
+
+  const existing = await MemberRepository.findOne({
+    branchId: branchObjectId,
+    $or: filters,
+  });
+
+  if (!existing) {
+    return null;
+  }
+
+  if (row.legacyId && (existing.legacyId === row.legacyId || existing.memberId === row.legacyId)) {
+    return {
+      fieldLabel: "member ID",
+      value: row.legacyId,
+    };
+  }
+
+  if (row.memberId && (existing.memberId === row.memberId || existing.legacyId === row.memberId)) {
+    return {
+      fieldLabel: "member ID",
+      value: row.memberId,
+    };
+  }
+
+  if (row.barcode && existing.barcode === row.barcode) {
+    return {
+      fieldLabel: "barcode",
+      value: row.barcode,
+    };
+  }
+
+  if (row.email && existing.email === row.email) {
+    return {
+      fieldLabel: "email",
+      value: row.email,
+    };
+  }
+
+  if (row.contact && existing.contact === row.contact && existing.fullName === row.fullName) {
+    return {
+      fieldLabel: "contact and name",
+      value: `${row.contact} / ${row.fullName}`,
+    };
+  }
+
+  return {
+    fieldLabel: "member details",
+    value: row.fullName,
+  };
+};
+
+const getDuplicateConflictMessage = (error: unknown): string | null => {
+  const duplicateError = error as {
+    code?: number;
+    keyValue?: Record<string, unknown>;
+  };
+
+  if (duplicateError?.code !== 11000) {
+    return null;
+  }
+
+  const [field, rawValue] = Object.entries(duplicateError.keyValue || {})[0] || [];
+
+  if (!field) {
+    return "A member already exists with the same unique value";
+  }
+
+  const fieldLabel = field === "legacyId" || field === "memberId" ? "member ID" : field;
+  const value = toStringValue(rawValue);
+
+  return value
+    ? `A member already exists with the same ${fieldLabel}: "${value}"`
+    : `A member already exists with the same ${fieldLabel}`;
+};
+
 const persistMember = async (
   branchObjectId: Types.ObjectId,
   memberData: TMember,
-  identifier: {
-    legacyId?: string;
-    memberId?: string;
-    barcode?: string;
-    email?: string;
-    contact?: string;
-    fullName: string;
+  identifier: TMemberImportIdentifier,
+  options: {
+    allowUpdate: boolean;
   },
 ) => {
+  if (!options.allowUpdate) {
+    const conflict = await findExistingMemberConflict(branchObjectId, identifier);
+
+    if (conflict) {
+      throw new AppError(
+        StatusCodes.CONFLICT,
+        `A member already exists with the same ${conflict.fieldLabel}: "${conflict.value}"`,
+      );
+    }
+
+    return MemberRepository.create(memberData);
+  }
+
   const filter = buildMemberUpsertFilter(branchObjectId, identifier);
 
   if (!filter) {
@@ -469,6 +664,7 @@ const persistMember = async (
 const processRow = async (
   branchId: string,
   batchId: string,
+  source: TMemberImportBatch["source"],
   rowIndex: number,
   row: TRawImportRow,
   branchMonthlyFee: number,
@@ -522,7 +718,12 @@ const processRow = async (
 
   // REQUIRED: Next payment date (flexible parsing)
   const nextPaymentDateRaw = pickValue(row, [
-    "next_payment_date", "next_payment", "nextpaymentdate", "payment_date"
+    "next_payment_date",
+    "next_payment",
+    "nextpaymentdate",
+    "payment_date",
+    "next_pamyent_date",
+    "nextpamyentdate",
   ]);
   const nextPaymentDate = parseFlexibleDate(nextPaymentDateRaw);
   
@@ -537,8 +738,12 @@ const processRow = async (
   const statusRaw = toStringValue(pickValue(row, ["status", "member_status"]));
   const isActive = statusRaw?.toLowerCase() !== "inactive";
 
-  // Calculate dues (full months only)
-  const { dueAmount, updatedNextPaymentDate } = calculateDueAmount(
+  // Calculate opening member balance using elapsed months and any imported carry-over.
+  const {
+    currentDueAmount,
+    currentAdvanceAmount,
+    updatedNextPaymentDate,
+  } = calculateBalanceSnapshot(
     nextPaymentDate,
     monthlyFeeAmount,
     sheetDueAmount,
@@ -555,9 +760,10 @@ const processRow = async (
     customMonthlyFeeAmount: monthlyFeeAmount,
     isCustomMonthlyFee: true,
     nextPaymentDate: updatedNextPaymentDate,
-    currentDueAmount: dueAmount,
+    currentDueAmount,
+    currentAdvanceAmount,
     isActive,
-    source: "google_sheet",
+    source,
     importBatchId: batchId,
     metadata: {
       importRowIndex: rowIndex,
@@ -566,12 +772,61 @@ const processRow = async (
     },
   };
 
-  await persistMember(branchObjectId, memberData, {
-    memberId,
-    email,
-    contact,
-    fullName,
-  });
+  try {
+    const persistedMember = await persistMember(
+      branchObjectId,
+      memberData,
+      {
+        legacyId: memberId,
+        memberId,
+        email,
+        contact,
+        fullName,
+      },
+      {
+        allowUpdate: source !== "csv_upload",
+      },
+    );
+
+    await ensureOpeningImportPayment({
+      branchId: branchObjectId,
+      batchId,
+      source,
+      rowIndex,
+      member: persistedMember as TMember & { _id?: unknown },
+      monthlyFeeAmount,
+      sheetDueAmount,
+      originalNextPaymentDate: nextPaymentDate,
+    });
+  } catch (error) {
+    const duplicateConflictMessage = getDuplicateConflictMessage(error);
+
+    if (duplicateConflictMessage) {
+      return {
+        type: "failed",
+        failure: {
+          rowIndex,
+          reason: duplicateConflictMessage,
+          memberName: fullName,
+          raw: row,
+        },
+      };
+    }
+
+    if (error instanceof AppError && error.statusCode >= 400 && error.statusCode < 500) {
+      return {
+        type: "failed",
+        failure: {
+          rowIndex,
+          reason: error.message,
+          memberName: fullName,
+          raw: row,
+        },
+      };
+    }
+
+    throw error;
+  }
 
   return { type: "success" };
 };
@@ -662,10 +917,12 @@ const processBatch = async (batchId: string) => {
             ? await getSheetRows(batch.spreadsheetId, batch.range)
             : [];
 
-    if (rowsFromSource.length === 0 && batch.source === "google_sheet") {
+    if (rowsFromSource.length === 0) {
       throw new AppError(
         StatusCodes.BAD_REQUEST,
-        "No rows found in Google Sheet"
+        batch.source === "csv_upload"
+          ? "No rows found in CSV file"
+          : "No rows found in Google Sheet",
       );
     }
 
@@ -708,48 +965,17 @@ const processBatch = async (batchId: string) => {
       if (memberId) sheetMemberIds.push(memberId);
     });
 
-    // Check for duplicates within the sheet
+    // Safety-net duplicate check (should be caught at upload time for CSV imports)
     const sheetDuplicates = validateUniqueMemberIds(rowsFromSource);
     if (!sheetDuplicates.valid) {
-      const errorDetails = sheetDuplicates.duplicates
-        .map(d => `MemberId "${d.memberId}" found in rows: ${d.rowIndices.join(', ')}`)
-        .join('; ');
-      
-      await updateBatchProgress(batchId, {
-        status: 'failed',
-        endedAt: new Date(),
-      });
-      
+      const details = sheetDuplicates.duplicates
+        .map(d => `"${d.memberId}" (rows ${d.rowIndices.join(", ")})`)
+        .join("; ");
+      await updateBatchProgress(batchId, { status: "failed", endedAt: new Date() });
       throw new AppError(
         StatusCodes.BAD_REQUEST,
-        `Duplicate MemberIDs in sheet - import aborted: ${errorDetails}`
+        `Duplicate Member IDs in sheet: ${details}`,
       );
-    }
-
-    // Check for existing memberIds in database for this branch
-    const uniqueSheetIds = [...new Set(sheetMemberIds)];
-    if (uniqueSheetIds.length > 0) {
-      const existingMembers = await MemberRepository.findMany(
-        { 
-          branchId: batch.branchId, 
-          memberId: { $in: uniqueSheetIds } 
-        },
-        { select: { memberId: 1 } }
-      ).lean();
-      
-      if (existingMembers.length > 0) {
-        const existingIds = existingMembers.map((m: any) => m.memberId).join(', ');
-        
-        await updateBatchProgress(batchId, {
-          status: 'failed',
-          endedAt: new Date(),
-        });
-        
-        throw new AppError(
-          StatusCodes.BAD_REQUEST,
-          `MemberIDs already exist in branch - import aborted: ${existingIds}`
-        );
-      }
     }
 
     let processedRows = batch.processedRows || 0;
@@ -802,6 +1028,7 @@ const processBatch = async (batchId: string) => {
         const rowResult = await processRow(
           String(batch.branchId),
           batchId,
+          batch.source,
           rowIndex,
           raw,
           branchMonthlyFee,
@@ -864,11 +1091,27 @@ const processBatch = async (batchId: string) => {
       failedRowsData,
       endedAt: new Date(),
     });
+
+    if (successRows > 0) {
+      try {
+        await cacheService.invalidateByPattern(`members:${branchKey}:list:*`);
+      } catch (error) {
+        logger.warn("Failed to invalidate member list cache after import", {
+          batchId,
+          branchId: branchKey,
+          message: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
   } catch (error) {
-    await updateBatchProgress(batchId, {
-      status: "failed",
-      endedAt: new Date(),
-    });
+    try {
+      await updateBatchProgress(batchId, {
+        status: "failed",
+        endedAt: new Date(),
+      });
+    } catch {
+      // ignore — batch may have already been deleted or DB unavailable
+    }
 
     errorLogger.error("Member import batch failed", {
       batchId,
@@ -889,17 +1132,19 @@ const processQueue = async () => {
 
   queueRunning = true;
 
-  while (importQueue.length > 0) {
-    const batchId = importQueue.shift();
+  try {
+    while (importQueue.length > 0) {
+      const batchId = importQueue.shift();
 
-    if (!batchId) {
-      continue;
+      if (!batchId) {
+        continue;
+      }
+
+      await processBatch(batchId);
     }
-
-    await processBatch(batchId);
+  } finally {
+    queueRunning = false;
   }
-
-  queueRunning = false;
 };
 
 const getActorInfo = (actor: TImportActor) => ({
@@ -994,14 +1239,29 @@ const startCSVImport = async (
   // Parse CSV file content
   let csvRows: TRawImportRow[];
   try {
-    const csvContent = csvFile.buffer.toString("utf-8");
+    const csvContent = fs.readFileSync(csvFile.path, "utf-8");
     csvRows = parseCSVContent(csvContent);
   } catch (error) {
     throw new AppError(StatusCodes.BAD_REQUEST, "Failed to parse CSV file");
+  } finally {
+    // Clean up uploaded file from disk regardless of parse outcome
+    try { fs.unlinkSync(csvFile.path); } catch { /* ignore */ }
   }
 
   if (csvRows.length === 0) {
     throw new AppError(StatusCodes.BAD_REQUEST, "CSV file is empty or has no valid data rows");
+  }
+
+  // Pre-validate: reject immediately if member_id values are not unique within the sheet
+  const csvDuplicates = validateUniqueMemberIds(csvRows);
+  if (!csvDuplicates.valid) {
+    const details = csvDuplicates.duplicates
+      .map(d => `"${d.memberId}" (rows ${d.rowIndices.join(", ")})`)
+      .join("; ");
+    throw new AppError(
+      StatusCodes.BAD_REQUEST,
+      `Duplicate Member IDs found in your CSV: ${details}. Please fix the duplicate IDs and re-upload.`,
+    );
   }
 
   // Create batch record with CSV source

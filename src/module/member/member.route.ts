@@ -142,6 +142,7 @@ router.get(
   "/:branchId",
   authStaff({ allowOwner: true }),
   requirePermission("canViewMembers"),
+  validateRequest(MemberDto.listMembers),
   MemberController.getAll,
 );
 

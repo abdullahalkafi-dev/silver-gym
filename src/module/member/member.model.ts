@@ -153,6 +153,11 @@ const memberSchema = new Schema<TMember>(
       default: 0,
       min: 0,
     },
+    currentAdvanceAmount: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
     source: {
       type: String,
       trim: true,
@@ -203,7 +208,10 @@ memberSchema.pre("validate", async function () {
 memberSchema.index({ branchId: 1, isActive: 1, createdAt: -1 });
 memberSchema.index(
   { branchId: 1, legacyId: 1 },
-  { unique: true, sparse: true },
+  {
+    unique: true,
+    partialFilterExpression: { legacyId: { $exists: true, $ne: null } },
+  },
 );
 
 export const Member = model<TMember>("Member", memberSchema);

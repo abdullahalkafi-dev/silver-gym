@@ -192,6 +192,28 @@ const listImportBatchesDto = z.object({
     .strict(),
 });
 
+const listMembersDto = z.object({
+  params: z
+    .object({
+      branchId: z.string().min(1, "branchId is required"),
+    })
+    .strict(),
+  query: z
+    .object({
+      searchTerm: z.string().trim().optional(),
+      isActive: z.enum(["true", "false"]).optional(),
+      includeInactive: z.enum(["true"]).optional(),
+      paymentStatus: z.enum(["due", "complete"]).optional(),
+      page: z.string().optional(),
+      limit: z.string().optional(),
+      sort: z.string().optional(),
+      sortBy: z.string().optional(),
+      sortOrder: z.enum(["asc", "desc"]).optional(),
+      fields: z.string().optional(),
+    })
+    .strict(),
+});
+
 const importMetricsDto = z.object({
   params: z
     .object({
@@ -233,6 +255,7 @@ export const MemberDto = {
   startCSVImport: startCSVImportDto,
   retryImport: retryImportDto,
   listImportBatches: listImportBatchesDto,
+  listMembers: listMembersDto,
   importMetrics: importMetricsDto,
   dashboardSummary: dashboardSummaryDto,
 };

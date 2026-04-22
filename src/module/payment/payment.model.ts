@@ -86,6 +86,11 @@ const paymentSchema = new Schema<TPayment>(
       type: Number,
       min: 0,
     },
+    advanceAmount: {
+      type: Number,
+      min: 0,
+      default: 0,
+    },
     paidTotal: {
       type: Number,
       min: 0,

@@ -77,6 +77,42 @@ const getById = catchAsync(async (req: Request, res: Response) => {
   });
 });
 
+const getCollectBillContext = catchAsync(async (req: Request, res: Response) => {
+  const branchId = req.params.branchId as string;
+  const memberId = req.params.memberId as string;
+
+  const result = await PaymentService.getCollectBillContext(
+    branchId,
+    memberId,
+    resolveActor(req),
+  );
+
+  sendResponse(res, {
+    statusCode: StatusCodes.OK,
+    success: true,
+    message: "Collect bill context retrieved successfully",
+    data: result,
+  });
+});
+
+const collectBill = catchAsync(async (req: Request, res: Response) => {
+  const branchId = req.params.branchId as string;
+  const payload = req.body.data || req.body;
+
+  const result = await PaymentService.collectBill(
+    branchId,
+    resolveActor(req),
+    payload,
+  );
+
+  sendResponse(res, {
+    statusCode: StatusCodes.CREATED,
+    success: true,
+    message: "Bill collected successfully",
+    data: result,
+  });
+});
+
 const update = catchAsync(async (req: Request, res: Response) => {
   const branchId = req.params.branchId as string;
   const paymentId = req.params.paymentId as string;
@@ -137,6 +173,8 @@ export const PaymentController = {
   create,
   getAll,
   getById,
+  getCollectBillContext,
+  collectBill,
   update,
   cancel,
   refund,

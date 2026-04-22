@@ -32,6 +32,7 @@ Notes:
 	- Access: owner or staff with `canAddMember`.
 - `GET /api/v1/members/:branchId`
 	- List members with search/filter pagination.
+	- Query supports `searchTerm`, `page`, `limit`, `includeInactive=true`, `isActive=true|false`, and `paymentStatus=due|complete`.
 	- Access: owner or staff with `canViewMembers`.
 - `GET /api/v1/members/:branchId/:memberId`
 	- Get one member details.
