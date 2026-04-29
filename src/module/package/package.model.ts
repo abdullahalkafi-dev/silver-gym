@@ -10,11 +10,6 @@ const packageSchema = new Schema<TPackage>(
       required: true,
       index: true,
     },
-    legacyId: {
-      type: String,
-      trim: true,
-      index: true,
-    },
     title: {
       type: String,
       required: true,

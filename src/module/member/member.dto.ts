@@ -36,7 +36,6 @@ const monthlyFeeInputSchema = z.number().nonnegative();
 const createMemberDto = z.object({
   data: z
     .object({
-      legacyId: z.string().trim().optional(),
       memberId: z.string().trim().optional(),
       barcode: z.string().trim().optional(),
       fullName: z.string().trim().min(1, "Full name is required"),
@@ -102,6 +101,7 @@ const createMemberDto = z.object({
 const updateMemberDto = z.object({
   data: z
     .object({
+      isActive: z.boolean().optional(),
       fullName: z.string().trim().min(1).optional(),
       contact: z.string().trim().optional(),
       email: z.email("Invalid email").trim().toLowerCase().optional(),

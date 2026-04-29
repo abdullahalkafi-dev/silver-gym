@@ -179,12 +179,12 @@ const getExpenses = catchAsync(async (req: Request, res: Response) => {
     req.query as Record<string, unknown>,
   );
 
-  sendResponse(res, {
-    statusCode: StatusCodes.OK,
+  res.status(StatusCodes.OK).json({
     success: true,
     message: "Expenses retrieved successfully",
     meta: result.meta,
     data: result.result,
+    totalAmount: result.totalAmount, // Add totalAmount to response here
   });
 });
 

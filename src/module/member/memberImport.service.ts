@@ -25,6 +25,7 @@ import {
   createAdmissionDueLedgerItem,
   mergeMemberBillingLedgerMetadata,
 } from "./member.billingLedger";
+import { MemberCounterService } from "./memberCounter.service";
 import {
   TMemberImportBatch,
   TMemberImportFailureRow,
@@ -69,7 +70,6 @@ type TImportRuntimeConfig = {
 };
 
 type TMemberImportIdentifier = {
-  legacyId?: string;
   memberId?: string;
   barcode?: string;
   email?: string;
@@ -80,6 +80,7 @@ type TMemberImportIdentifier = {
 type TMemberConflictDetails = {
   fieldLabel: string;
   value: string;
+  message?: string;
 };
 
 const activeBranchImports = new Set<string>();
@@ -215,6 +216,30 @@ const validateUniqueMemberIds = (
   return { valid: duplicates.length === 0, duplicates };
 };
 
+const validateUniquePhones = (
+  rows: TRawImportRow[]
+): { valid: boolean; duplicates: { phone: string; rowIndices: number[] }[] } => {
+  const phoneMap = new Map<string, number[]>();
+
+  rows.forEach((row, index) => {
+    const phone = toStringValue(pickValue(row, ["contact", "phone", "mobile", "phone_number"]));
+    if (phone) {
+      const existing = phoneMap.get(phone) || [];
+      existing.push(index + 2); // +2 for header row offset
+      phoneMap.set(phone, existing);
+    }
+  });
+
+  const duplicates: { phone: string; rowIndices: number[] }[] = [];
+  phoneMap.forEach((indices, phone) => {
+    if (indices.length > 1) {
+      duplicates.push({ phone, rowIndices: indices });
+    }
+  });
+
+  return { valid: duplicates.length === 0, duplicates };
+};
+
 const calculateBalanceSnapshot = (
   nextPaymentDate: Date,
   monthlyFee: number,
@@ -274,7 +299,6 @@ const ensureOpeningImportPayment = async ({
   const paymentData: TPayment = {
     branchId,
     memberId: member._id as Types.ObjectId,
-    memberLegacyId: member.legacyId,
     memberName: member.fullName,
     paymentType: PaymentType.OTHER,
     subTotal: 0,
@@ -476,13 +500,6 @@ const buildMemberUpsertFilter = (
   branchObjectId: Types.ObjectId,
   row: TMemberImportIdentifier,
 ): Record<string, unknown> | null => {
-  if (row.legacyId) {
-    return {
-      branchId: branchObjectId,
-      legacyId: row.legacyId,
-    };
-  }
-
   if (row.memberId) {
     return {
       branchId: branchObjectId,
@@ -521,13 +538,7 @@ const findExistingMemberConflict = async (
 ): Promise<TMemberConflictDetails | null> => {
   const filters: Record<string, unknown>[] = [];
 
-  if (row.legacyId) {
-    filters.push({ legacyId: row.legacyId }, { memberId: row.legacyId });
-  }
-
-  if (row.memberId && row.memberId !== row.legacyId) {
-    filters.push({ memberId: row.memberId }, { legacyId: row.memberId });
-  }
+  // memberId is NOT unique — duplicates are allowed — so never check it here.
 
   if (row.barcode) {
     filters.push({ barcode: row.barcode });
@@ -538,7 +549,7 @@ const findExistingMemberConflict = async (
   }
 
   if (row.contact) {
-    filters.push({ contact: row.contact, fullName: row.fullName });
+    filters.push({ contact: row.contact });
   }
 
   if (filters.length === 0) {
@@ -552,20 +563,6 @@ const findExistingMemberConflict = async (
 
   if (!existing) {
     return null;
-  }
-
-  if (row.legacyId && (existing.legacyId === row.legacyId || existing.memberId === row.legacyId)) {
-    return {
-      fieldLabel: "member ID",
-      value: row.legacyId,
-    };
-  }
-
-  if (row.memberId && (existing.memberId === row.memberId || existing.legacyId === row.memberId)) {
-    return {
-      fieldLabel: "member ID",
-      value: row.memberId,
-    };
   }
 
   if (row.barcode && existing.barcode === row.barcode) {
@@ -582,10 +579,14 @@ const findExistingMemberConflict = async (
     };
   }
 
-  if (row.contact && existing.contact === row.contact && existing.fullName === row.fullName) {
+  if (row.contact && existing.contact === row.contact) {
+    const sysId = (existing as TMember & { systemMemberId?: number }).systemMemberId;
     return {
-      fieldLabel: "contact and name",
-      value: `${row.contact} / ${row.fullName}`,
+      fieldLabel: "phone number",
+      value: row.contact,
+      message: `Phone '${row.contact}' is already registered to member '${existing.fullName}'${
+        sysId != null ? ` (System ID: #${sysId})` : ""
+      }.`,
     };
   }
 
@@ -611,12 +612,17 @@ const getDuplicateConflictMessage = (error: unknown): string | null => {
     return "A member already exists with the same unique value";
   }
 
-  const fieldLabel = field === "legacyId" || field === "memberId" ? "member ID" : field;
   const value = toStringValue(rawValue);
 
+  if (field.includes("contact")) {
+    return value
+      ? `Phone '${value}' is already registered to another member in this branch.`
+      : "A member with this phone number already exists in this branch.";
+  }
+
   return value
-    ? `A member already exists with the same ${fieldLabel}: "${value}"`
-    : `A member already exists with the same ${fieldLabel}`;
+    ? `A member already exists with the same ${field}: "${value}"`
+    : `A member already exists with the same ${field}`;
 };
 
 const persistMember = async (
@@ -633,26 +639,31 @@ const persistMember = async (
     if (conflict) {
       throw new AppError(
         StatusCodes.CONFLICT,
-        `A member already exists with the same ${conflict.fieldLabel}: "${conflict.value}"`,
+        conflict.message || `A member already exists with the same ${conflict.fieldLabel}: "${conflict.value}"`,
       );
     }
 
+    memberData.systemMemberId = await MemberCounterService.getNextSystemMemberId(branchObjectId);
     return MemberRepository.create(memberData);
   }
 
   const filter = buildMemberUpsertFilter(branchObjectId, identifier);
 
   if (!filter) {
+    memberData.systemMemberId = await MemberCounterService.getNextSystemMemberId(branchObjectId);
     return MemberRepository.create(memberData);
   }
 
   const existing = await MemberRepository.findOne(filter);
 
   if (!existing) {
+    memberData.systemMemberId = await MemberCounterService.getNextSystemMemberId(branchObjectId);
     return MemberRepository.create(memberData);
   }
 
-  const updated = await MemberRepository.updateById(String(existing._id), memberData);
+  // Update: preserve existing systemMemberId — never overwrite
+  const { systemMemberId: _ignored, ...updateData } = memberData as TMember & { systemMemberId?: number };
+  const updated = await MemberRepository.updateById(String(existing._id), updateData as TMember);
 
   if (!updated) {
     throw new AppError(StatusCodes.INTERNAL_SERVER_ERROR, "Failed to update imported member");
@@ -768,7 +779,6 @@ const processRow = async (
 
   const memberData: TMember = {
     branchId: branchObjectId,
-    legacyId: memberId,
     memberId,
     fullName,
     contact,
@@ -788,7 +798,6 @@ const processRow = async (
       branchObjectId,
       memberData,
       {
-        legacyId: memberId,
         memberId,
         email,
         contact,
@@ -871,6 +880,7 @@ const updateBatchProgress = async (
   batchId: string,
   payload: {
     status?: TMemberImportStatus;
+    errorMessage?: string | null;
     totalRows?: number;
     processedRows?: number;
     successRows?: number;
@@ -986,6 +996,19 @@ const processBatch = async (batchId: string) => {
       throw new AppError(
         StatusCodes.BAD_REQUEST,
         `Duplicate Member IDs in sheet: ${details}`,
+      );
+    }
+
+    // Pre-scan for duplicate phone numbers within this batch
+    const phoneDuplicates = validateUniquePhones(rowsFromSource);
+    if (!phoneDuplicates.valid) {
+      const details = phoneDuplicates.duplicates
+        .map(d => `"${d.phone}" (rows ${d.rowIndices.join(", ")})`)
+        .join("; ");
+      await updateBatchProgress(batchId, { status: "failed", endedAt: new Date() });
+      throw new AppError(
+        StatusCodes.BAD_REQUEST,
+        `Duplicate phone numbers found in the import data: ${details}. Each phone number must be unique within a branch.`,
       );
     }
 
@@ -1115,9 +1138,12 @@ const processBatch = async (batchId: string) => {
       }
     }
   } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+
     try {
       await updateBatchProgress(batchId, {
         status: "failed",
+        errorMessage,
         endedAt: new Date(),
       });
     } catch {

@@ -7,13 +7,10 @@ const collectBillModeSchema = z.enum(["due_only", "monthly", "package"]);
 const createPaymentDto = z.object({
   data: z
     .object({
-      legacyId: z.string().trim().optional(),
       invoiceNo: z.string().trim().optional(),
       memberId: z.string().trim().optional(),
-      memberLegacyId: z.string().trim().optional(),
       memberName: z.string().trim().optional(),
       packageId: z.string().trim().optional(),
-      packageLegacyId: z.string().trim().optional(),
       packageName: z.string().trim().optional(),
       packageDuration: z.number().int().min(1).optional(),
       packageDurationType: z.string().trim().optional(),
@@ -32,17 +29,18 @@ const createPaymentDto = z.object({
       nextPaymentDate: z.coerce.date().optional(),
       status: z.enum(Object.values(PaymentStatus) as [string, ...string[]]).optional(),
       source: z.string().trim().optional(),
+      exchange: z.number().min(0, "Exchange cannot be negative").optional(),
       metadata: z.record(z.string(), z.unknown()).optional(),
     })
     .strict()
     .superRefine((data, ctx) => {
       // PACKAGE payment type validations
       if (data.paymentType === PaymentType.PACKAGE) {
-        if (!data.packageId && !data.packageLegacyId) {
+        if (!data.packageId) {
           ctx.addIssue({
             code: "custom",
             path: ["packageId"],
-            message: "Package ID or legacy ID is required for package payment type",
+            message: "Package ID is required for package payment type",
           });
         }
       }
@@ -85,14 +83,6 @@ const createPaymentDto = z.object({
           });
         }
       }
-
-      if (settlement.overpaidAmount > 0.01) {
-        ctx.addIssue({
-          code: "custom",
-          path: ["paidTotal"],
-          message: "Paid amount cannot exceed the bill total after discount",
-        });
-      }
     }),
 });
 
@@ -127,9 +117,7 @@ const queryPaymentDto = z.object({
   query: z
     .object({
       searchTerm: z.string().trim().optional(),
-      legacyId: z.string().trim().optional(),
       memberId: z.string().trim().optional(),
-      memberLegacyId: z.string().trim().optional(),
       packageId: z.string().trim().optional(),
       paymentType: z.enum(Object.values(PaymentType) as [string, ...string[]]).optional(),
       paymentMethod: z.enum(Object.values(PaymentMethod) as [string, ...string[]]).optional(),

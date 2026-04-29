@@ -30,6 +30,10 @@ export interface TRole {
 	canSendSMS?: boolean;
 	canViewEmail?: boolean;
 	canSendEmail?: boolean;
+	canViewExpenseCategory?: boolean;
+	canManageExpenseCategory?: boolean;
+	canViewExpense?: boolean;
+	canAddExpense?: boolean;
 	createdAt?: Date;
 	updatedAt?: Date;
 }

@@ -4,7 +4,6 @@ import { PackageDurationType } from "./package.interface";
 const createPackageDto = z.object({
   body: z
     .object({
-      legacyId: z.string().trim().optional(),
       title: z.string().trim().min(1, "Package title is required"),
       duration: z.number().int().min(1, "Duration must be at least 1"),
       durationType: z.enum(Object.values(PackageDurationType) as [string, ...string[]]),
@@ -41,7 +40,6 @@ const queryPackageDto = z.object({
   query: z
     .object({
       searchTerm: z.string().trim().optional(),
-      legacyId: z.string().trim().optional(),
       durationType: z.enum(Object.values(PackageDurationType) as [string, ...string[]]).optional(),
       isActive: z.enum(["true", "false"]).optional(),
       minAmount: z.string().optional(),

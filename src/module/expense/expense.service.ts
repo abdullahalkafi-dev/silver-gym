@@ -290,8 +290,8 @@ const getExpenses = async (
 
   if (query.dateFrom || query.dateTo) {
     const dateFilter: Record<string, Date> = {};
-    if (query.dateFrom) dateFilter.$gte = query.dateFrom;
-    if (query.dateTo) dateFilter.$lte = query.dateTo;
+    if (query.dateFrom) dateFilter.$gte = new Date(query.dateFrom);
+    if (query.dateTo) dateFilter.$lte = new Date(query.dateTo);
     filter.expenseDate = dateFilter;
   }
 

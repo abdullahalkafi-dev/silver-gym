@@ -15,7 +15,7 @@ import {
   PaymentType,
   TPayment,
 } from "../payment/payment.interface";
-import { computePaymentSettlement } from "../payment/payment.balance";
+import { computePaymentSettlement, normalizeMoney } from "../payment/payment.balance";
 import { PaymentRepository } from "../payment/payment.repository";
 import { TStaff } from "../staff/staff.interface";
 import {
@@ -31,6 +31,7 @@ import {
 } from "./member.billingLedger";
 import { TMember } from "./member.interface";
 import { MemberRepository } from "./member.repository";
+import { MemberCounterService } from "./memberCounter.service";
 
 type TCreatePaymentPayload = {
   paymentMethod: TPayment["paymentMethod"];
@@ -520,16 +521,9 @@ const createMember = async (
     discount,
   });
 
-  if (settlement.overpaidAmount > 0.01) {
-    if (photoFile) {
-      await unlinkFile(getPhotoRelativePath(photoFile.path));
-    }
-
-    throw new AppError(
-      StatusCodes.BAD_REQUEST,
-      "Paid amount cannot exceed the bill total after discount",
-    );
-  }
+  // Overpayment is allowed — excess is stored as 'exchange' (change given back to member)
+  const exchangeAmount = normalizeMoney(settlement.overpaidAmount);
+  const billAmount = normalizeMoney(Math.max(0, subTotal - discount));
 
   const memberPayload = {
     ...payload,
@@ -545,9 +539,9 @@ const createMember = async (
     memberPayload.isCustomMonthlyFee = true;
     memberPayload.customMonthlyFeeAmount = payload.customMonthlyFeeAmount;
   } else if (!payload.currentPackageId) {
-    // Monthly billing with no custom rate override — store resolved branch rate
+    // Monthly billing with no custom rate override — rate resolved from branch at billing time
     memberPayload.isCustomMonthlyFee = false;
-    memberPayload.customMonthlyFeeAmount = resolvedMonthlyFeeAmount;
+    delete (memberPayload as Record<string, unknown>).customMonthlyFeeAmount;
   } else {
     // Package-only member, no custom fee configured yet
     delete (memberPayload as Record<string, unknown>).customMonthlyFeeAmount;
@@ -582,6 +576,9 @@ const createMember = async (
     ...(admissionDueLedgerMetadata ? { metadata: admissionDueLedgerMetadata } : {}),
   };
 
+  // Assign auto-incrementing systemMemberId (per-branch, atomic)
+  memberData.systemMemberId = await MemberCounterService.getNextSystemMemberId(branchId);
+
   const paymentData: Omit<TPayment, "memberId" | "memberName"> = {
     branchId: new Types.ObjectId(branchId),
     packageId: packageIdForPayment,
@@ -595,6 +592,7 @@ const createMember = async (
     year: membershipStartDate.getFullYear(),
     subTotal,
     discount,
+    billAmount,
     dueAmount: settlement.dueAmount,
     paidTotal,
     admissionFee: resolvedAdmissionFeeAmount,
@@ -602,13 +600,27 @@ const createMember = async (
     paymentDate: paymentInput.paymentDate || new Date(),
     nextPaymentDate,
     status: computePaymentStatus(settlement.dueAmount, paidTotal, paymentInput.status),
+    exchange: exchangeAmount > 0 ? exchangeAmount : undefined,
     source: payload.source || "app",
   };
 
-  return createMemberAndPayment(memberData, paymentData).then(async (result) => {
+  try {
+    const result = await createMemberAndPayment(memberData, paymentData);
     await cacheService.invalidateByPattern(`members:${branchId}:list:*`);
     return result;
-  });
+  } catch (error) {
+    const dbError = error as { code?: number; keyValue?: Record<string, unknown> };
+    if (dbError?.code === 11000 && dbError?.keyValue) {
+      const field = Object.keys(dbError.keyValue)[0] ?? "";
+      if (field.includes("contact")) {
+        throw new AppError(
+          StatusCodes.CONFLICT,
+          "A member with this phone number already exists in this branch.",
+        );
+      }
+    }
+    throw error;
+  }
 };
 
 const getMembers = async (

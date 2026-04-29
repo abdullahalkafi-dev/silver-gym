@@ -42,6 +42,10 @@ const roleSchema = new Schema<TRole>(
     canSendSMS: { type: Boolean, default: false },
     canViewEmail: { type: Boolean, default: false },
     canSendEmail: { type: Boolean, default: false },
+    canViewExpenseCategory: { type: Boolean, default: false },
+    canManageExpenseCategory: { type: Boolean, default: false },
+    canViewExpense: { type: Boolean, default: false },
+    canAddExpense: { type: Boolean, default: false },
   },
   {
     timestamps: true,

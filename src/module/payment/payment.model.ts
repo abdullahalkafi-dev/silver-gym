@@ -12,10 +12,6 @@ const paymentSchema = new Schema<TPayment>(
       required: true,
       index: true,
     },
-    legacyId: {
-      type: String,
-      trim: true,
-    },
     invoiceNo: {
       type: String,
       trim: true,
@@ -26,10 +22,6 @@ const paymentSchema = new Schema<TPayment>(
       sparse: true,
       index: true,
     },
-    memberLegacyId: {
-      type: String,
-      trim: true,
-    },
     memberName: {
       type: String,
       trim: true,
@@ -38,10 +30,6 @@ const paymentSchema = new Schema<TPayment>(
       type: Schema.Types.ObjectId,
       ref: "Package",
       index: true,
-    },
-    packageLegacyId: {
-      type: String,
-      trim: true,
     },
     packageName: {
       type: String,
@@ -82,6 +70,10 @@ const paymentSchema = new Schema<TPayment>(
       type: Number,
       min: 0,
     },
+    billAmount: {
+      type: Number,
+      min: 0,
+    },
     dueAmount: {
       type: Number,
       min: 0,
@@ -109,6 +101,10 @@ const paymentSchema = new Schema<TPayment>(
       type: String,
       trim: true,
       enum: Object.values(PaymentStatus),
+    },
+    exchange: {
+      type: Number,
+      min: 0,
     },
     source: {
       type: String,
@@ -170,6 +166,5 @@ paymentSchema.pre("validate", async function () {
 });
 
 paymentSchema.index({ branchId: 1, memberId: 1, importBatchId: 1 });
-paymentSchema.index({ branchId: 1, memberLegacyId: 1, importBatchId: 1 });
 
 export const Payment = model<TPayment>("Payment", paymentSchema);

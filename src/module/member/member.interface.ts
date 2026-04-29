@@ -16,7 +16,7 @@ export type trainingGoal =
 	| "Strength Training";
 export interface TMember {
 	branchId: Types.ObjectId;
-	legacyId?: string;
+	systemMemberId?: number;
 	memberId?: string;
 	barcode?: string;
 	fullName: string;

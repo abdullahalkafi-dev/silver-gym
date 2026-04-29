@@ -32,6 +32,10 @@ export type TStaffPermissionSnapshot = {
   canSendSMS: boolean;
   canViewEmail: boolean;
   canSendEmail: boolean;
+  canViewExpenseCategory: boolean;
+  canManageExpenseCategory: boolean;
+  canViewExpense: boolean;
+  canAddExpense: boolean;
 };
 
 export type TStaffPermissionKey = keyof TStaffPermissionSnapshot;
@@ -120,6 +124,10 @@ export const getStaffPermissionSnapshot = (role: TRole): TStaffPermissionSnapsho
   canSendSMS: role.canSendSMS ?? false,
   canViewEmail: role.canViewEmail ?? false,
   canSendEmail: role.canSendEmail ?? false,
+  canViewExpenseCategory: role.canViewExpenseCategory ?? false,
+  canManageExpenseCategory: role.canManageExpenseCategory ?? false,
+  canViewExpense: role.canViewExpense ?? false,
+  canAddExpense: role.canAddExpense ?? false,
 });
 
 export const buildStaffTokenPayload = (

@@ -34,6 +34,7 @@ const allowedOrigins =
         "http://localhost:3000",
         "http://localhost:3001",
         "http://10.10.12.125:3000",
+        "https://nwqs97k3-3000.asse.devtunnels.ms"
       ];
 
 app.use(
@@ -80,6 +81,10 @@ app.use(
     maxAge: "1d", // ✅ Browser caching
     etag: true,
     dotfiles: "deny", // ✅ Block .env, .git etc.
+    setHeaders: (res) => {
+      // Allow images/files to be embedded by frontend on a different local origin.
+      res.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
+    },
   }),
 );
 

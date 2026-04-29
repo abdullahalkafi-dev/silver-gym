@@ -52,11 +52,8 @@ type TUpdatePaymentPayload = Partial<
   Omit<
     TPayment,
     | "branchId"
-    | "legacyId"
     | "memberId"
-    | "memberLegacyId"
     | "packageId"
-    | "packageLegacyId"
     | "createdAt"
     | "updatedAt"
   >
@@ -64,9 +61,7 @@ type TUpdatePaymentPayload = Partial<
 
 type TQueryPayment = {
   searchTerm?: string;
-  legacyId?: string;
   memberId?: string;
-  memberLegacyId?: string;
   packageId?: string;
   paymentType?: string;
   paymentMethod?: string;
@@ -846,21 +841,6 @@ const resolveMemberData = async (
     };
   }
 
-  // For imported payments with memberLegacyId, try to resolve
-  if (payload.memberLegacyId) {
-    const member = await MemberRepository.findOne({
-      legacyId: payload.memberLegacyId,
-      branchId: new Types.ObjectId(branchId),
-    });
-
-    if (member) {
-      return {
-        memberId: member._id as Types.ObjectId,
-        memberName: member.fullName,
-      };
-    }
-  }
-
   // Return whatever was provided (for imported data compatibility)
   return {
     memberName: payload.memberName,
@@ -895,23 +875,6 @@ const resolvePackageData = async (
     };
   }
 
-  // For imported payments with packageLegacyId, try to resolve
-  if (payload.packageLegacyId) {
-    const packageDoc = await PackageRepository.findOne({
-      legacyId: payload.packageLegacyId,
-      branchId: new Types.ObjectId(branchId),
-    });
-
-    if (packageDoc) {
-      return {
-        packageId: packageDoc._id as Types.ObjectId,
-        packageName: packageDoc.title,
-        packageDuration: packageDoc.duration,
-        packageDurationType: packageDoc.durationType,
-      };
-    }
-  }
-
   // Return whatever was provided (for imported data compatibility)
   return {
     packageName: payload.packageName,
@@ -943,12 +906,9 @@ const createPayment = async (
     discount,
   });
 
-  if (settlement.overpaidAmount > 0.01) {
-    throw new AppError(
-      StatusCodes.BAD_REQUEST,
-      "Paid amount cannot exceed the bill total after discount",
-    );
-  }
+  // Overpayment is allowed — the excess is stored as 'exchange' (change given back)
+  const exchangeAmount = normalizeMoney(settlement.overpaidAmount);
+  const billAmount = normalizeMoney(Math.max(0, subTotal - discount));
 
   // Determine payment status
   const status = computePaymentStatus(
@@ -963,7 +923,9 @@ const createPayment = async (
     ...packageData,
     branchId: new Types.ObjectId(branchId),
     invoiceNo,
+    billAmount,
     dueAmount: settlement.dueAmount,
+    exchange: exchangeAmount > 0 ? exchangeAmount : undefined,
     status,
     paymentDate: payload.paymentDate || new Date(),
     source: payload.source || "MANUAL",
@@ -1109,12 +1071,8 @@ const collectBill = async (
     discount,
   });
 
-  if (settlement.overpaidAmount > 0.01) {
-    throw new AppError(
-      StatusCodes.BAD_REQUEST,
-      "Paid amount cannot exceed the selected bill total after discount",
-    );
-  }
+  // Overpayment is allowed — the excess is stored as 'exchange' (change given back)
+  const exchangeAmount = normalizeMoney(settlement.overpaidAmount);
 
   const resolvedInvoiceLines = allocateCollectBillCoverage({
     lines: invoiceLines,
@@ -1169,7 +1127,6 @@ const collectBill = async (
     branchId: new Types.ObjectId(branchId),
     invoiceNo,
     memberId: member._id as Types.ObjectId,
-    memberLegacyId: member.legacyId,
     memberName: member.fullName,
     packageId: cycleDetails.packageId,
     packageName: cycleDetails.packageName,
@@ -1182,6 +1139,7 @@ const collectBill = async (
     year: (cycleDetails.periodStart || paymentDate).getFullYear(),
     subTotal,
     discount,
+    billAmount: normalizeMoney(Math.max(0, subTotal - discount)),
     dueAmount: settlement.dueAmount,
     paidTotal,
     admissionFee: cycleDetails.admissionFeeAmount,
@@ -1189,6 +1147,7 @@ const collectBill = async (
     paymentDate,
     nextPaymentDate: finalNextPaymentDate,
     status: computePaymentStatus(settlement.dueAmount, paidTotal),
+    exchange: exchangeAmount > 0 ? exchangeAmount : undefined,
     source: "MANUAL",
     metadata: {
       entryKind: "collect_bill",
@@ -1289,6 +1248,10 @@ const getAllPayments = async (
     delete normalizedQuery.endDate;
   }
 
+  // Exclude ALL opening import balance records — these are bookkeeping entries
+  // created during member import and should never appear in the income list
+  normalizedQuery["metadata.entryKind"] = { $ne: "opening_import_balance" };
+
   const paymentQuery = new QueryBuilder(
     PaymentRepository.findMany({ branchId: new Types.ObjectId(branchId) }),
     normalizedQuery,
@@ -1299,8 +1262,30 @@ const getAllPayments = async (
     .paginate()
     .fields();
 
-  const result = await paymentQuery.modelQuery;
+  // Populate member to expose user-facing memberId and systemMemberId
+  const rawResult = await paymentQuery.modelQuery.populate({
+    path: "memberId",
+    select: "memberId systemMemberId",
+    strictPopulate: false,
+  });
   const meta = await paymentQuery.countTotal();
+
+  // Normalise the populated member data into flat fields on each payment record
+  const result = rawResult.map((payment) => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const doc = (payment as any).toObject ? (payment as any).toObject() : { ...payment };
+    const memberDoc = doc.memberId as Record<string, unknown> | null | undefined;
+    return {
+      ...doc,
+      memberId: memberDoc?._id
+        ? String(memberDoc._id)
+        : doc.memberId
+          ? String(doc.memberId)
+          : undefined,
+      memberFacingId: memberDoc?.memberId as string | undefined,
+      memberSystemId: memberDoc?.systemMemberId as number | undefined,
+    };
+  });
 
   return {
     meta,

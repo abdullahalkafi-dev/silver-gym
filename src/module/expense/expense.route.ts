@@ -14,13 +14,13 @@ const router = Router();
 /**
  * @route   POST /api/v1/expenses/:branchId/categories
  * @desc    Create a new expense category
- * @access  Private (Owner or Staff with canManageExpense)
+ * @access  Private (Owner or Staff with canManageExpenseCategory)
  */
 router.post(
   "/:branchId/categories",
   authLimiter,
   authStaff({ allowOwner: true }),
-  requirePermission("canManageExpense"),
+  requirePermission("canManageExpenseCategory"),
   validateRequest(ExpenseDto.createCategory),
   ExpenseController.createCategory,
 );
@@ -28,25 +28,25 @@ router.post(
 /**
  * @route   GET /api/v1/expenses/:branchId/categories
  * @desc    Get all expense categories with subcategories for a branch
- * @access  Private (Owner or Staff with canViewExpense)
+ * @access  Private (Owner or Staff with canViewExpenseCategory)
  */
 router.get(
   "/:branchId/categories",
   authStaff({ allowOwner: true }),
-  requirePermission("canViewExpense"),
+  requirePermission("canViewExpenseCategory"),
   ExpenseController.getCategories,
 );
 
 /**
  * @route   PATCH /api/v1/expenses/:branchId/categories/:categoryId
  * @desc    Update an expense category
- * @access  Private (Owner or Staff with canManageExpense)
+ * @access  Private (Owner or Staff with canManageExpenseCategory)
  */
 router.patch(
   "/:branchId/categories/:categoryId",
   authLimiter,
   authStaff({ allowOwner: true }),
-  requirePermission("canManageExpense"),
+  requirePermission("canManageExpenseCategory"),
   validateRequest(ExpenseDto.updateCategory),
   ExpenseController.updateCategory,
 );
@@ -54,13 +54,13 @@ router.patch(
 /**
  * @route   DELETE /api/v1/expenses/:branchId/categories/:categoryId
  * @desc    Delete (soft) an expense category
- * @access  Private (Owner or Staff with canManageExpense)
+ * @access  Private (Owner or Staff with canManageExpenseCategory)
  */
 router.delete(
   "/:branchId/categories/:categoryId",
   authLimiter,
   authStaff({ allowOwner: true }),
-  requirePermission("canManageExpense"),
+  requirePermission("canManageExpenseCategory"),
   ExpenseController.deleteCategory,
 );
 
@@ -69,13 +69,13 @@ router.delete(
 /**
  * @route   POST /api/v1/expenses/:branchId/categories/:categoryId/subcategories
  * @desc    Create a new subcategory under a category
- * @access  Private (Owner or Staff with canManageExpense)
+ * @access  Private (Owner or Staff with canManageExpenseCategory)
  */
 router.post(
   "/:branchId/categories/:categoryId/subcategories",
   authLimiter,
   authStaff({ allowOwner: true }),
-  requirePermission("canManageExpense"),
+  requirePermission("canManageExpenseCategory"),
   validateRequest(ExpenseDto.createSubcategory),
   ExpenseController.createSubcategory,
 );
@@ -83,13 +83,13 @@ router.post(
 /**
  * @route   PATCH /api/v1/expenses/:branchId/subcategories/:subcategoryId
  * @desc    Update a subcategory
- * @access  Private (Owner or Staff with canManageExpense)
+ * @access  Private (Owner or Staff with canManageExpenseCategory)
  */
 router.patch(
   "/:branchId/subcategories/:subcategoryId",
   authLimiter,
   authStaff({ allowOwner: true }),
-  requirePermission("canManageExpense"),
+  requirePermission("canManageExpenseCategory"),
   validateRequest(ExpenseDto.updateSubcategory),
   ExpenseController.updateSubcategory,
 );
@@ -97,13 +97,13 @@ router.patch(
 /**
  * @route   DELETE /api/v1/expenses/:branchId/subcategories/:subcategoryId
  * @desc    Delete (soft) a subcategory
- * @access  Private (Owner or Staff with canManageExpense)
+ * @access  Private (Owner or Staff with canManageExpenseCategory)
  */
 router.delete(
   "/:branchId/subcategories/:subcategoryId",
   authLimiter,
   authStaff({ allowOwner: true }),
-  requirePermission("canManageExpense"),
+  requirePermission("canManageExpenseCategory"),
   ExpenseController.deleteSubcategory,
 );
 
@@ -112,13 +112,13 @@ router.delete(
 /**
  * @route   POST /api/v1/expenses/:branchId
  * @desc    Create a new expense record
- * @access  Private (Owner or Staff with canManageExpense)
+ * @access  Private (Owner or Staff with canAddExpense)
  */
 router.post(
   "/:branchId",
   authLimiter,
   authStaff({ allowOwner: true }),
-  requirePermission("canManageExpense"),
+  requirePermission("canAddExpense"),
   validateRequest(ExpenseDto.createExpense),
   ExpenseController.createExpense,
 );
@@ -162,13 +162,13 @@ router.get(
 /**
  * @route   PATCH /api/v1/expenses/:branchId/:expenseId
  * @desc    Update an expense (creates history snapshot before update)
- * @access  Private (Owner or Staff with canManageExpense)
+ * @access  Private (Owner or Staff with canAddExpense)
  */
 router.patch(
   "/:branchId/:expenseId",
   authLimiter,
   authStaff({ allowOwner: true }),
-  requirePermission("canManageExpense"),
+  requirePermission("canAddExpense"),
   validateRequest(ExpenseDto.updateExpense),
   ExpenseController.updateExpense,
 );
@@ -176,13 +176,13 @@ router.patch(
 /**
  * @route   DELETE /api/v1/expenses/:branchId/:expenseId
  * @desc    Soft-delete an expense (creates history snapshot before delete)
- * @access  Private (Owner or Staff with canManageExpense)
+ * @access  Private (Owner or Staff with canAddExpense)
  */
 router.delete(
   "/:branchId/:expenseId",
   authLimiter,
   authStaff({ allowOwner: true }),
-  requirePermission("canManageExpense"),
+  requirePermission("canAddExpense"),
   ExpenseController.deleteExpense,
 );
 

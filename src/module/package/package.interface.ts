@@ -9,7 +9,6 @@ export enum PackageDurationType {
 
 export interface TPackage {
 	branchId: Types.ObjectId;
-	legacyId?: string;
 	title: string;
 	duration: number;
 	durationType: PackageDurationType;

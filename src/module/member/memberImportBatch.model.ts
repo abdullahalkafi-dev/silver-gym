@@ -63,6 +63,10 @@ const memberImportBatchSchema = new Schema<TMemberImportBatch>(
       default: "pending",
       index: true,
     },
+    errorMessage: {
+      type: String,
+      trim: true,
+    },
     createdByUserId: {
       type: Schema.Types.ObjectId,
       ref: "User",

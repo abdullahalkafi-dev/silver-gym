@@ -34,8 +34,15 @@ export const getPermissionsByRoleId = async (roleId: string) => {
     canSendSMS: role.canSendSMS || false,
     canViewEmail: role.canViewEmail || false,
     canSendEmail: role.canSendEmail || false,
+    canViewExpenseCategory: role.canViewExpenseCategory || false,
+    canManageExpenseCategory: role.canManageExpenseCategory || false,
+    canViewExpense: role.canViewExpense || false,
+    canAddExpense: role.canAddExpense || false,
   };
 };
+
+
+
 
 /**
  * Get all permission fields that can be updated
@@ -65,6 +72,10 @@ export const getAllPermissionFields = (): Record<string, boolean> => {
     canSendSMS: false,
     canViewEmail: false,
     canSendEmail: false,
+    canViewExpenseCategory: false,
+    canManageExpenseCategory: false,
+    canViewExpense: false,
+    canAddExpense: false,
   };
 };
 

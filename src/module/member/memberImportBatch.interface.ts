@@ -24,6 +24,7 @@ export interface TMemberImportBatch {
   range?: string;
   fileName?: string;
   status: TMemberImportStatus;
+  errorMessage?: string;
   createdByUserId?: Types.ObjectId;
   createdByStaffId?: Types.ObjectId;
   retryOfBatchId?: Types.ObjectId;

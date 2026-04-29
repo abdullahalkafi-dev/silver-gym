@@ -18,12 +18,11 @@ type TAccessActor = {
 type TCreatePackagePayload = Omit<TPackage, "branchId" | "createdAt" | "updatedAt">;
 
 type TUpdatePackagePayload = Partial<
-  Omit<TPackage, "branchId" | "legacyId" | "createdAt" | "updatedAt">
+  Omit<TPackage, "branchId" | "createdAt" | "updatedAt">
 >;
 
 type TQueryPackage = {
   searchTerm?: string;
-  legacyId?: string;
   durationType?: string;
   isActive?: string;
   minAmount?: string;

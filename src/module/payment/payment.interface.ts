@@ -28,13 +28,10 @@ export enum PaymentMethod {
 
 export interface TPayment {
 	branchId: Types.ObjectId;
-	legacyId?: string;
 	invoiceNo?: string;
 	memberId?: Types.ObjectId;
-	memberLegacyId?: string;
 	memberName?: string;
 	packageId?: Types.ObjectId;
-	packageLegacyId?: string;
 	packageName?: string;
 	packageDuration?: number;
 	packageDurationType?: string;
@@ -45,6 +42,7 @@ export interface TPayment {
 	year?: number;
 	subTotal?: number;
 	discount?: number;
+	billAmount?: number;
 	dueAmount?: number;
 	paidTotal?: number;
 	admissionFee?: number;
@@ -52,7 +50,8 @@ export interface TPayment {
 	paymentDate?: Date;
 	nextPaymentDate?: Date;
 	status?: PaymentStatus;
-	source?: string;
+exchange?: number;
+  source?: string;
 	importBatchId?: string;
 	metadata?: Record<string, unknown>;
 	createdAt?: Date;

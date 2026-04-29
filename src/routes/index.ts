@@ -6,9 +6,11 @@ import { BranchRoutes } from "../module/branch/branch.route";
 import { RoleRoute } from "../module/role/role.route";
 import { StaffRoutes } from "../module/staff/staff.route";
 import { MemberRoutes } from "../module/member/member.route";
+import { UserRoutes } from "../module/user/user.route";
 import PackageRoutes from "../module/package/package.route";
 import PaymentRoutes from "../module/payment/payment.route";
 import { ExpenseRoutes } from "../module/expense/expense.route";
+import { AnalyticsRoutes } from "../module/analytics/analytics.route";
 
 const router: Router = express.Router();
 
@@ -38,6 +40,10 @@ const apiRoutes = [
     route: StaffRoutes,
   },
   {
+    path: "/users",
+    route: UserRoutes,
+  },
+  {
     path: "/members",
     route: MemberRoutes,
   },
@@ -52,6 +58,10 @@ const apiRoutes = [
   {
     path: "/expenses",
     route: ExpenseRoutes,
+  },
+  {
+    path: "/analytics",
+    route: AnalyticsRoutes,
   },
 ];
 

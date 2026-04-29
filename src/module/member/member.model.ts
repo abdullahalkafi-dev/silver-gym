@@ -37,9 +37,8 @@ const memberSchema = new Schema<TMember>(
       required: true,
       index: true,
     },
-    legacyId: {
-      type: String,
-      trim: true,
+    systemMemberId: {
+      type: Number,
     },
     memberId: {
       type: String,
@@ -201,11 +200,13 @@ memberSchema.pre("validate", async function () {
 });
 
 memberSchema.index({ branchId: 1, isActive: 1, createdAt: -1 });
+memberSchema.index({ branchId: 1, systemMemberId: 1 }, { unique: true, sparse: true });
+memberSchema.index({ branchId: 1, memberId: 1 });
 memberSchema.index(
-  { branchId: 1, legacyId: 1 },
+  { branchId: 1, contact: 1 },
   {
     unique: true,
-    partialFilterExpression: { legacyId: { $exists: true, $ne: null } },
+    partialFilterExpression: { contact: { $exists: true, $ne: null, $ne: "" } },
   },
 );
 

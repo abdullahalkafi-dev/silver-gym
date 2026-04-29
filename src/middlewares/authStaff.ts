@@ -48,6 +48,10 @@ const normalizePermissions = (
   canSendSMS: Boolean(input?.canSendSMS),
   canViewEmail: Boolean(input?.canViewEmail),
   canSendEmail: Boolean(input?.canSendEmail),
+  canViewExpenseCategory: Boolean(input?.canViewExpenseCategory),
+  canManageExpenseCategory: Boolean(input?.canManageExpenseCategory),
+  canViewExpense: Boolean(input?.canViewExpense),
+  canAddExpense: Boolean(input?.canAddExpense),
 });
 
 const authStaff =
