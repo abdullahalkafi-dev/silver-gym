@@ -99,7 +99,7 @@ const toYear = (value: unknown, fallback: number) => {
 };
 
 const toMonth = (value: unknown) => {
-  if (typeof value !== "string" || value.length === 0) return "All Months";
+  if (typeof value !== "string" || value.length === 0) return undefined;
   return value;
 };
 
@@ -661,10 +661,18 @@ const getOverviewSummary = async (
     dailyIncomeMap.set(row._id.day, row.income || 0);
   });
 
-  const monthlyData = Array.from({ length: daysInMonth }, (_, index) => ({
-    month: String(index + 1),
-    value: dailyIncomeMap.get(index + 1) ?? 0,
-  }));
+  // Determine the current BD day so we can zero out future days when viewing the current month
+  const todayBD = getBDDate();
+  const isCurrentMonth =
+    todayBD.getUTCFullYear() === selectedYear &&
+    todayBD.getUTCMonth() === monthNames.indexOf(selectedMonth);
+  const todayBDDay = todayBD.getUTCDate();
+
+  const monthlyData = Array.from({ length: daysInMonth }, (_, index) => {
+    const day = index + 1;
+    const value = isCurrentMonth && day > todayBDDay ? 0 : (dailyIncomeMap.get(day) ?? 0);
+    return { month: String(day), value };
+  });
 
   const pieTotal = expensePieRows.reduce(
     (sum: number, row: { value: number }) => sum + (row.value || 0),

@@ -548,16 +548,35 @@ export const AnalyticsRepository = {
   },
 
   getOverviewRecentTransactions(branchId: string, limit: number) {
+    // Compute today's start and end in BD timezone (UTC+6)
+    const now = new Date();
+    const bdNow = new Date(now.getTime() + BD_OFFSET_MS);
+    const todayStartUTC = new Date(
+      Date.UTC(bdNow.getUTCFullYear(), bdNow.getUTCMonth(), bdNow.getUTCDate()) - BD_OFFSET_MS,
+    );
+    const todayEndUTC = new Date(todayStartUTC.getTime() + 24 * 60 * 60 * 1000);
+
     return Promise.all([
       Payment.find({
         branchId: toBranchObjectId(branchId),
         status: { $in: validIncomeStatuses },
+        $or: [
+          { paymentDate: { $gte: todayStartUTC, $lt: todayEndUTC } },
+          { createdAt: { $gte: todayStartUTC, $lt: todayEndUTC } },
+        ],
       })
         .select("invoiceNo paymentDate createdAt memberId memberName paymentType paymentMethod paidTotal billAmount")
         .sort({ paymentDate: -1, createdAt: -1 })
         .limit(limit)
         .lean(),
-      Expense.find({ branchId: toBranchObjectId(branchId), isActive: true })
+      Expense.find({
+        branchId: toBranchObjectId(branchId),
+        isActive: true,
+        $or: [
+          { expenseDate: { $gte: todayStartUTC, $lt: todayEndUTC } },
+          { createdAt: { $gte: todayStartUTC, $lt: todayEndUTC } },
+        ],
+      })
         .select("invoiceNo expenseDate createdAt categoryTitle paymentMethod amount")
         .sort({ expenseDate: -1, createdAt: -1 })
         .limit(limit)
