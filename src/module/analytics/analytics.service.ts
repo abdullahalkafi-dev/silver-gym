@@ -4,6 +4,7 @@ import { Types } from "mongoose";
 import AppError from "../../errors/AppError";
 import { BranchRepository } from "../branch/branch.repository";
 import { BusinessProfileRepository } from "../businessProfile/businessProfile.repository";
+import { PackageRepository } from "../package/package.repository";
 import {
   TAnalyticsActor,
   TAnalyticsCompareQuery,
@@ -17,6 +18,7 @@ import {
   TMemberAnalyticsSummary,
   TOverviewSummary,
   TOverviewTransaction,
+  TPackageListItem,
   TPackagesAnalyticsSummary,
 } from "./analytics.interface";
 import { AnalyticsRepository } from "./analytics.repository";
@@ -69,6 +71,25 @@ const categoryPalette = [
   "#64667C",
   "#B7B976",
 ];
+
+const BD_OFFSET_MS = 6 * 60 * 60 * 1000;
+
+const getBDDate = (date?: Date) => {
+  const d = date || new Date();
+  return new Date(d.getTime() + BD_OFFSET_MS);
+};
+
+const formatBDDateTime = (date: Date) => {
+  const bdDate = new Date(date.getTime() + BD_OFFSET_MS);
+  const day = String(bdDate.getUTCDate()).padStart(2, "0");
+  const month = monthShort[bdDate.getUTCMonth()];
+  const year = bdDate.getUTCFullYear();
+  let hours = bdDate.getUTCHours();
+  const minutes = String(bdDate.getUTCMinutes()).padStart(2, "0");
+  const ampm = hours >= 12 ? "PM" : "AM";
+  hours = hours % 12 || 12;
+  return `${day} ${month} ${year}, ${hours}:${minutes} ${ampm}`;
+};
 
 const toYear = (value: unknown, fallback: number) => {
   if (typeof value !== "string") return fallback;
@@ -159,7 +180,8 @@ const getMemberSummary = async (
   await resolveBranchAccess(branchId, actor);
 
   const now = new Date();
-  const year = query.year ?? now.getUTCFullYear();
+  const bdNow = getBDDate(now);
+  const year = query.year ?? bdNow.getUTCFullYear();
   const month = query.month ?? "All Months";
   const { start, end } = AnalyticsRepository.getYearMonthBounds(year, month);
 
@@ -177,8 +199,8 @@ const getMemberSummary = async (
     AnalyticsRepository.getAvailableYears(branchId),
   ]);
 
-  const nowMonthIndex = now.getUTCMonth();
-  const nowYear = now.getUTCFullYear();
+  const nowMonthIndex = bdNow.getUTCMonth();
+  const nowYear = bdNow.getUTCFullYear();
   const monthTimeline: Array<{ year: number; month: number }> = [];
   for (let offset = 5; offset >= 0; offset -= 1) {
     const d = new Date(Date.UTC(nowYear, nowMonthIndex - offset, 1));
@@ -217,8 +239,8 @@ const getFinancialSummary = async (
 ): Promise<TFinancialAnalyticsSummary> => {
   await resolveBranchAccess(branchId, actor);
 
-  const now = new Date();
-  const year = query.year ?? now.getUTCFullYear();
+  const bdNow = getBDDate();
+  const year = query.year ?? bdNow.getUTCFullYear();
   const month = query.month ?? "All Months";
   const { start, end } = AnalyticsRepository.getYearMonthBounds(year, month);
 
@@ -327,8 +349,8 @@ const getCostSummary = async (
 ): Promise<TCostAnalyticsSummary> => {
   await resolveBranchAccess(branchId, actor);
 
-  const now = new Date();
-  const year = query.year ?? now.getUTCFullYear();
+  const bdNow = getBDDate();
+  const year = query.year ?? bdNow.getUTCFullYear();
   const month = query.month ?? "All Months";
   const { start, end } = AnalyticsRepository.getYearMonthBounds(year, month);
 
@@ -367,12 +389,14 @@ const getPackagesSummary = async (
 ): Promise<TPackagesAnalyticsSummary> => {
   await resolveBranchAccess(branchId, actor);
 
-  const now = new Date();
-  const year = query.year ?? now.getUTCFullYear();
+  const bdNow = getBDDate();
+  const year = query.year ?? bdNow.getUTCFullYear();
 
-  const [rows, availableYears] = await Promise.all([
-    AnalyticsRepository.getPackageAnalytics(branchId, year),
+  const [joinRows, availableYears, packageDocs, memberPackageRows] = await Promise.all([
+    AnalyticsRepository.getMemberJoinChart(branchId, year),
     AnalyticsRepository.getAvailableYears(branchId),
+    PackageRepository.findMany({ branchId: new Types.ObjectId(branchId), isActive: true }),
+    AnalyticsRepository.getMemberPackageSummary(branchId),
   ]);
 
   const chartData = monthShort.map((monthName) => ({
@@ -384,22 +408,38 @@ const getPackagesSummary = async (
     Yearly: 0,
   }));
 
-  rows.forEach(
-    (row: { _id: { month: number; packageType: string }; count: number }) => {
+  const packageTitleSet = new Set<string>();
+
+  const packageRows: Array<{
+    month: number;
+    packageType: string;
+    packageTitle: string;
+    count: number;
+  }> = [];
+
+  joinRows.forEach(
+    (row: { _id: { month: number; packageTitle: string }; count: number }) => {
       const monthIndex = row._id.month - 1;
       if (monthIndex < 0 || monthIndex >= chartData.length) return;
 
       const point = chartData[monthIndex];
       if (!point) return;
 
-      const packageType = row._id.packageType as
-        | "Weekly"
-        | "Monthly"
-        | "Quarter Yearly"
-        | "Half Yearly"
-        | "Yearly";
+      if (!row._id.packageTitle) {
+        // No package (imported or purely monthly members) → Monthly bucket
+        point["Monthly"] += row.count || 0;
+      }
 
-      point[packageType] = row.count || 0;
+      if (row._id.packageTitle) {
+        packageTitleSet.add(row._id.packageTitle);
+      }
+
+      packageRows.push({
+        month: row._id.month,
+        packageType: row._id.packageTitle ? "Package" : "Monthly",
+        packageTitle: row._id.packageTitle || "",
+        count: row.count || 0,
+      });
     },
   );
 
@@ -421,37 +461,61 @@ const getPackagesSummary = async (
     },
   );
 
-  const totalMembers =
-    totals.Weekly +
-    totals.Monthly +
-    totals["Quarter Yearly"] +
-    totals["Half Yearly"] +
-    totals.Yearly;
+  const memberPackageSummary: Array<{
+    packageId: string | null;
+    packageTitle: string;
+    count: number;
+  }> = (
+    memberPackageRows as Array<{
+      _id: { packageId: import("mongoose").Types.ObjectId | null; packageTitle: string };
+      count: number;
+    }>
+  ).map((row) => ({
+    packageId: row._id.packageId ? row._id.packageId.toString() : null,
+    packageTitle: row._id.packageTitle || "",
+    count: row.count,
+  }));
+
+  const totalActiveMembers = memberPackageSummary.reduce((sum, r) => sum + r.count, 0);
 
   const toPercentage = (count: number) =>
-    totalMembers > 0 ? Number(((count / totalMembers) * 100).toFixed(1)) : 0;
+    totalActiveMembers > 0 ? Number(((count / totalActiveMembers) * 100).toFixed(1)) : 0;
+
+  const packagesList: TPackageListItem[] = [
+    ...packageDocs
+      .filter((doc: { _id: { toString(): string }; title: string; color?: string }) =>
+        doc.title !== "Monthly Renewal"
+      )
+      .map((doc: { _id: { toString(): string }; title: string; color?: string }) => ({
+        id: doc._id.toString(),
+        title: doc.title,
+        color: doc.color || "#7C3AED",
+      })),
+  ];
+
+  const statsArray = [
+    { label: "Monthly", count: totals.Monthly },
+    { label: "Half Yearly", count: totals["Half Yearly"] },
+    { label: "Quarter Yearly", count: totals["Quarter Yearly"] },
+    { label: "Yearly", count: totals.Yearly },
+    { label: "Weekly", count: totals.Weekly },
+  ].filter((item) => item.count > 0);
 
   return {
     year,
     chartData,
     stats: [
-      { label: "Total Members", count: totalMembers, unit: "Person", percentage: 100 },
-      { label: "Monthly", count: totals.Monthly, unit: "/per", percentage: toPercentage(totals.Monthly) },
-      {
-        label: "Half Yearly",
-        count: totals["Half Yearly"],
+      { label: "Total Members", count: totalActiveMembers, unit: "Person", percentage: 100 },
+      ...statsArray.map((item) => ({
+        label: item.label,
+        count: item.count,
         unit: "/per",
-        percentage: toPercentage(totals["Half Yearly"]),
-      },
-      {
-        label: "Quarter Yearly",
-        count: totals["Quarter Yearly"],
-        unit: "/per",
-        percentage: toPercentage(totals["Quarter Yearly"]),
-      },
-      { label: "Yearly", count: totals.Yearly, unit: "/per", percentage: toPercentage(totals.Yearly) },
-      { label: "Weekly", count: totals.Weekly, unit: "/per", percentage: toPercentage(totals.Weekly) },
+        percentage: toPercentage(item.count),
+      })),
     ],
+    packagesList,
+    packageRows,
+    memberPackageSummary,
     availableYears,
   };
 };
@@ -529,9 +593,9 @@ const getOverviewSummary = async (
 ): Promise<TOverviewSummary> => {
   await resolveBranchAccess(branchId, actor);
 
-  const now = new Date();
-  const selectedYear = query.year ?? now.getUTCFullYear();
-  const selectedMonth = query.month ?? monthNames[now.getUTCMonth()] ?? "January";
+  const bdNow = getBDDate();
+  const selectedYear = query.year ?? bdNow.getUTCFullYear();
+  const selectedMonth = query.month ?? monthNames[bdNow.getUTCMonth()] ?? "January";
   const transactionLimit = query.transactionLimit ?? 20;
 
   const selectedRange = AnalyticsRepository.getYearMonthBounds(selectedYear, selectedMonth);
@@ -546,6 +610,7 @@ const getOverviewSummary = async (
     expensePieRows,
     transactionRows,
     availableYears,
+    dailyProgressRows,
   ] = await Promise.all([
     AnalyticsRepository.getIncomeExpenseTotals(branchId, selectedRange.start, selectedRange.end),
     AnalyticsRepository.countNewMembers(branchId, monthRange.start, monthRange.end),
@@ -555,6 +620,7 @@ const getOverviewSummary = async (
     AnalyticsRepository.getExpenseBreakdown(branchId, monthRange.start, monthRange.end),
     AnalyticsRepository.getOverviewRecentTransactions(branchId, transactionLimit),
     AnalyticsRepository.getAvailableYears(branchId),
+    AnalyticsRepository.getFinancialDataByDay(branchId, monthRange.start, monthRange.end).then((value) => value[0]),
   ]);
 
   const totalIncome = selectedTotals[0]?.[0]?.total ?? 0;
@@ -590,9 +656,14 @@ const getOverviewSummary = async (
     monthExpenseMap.set(row._id.month, row.expense || 0);
   });
 
+  const dailyIncomeMap = new Map<number, number>();
+  (dailyProgressRows as Array<{ _id: { day: number }; income: number }>).forEach((row) => {
+    dailyIncomeMap.set(row._id.day, row.income || 0);
+  });
+
   const monthlyData = Array.from({ length: daysInMonth }, (_, index) => ({
     month: String(index + 1),
-    value: 0,
+    value: dailyIncomeMap.get(index + 1) ?? 0,
   }));
 
   const pieTotal = expensePieRows.reduce(
@@ -634,18 +705,14 @@ const getOverviewSummary = async (
       dateValue,
       transaction: {
         id: `#${String(row.invoiceNo || "PAY")}`,
-        date: dateValue.toLocaleDateString("en-GB", {
-          day: "2-digit",
-          month: "short",
-          year: "numeric",
-        }),
+        date: formatBDDateTime(dateValue),
         categoryName: String(row.memberName || row.paymentType || "Payment"),
         memberId: row.memberId ? String(row.memberId) : null,
         category:
           String(row.paymentType || "Other").charAt(0).toUpperCase() +
           String(row.paymentType || "Other").slice(1),
         payment: String(row.paymentMethod || "Cash"),
-        amount: Number(row.paidTotal || 0),
+        amount: Number(row.billAmount || row.paidTotal || 0),
       },
     });
   });
@@ -658,11 +725,7 @@ const getOverviewSummary = async (
       dateValue,
       transaction: {
         id: `#${String(row.invoiceNo || "EXP")}`,
-        date: dateValue.toLocaleDateString("en-GB", {
-          day: "2-digit",
-          month: "short",
-          year: "numeric",
-        }),
+        date: formatBDDateTime(dateValue),
         categoryName: String(row.categoryTitle || "Expense"),
         memberId: null,
         category: "Expense",
@@ -728,7 +791,7 @@ const getOverviewSummary = async (
 
 export const AnalyticsService = {
   parseFilterQuery: (query: Record<string, unknown>): TAnalyticsQuery => {
-    const currentYear = new Date().getUTCFullYear();
+    const currentYear = getBDDate().getUTCFullYear();
     return {
       year: toYear(query.year, currentYear),
       month: toMonth(query.month),
@@ -736,7 +799,7 @@ export const AnalyticsService = {
   },
 
   parseCompareQuery: (query: Record<string, unknown>): TAnalyticsCompareQuery => {
-    const currentYear = new Date().getUTCFullYear();
+    const currentYear = getBDDate().getUTCFullYear();
     const startYear = toYear(query.startYear, currentYear - 4);
     const endYear = toYear(query.endYear, currentYear);
     if (endYear < startYear) {
@@ -755,7 +818,7 @@ export const AnalyticsService = {
   },
 
   parseOverviewQuery: (query: Record<string, unknown>) => {
-    const currentYear = new Date().getUTCFullYear();
+    const currentYear = getBDDate().getUTCFullYear();
     return {
       year: toYear(query.year, currentYear),
       month: toMonth(query.month),

@@ -102,6 +102,7 @@ const updateMemberDto = z.object({
   data: z
     .object({
       isActive: z.boolean().optional(),
+      memberId: z.string().trim().optional(),
       fullName: z.string().trim().min(1).optional(),
       contact: z.string().trim().optional(),
       email: z.email("Invalid email").trim().toLowerCase().optional(),

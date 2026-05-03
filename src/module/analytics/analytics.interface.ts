@@ -88,6 +88,7 @@ export type TPackagesChartPoint = {
   "Quarter Yearly": number;
   "Half Yearly": number;
   Yearly: number;
+  packageTitle?: string;
 };
 
 export type TPackageStat = {
@@ -97,10 +98,28 @@ export type TPackageStat = {
   percentage: number;
 };
 
+export type TPackageListItem = {
+  id: string;
+  title: string;
+  color: string;
+};
+
 export type TPackagesAnalyticsSummary = {
   year: number;
   chartData: TPackagesChartPoint[];
   stats: TPackageStat[];
+  packagesList: TPackageListItem[];
+  packageRows: Array<{
+    month: number;
+    packageType: string;
+    packageTitle: string;
+    count: number;
+  }>;
+  memberPackageSummary: Array<{
+    packageId: string | null;
+    packageTitle: string;
+    count: number;
+  }>;
   availableYears: number[];
 };
 

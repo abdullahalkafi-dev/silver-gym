@@ -5,6 +5,8 @@ import { Member } from "../member/member.model";
 import { PaymentStatus } from "../payment/payment.interface";
 import { Payment } from "../payment/payment.model";
 
+const BD_OFFSET_MS = 6 * 60 * 60 * 1000;
+
 type TYearMonthBounds = {
   start: Date;
   end: Date;
@@ -32,8 +34,8 @@ const monthToIndex = (month: string): number => {
 const getYearMonthBounds = (year: number, month: string): TYearMonthBounds => {
   if (month !== "All Months") {
     const monthIndex = monthToIndex(month);
-    const start = new Date(Date.UTC(year, monthIndex, 1, 0, 0, 0, 0));
-    const end = new Date(Date.UTC(year, monthIndex + 1, 1, 0, 0, 0, 0));
+    const start = new Date(Date.UTC(year, monthIndex, 1, 0, 0, 0, 0) - BD_OFFSET_MS);
+    const end = new Date(Date.UTC(year, monthIndex + 1, 1, 0, 0, 0, 0) - BD_OFFSET_MS);
     return { start, end };
   }
 
@@ -62,7 +64,7 @@ export const AnalyticsRepository = {
       Expense.findOne({ branchId: branchObjectId }).sort({ createdAt: 1 }).select("createdAt").lean(),
     ]);
 
-    const currentYear = new Date().getUTCFullYear();
+    const currentYear = new Date(Date.now() + BD_OFFSET_MS).getUTCFullYear();
     const candidateYears = [
       memberDoc?.createdAt ? new Date(memberDoc.createdAt).getUTCFullYear() : currentYear,
       paymentDoc?.createdAt ? new Date(paymentDoc.createdAt).getUTCFullYear() : currentYear,
@@ -100,8 +102,9 @@ export const AnalyticsRepository = {
 
   getLastSixMonthsAdmissions(branchId: string) {
     const now = new Date();
-    const end = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1));
-    const start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 5, 1));
+    const bdNow = new Date(now.getTime() + BD_OFFSET_MS);
+    const end = new Date(Date.UTC(bdNow.getUTCFullYear(), bdNow.getUTCMonth() + 1, 1) - BD_OFFSET_MS);
+    const start = new Date(Date.UTC(bdNow.getUTCFullYear(), bdNow.getUTCMonth() - 5, 1) - BD_OFFSET_MS);
 
     return Member.aggregate([
       {
@@ -114,8 +117,8 @@ export const AnalyticsRepository = {
       {
         $group: {
           _id: {
-            year: { $year: "$createdAt" },
-            month: { $month: "$createdAt" },
+            year: { $year: { $add: ["$createdAt", BD_OFFSET_MS] } },
+            month: { $month: { $add: ["$createdAt", BD_OFFSET_MS] } },
           },
           value: { $sum: 1 },
         },
@@ -133,8 +136,8 @@ export const AnalyticsRepository = {
   },
 
   getFinancialDataByMonth(branchId: string, year: number) {
-    const start = new Date(Date.UTC(year, 0, 1));
-    const end = new Date(Date.UTC(year + 1, 0, 1));
+    const start = new Date(Date.UTC(year, 0, 1) - BD_OFFSET_MS);
+    const end = new Date(Date.UTC(year + 1, 0, 1) - BD_OFFSET_MS);
 
     return Promise.all([
       Payment.aggregate([
@@ -147,8 +150,8 @@ export const AnalyticsRepository = {
         },
         {
           $group: {
-            _id: { month: { $month: "$paymentDate" } },
-            income: { $sum: { $ifNull: ["$paidTotal", 0] } },
+            _id: { month: { $month: { $add: ["$paymentDate", BD_OFFSET_MS] } } },
+            income: { $sum: { $ifNull: ["$billAmount", 0] } },
           },
         },
       ]),
@@ -162,7 +165,7 @@ export const AnalyticsRepository = {
         },
         {
           $group: {
-            _id: { month: { $month: "$expenseDate" } },
+            _id: { month: { $month: { $add: ["$expenseDate", BD_OFFSET_MS] } } },
             expense: { $sum: { $ifNull: ["$amount", 0] } },
           },
         },
@@ -182,8 +185,8 @@ export const AnalyticsRepository = {
         },
         {
           $group: {
-            _id: { day: { $dayOfMonth: "$paymentDate" } },
-            income: { $sum: { $ifNull: ["$paidTotal", 0] } },
+            _id: { day: { $dayOfMonth: { $add: ["$paymentDate", BD_OFFSET_MS] } } },
+            income: { $sum: { $ifNull: ["$billAmount", 0] } },
           },
         },
       ]),
@@ -197,7 +200,7 @@ export const AnalyticsRepository = {
         },
         {
           $group: {
-            _id: { day: { $dayOfMonth: "$expenseDate" } },
+            _id: { day: { $dayOfMonth: { $add: ["$expenseDate", BD_OFFSET_MS] } } },
             expense: { $sum: { $ifNull: ["$amount", 0] } },
           },
         },
@@ -215,7 +218,7 @@ export const AnalyticsRepository = {
             paymentDate: { $gte: start, $lt: end },
           },
         },
-        { $group: { _id: null, total: { $sum: { $ifNull: ["$paidTotal", 0] } } } },
+        { $group: { _id: null, total: { $sum: { $ifNull: ["$billAmount", 0] } } } },
       ]),
       Expense.aggregate([
         {
@@ -250,8 +253,8 @@ export const AnalyticsRepository = {
   },
 
   getPackageAnalytics(branchId: string, year: number) {
-    const start = new Date(Date.UTC(year, 0, 1));
-    const end = new Date(Date.UTC(year + 1, 0, 1));
+    const start = new Date(Date.UTC(year, 0, 1) - BD_OFFSET_MS);
+    const end = new Date(Date.UTC(year + 1, 0, 1) - BD_OFFSET_MS);
 
     return Payment.aggregate([
       {
@@ -259,18 +262,23 @@ export const AnalyticsRepository = {
           branchId: toBranchObjectId(branchId),
           status: { $in: validIncomeStatuses },
           paymentDate: { $gte: start, $lt: end },
+          packageId: { $exists: true, $ne: null },
         },
       },
       {
         $project: {
-          month: { $month: "$paymentDate" },
+          month: { $month: { $add: ["$paymentDate", BD_OFFSET_MS] } },
+          packageId: 1,
           packageDuration: { $ifNull: ["$packageDuration", 0] },
           packageDurationType: { $ifNull: ["$packageDurationType", ""] },
+          packageTitle: { $ifNull: ["$packageName", ""] },
         },
       },
       {
         $project: {
           month: 1,
+          packageId: 1,
+          packageTitle: 1,
           packageType: {
             $switch: {
               branches: [
@@ -326,10 +334,147 @@ export const AnalyticsRepository = {
         },
       },
       {
+        $lookup: {
+          from: "packages",
+          localField: "packageId",
+          foreignField: "_id",
+          as: "pkgDoc",
+        },
+      },
+      {
+        $addFields: {
+          packageTitle: {
+            $ifNull: [{ $arrayElemAt: ["$pkgDoc.title", 0] }, "$packageTitle"],
+          },
+        },
+      },
+      {
+        $project: {
+          month: 1,
+          packageTitle: 1,
+          packageType: 1,
+        },
+      },
+      {
         $group: {
           _id: {
             month: "$month",
             packageType: "$packageType",
+            packageTitle: "$packageTitle",
+          },
+          count: { $sum: 1 },
+        },
+      },
+    ]);
+  },
+
+  getMemberJoinChart(branchId: string, year: number) {
+    const start = new Date(Date.UTC(year, 0, 1) - BD_OFFSET_MS);
+    const end = new Date(Date.UTC(year + 1, 0, 1) - BD_OFFSET_MS);
+
+    return Member.aggregate([
+      {
+        $match: {
+          branchId: toBranchObjectId(branchId),
+          createdAt: { $gte: start, $lt: end },
+        },
+      },
+      // Look up the member's first payment that has a packageId
+      // to determine what package they originally joined with.
+      {
+        $lookup: {
+          from: "payments",
+          let: { mid: "$_id" },
+          pipeline: [
+            {
+              $match: {
+                $expr: {
+                  $and: [
+                    { $eq: ["$memberId", "$$mid"] },
+                    { $ne: ["$packageId", null] },
+                  ],
+                },
+              },
+            },
+            { $sort: { paymentDate: 1 } },
+            { $limit: 1 },
+            {
+              $lookup: {
+                from: "packages",
+                localField: "packageId",
+                foreignField: "_id",
+                as: "pkgDoc",
+              },
+            },
+            {
+              $addFields: {
+                resolvedTitle: {
+                  $ifNull: [
+                    { $arrayElemAt: ["$pkgDoc.title", 0] },
+                    { $ifNull: ["$packageName", ""] },
+                  ],
+                },
+              },
+            },
+          ],
+          as: "firstPayment",
+        },
+      },
+      {
+        $addFields: {
+          joinMonth: { $month: { $add: ["$createdAt", BD_OFFSET_MS] } },
+          // Empty string = no-package member (imported, purely monthly, or "Monthly Renewal" package)
+          packageTitle: {
+            $let: {
+              vars: {
+                rawTitle: {
+                  $ifNull: [
+                    { $arrayElemAt: ["$firstPayment.resolvedTitle", 0] },
+                    "",
+                  ],
+                },
+              },
+              in: {
+                $cond: {
+                  if: { $eq: ["$$rawTitle", "Monthly Renewal"] },
+                  then: "",
+                  else: "$$rawTitle",
+                },
+              },
+            },
+          },
+        },
+      },
+      {
+        $group: {
+          _id: {
+            month: "$joinMonth",
+            packageTitle: "$packageTitle",
+          },
+          count: { $sum: 1 },
+        },
+      },
+    ]);
+  },
+
+  getMemberPackageSummary(branchId: string) {
+    return Member.aggregate([
+      { $match: { branchId: toBranchObjectId(branchId), isActive: true } },
+      {
+        $lookup: {
+          from: "packages",
+          localField: "currentPackageId",
+          foreignField: "_id",
+          as: "pkgDoc",
+        },
+      },
+      {
+        $group: {
+          _id: {
+            packageId: { $ifNull: ["$currentPackageId", null] },
+            packageTitle: {
+              $ifNull: [{ $arrayElemAt: ["$pkgDoc.title", 0] }, ""],
+            },
           },
           count: { $sum: 1 },
         },
@@ -338,8 +483,8 @@ export const AnalyticsRepository = {
   },
 
   getCompareYearTotals(branchId: string, startYear: number, endYear: number) {
-    const start = new Date(Date.UTC(startYear, 0, 1));
-    const end = new Date(Date.UTC(endYear + 1, 0, 1));
+    const start = new Date(Date.UTC(startYear, 0, 1) - BD_OFFSET_MS);
+    const end = new Date(Date.UTC(endYear + 1, 0, 1) - BD_OFFSET_MS);
 
     return Promise.all([
       Payment.aggregate([
@@ -353,10 +498,10 @@ export const AnalyticsRepository = {
         {
           $group: {
             _id: {
-              year: { $year: "$paymentDate" },
-              month: { $month: "$paymentDate" },
+              year: { $year: { $add: ["$paymentDate", BD_OFFSET_MS] } },
+              month: { $month: { $add: ["$paymentDate", BD_OFFSET_MS] } },
             },
-            income: { $sum: { $ifNull: ["$paidTotal", 0] } },
+            income: { $sum: { $ifNull: ["$billAmount", 0] } },
           },
         },
       ]),
@@ -371,8 +516,8 @@ export const AnalyticsRepository = {
         {
           $group: {
             _id: {
-              year: { $year: "$expenseDate" },
-              month: { $month: "$expenseDate" },
+              year: { $year: { $add: ["$expenseDate", BD_OFFSET_MS] } },
+              month: { $month: { $add: ["$expenseDate", BD_OFFSET_MS] } },
             },
             expense: { $sum: { $ifNull: ["$amount", 0] } },
           },
@@ -382,8 +527,8 @@ export const AnalyticsRepository = {
   },
 
   getOverviewProgressYearly(branchId: string, year: number) {
-    const start = new Date(Date.UTC(year, 0, 1));
-    const end = new Date(Date.UTC(year + 1, 0, 1));
+    const start = new Date(Date.UTC(year, 0, 1) - BD_OFFSET_MS);
+    const end = new Date(Date.UTC(year + 1, 0, 1) - BD_OFFSET_MS);
 
     return Payment.aggregate([
       {
@@ -395,8 +540,8 @@ export const AnalyticsRepository = {
       },
       {
         $group: {
-          _id: { month: { $month: "$paymentDate" } },
-          value: { $sum: { $ifNull: ["$paidTotal", 0] } },
+          _id: { month: { $month: { $add: ["$paymentDate", BD_OFFSET_MS] } } },
+          value: { $sum: { $ifNull: ["$billAmount", 0] } },
         },
       },
     ]);
@@ -408,7 +553,7 @@ export const AnalyticsRepository = {
         branchId: toBranchObjectId(branchId),
         status: { $in: validIncomeStatuses },
       })
-        .select("invoiceNo paymentDate createdAt memberId memberName paymentType paymentMethod paidTotal")
+        .select("invoiceNo paymentDate createdAt memberId memberName paymentType paymentMethod paidTotal billAmount")
         .sort({ paymentDate: -1, createdAt: -1 })
         .limit(limit)
         .lean(),
