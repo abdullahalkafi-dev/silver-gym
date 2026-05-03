@@ -31,6 +31,7 @@ import {
   addMonthsPreservingDay,
   applyNetBalanceDelta,
   computePaymentSettlement,
+  isSameCalendarDay,
   normalizeMoney,
   toMemberBalanceSnapshot,
 } from "./payment.balance";
@@ -272,6 +273,34 @@ const isShortTermPackageDuration = (durationType?: string) =>
 const isLongTermPackageDuration = (durationType?: string) =>
   durationType === PackageDurationType.MONTH ||
   durationType === PackageDurationType.YEAR;
+
+const resolveRequiredCollectBillStartDate = (
+  member: Awaited<ReturnType<typeof MemberRepository.findOne>>,
+): Date => {
+  const nextStartDate = member?.nextPaymentDate
+    ? new Date(member.nextPaymentDate)
+    : new Date();
+
+  return Number.isNaN(nextStartDate.getTime()) ? new Date() : nextStartDate;
+};
+
+const assertCollectBillStartDate = (
+  startDate: Date,
+  requiredStartDate: Date,
+  collectionMode: Exclude<TCollectBillMode, "due_only">,
+) => {
+  if (isSameCalendarDay(startDate, requiredStartDate)) {
+    return;
+  }
+
+  const modeLabel = collectionMode === "package" ? "Package billing" : "Billing";
+  const requiredDateLabel = requiredStartDate.toLocaleDateString("en-GB");
+
+  throw new AppError(
+    StatusCodes.BAD_REQUEST,
+    `${modeLabel} must start on ${requiredDateLabel}. Skipping ahead is not allowed`,
+  );
+};
 
 const mapDueLedgerItemToResponse = (item: TMemberBillingLedgerItem) => ({
   ledgerItemId: item.key,
@@ -551,14 +580,17 @@ const resolveCollectBillCycleDetails = async (
   member: Awaited<ReturnType<typeof MemberRepository.findOne>>,
   payload: TCollectBillPayload,
 ): Promise<TCollectBillCycleDetails> => {
+  const requiredStartDate =
+    payload.collectionMode === "due_only"
+      ? undefined
+      : resolveRequiredCollectBillStartDate(member);
+
   const startDate =
     payload.startDate instanceof Date
       ? payload.startDate
       : payload.startDate
         ? new Date(payload.startDate)
-        : payload.collectionMode === "monthly" && member?.nextPaymentDate
-          ? new Date(member.nextPaymentDate)
-          : new Date();
+        : requiredStartDate ?? new Date();
 
   switch (payload.collectionMode) {
     case "due_only":
@@ -572,6 +604,8 @@ const resolveCollectBillCycleDetails = async (
       };
 
     case "monthly": {
+      assertCollectBillStartDate(startDate, requiredStartDate!, payload.collectionMode);
+
       const paidMonths = payload.paidMonths && payload.paidMonths > 0 ? payload.paidMonths : 0;
 
       // Resolve monthly fee: explicit custom override > member custom > branch default
@@ -625,6 +659,8 @@ const resolveCollectBillCycleDetails = async (
     }
 
     case "package": {
+      assertCollectBillStartDate(startDate, requiredStartDate!, payload.collectionMode);
+
       if (!payload.packageId || !Types.ObjectId.isValid(payload.packageId)) {
         throw new AppError(StatusCodes.BAD_REQUEST, "A valid package is required");
       }
@@ -961,6 +997,7 @@ const getCollectBillContext = async (
       .filter((item) => item.type === "monthly_due")
       .reduce((total, item) => total + item.remainingAmount, 0),
   );
+  const requiredStartDate = resolveRequiredCollectBillStartDate(member);
 
   return {
     member,
@@ -970,7 +1007,8 @@ const getCollectBillContext = async (
       accruedAmount: overdueAmount,
       monthlyFeeAmount: billing.monthlyFeeAmount,
       nextPaymentDate: member.nextPaymentDate,
-      recommendedStartDate: member.nextPaymentDate || new Date(),
+      recommendedStartDate: requiredStartDate,
+      requiredStartDate,
       isActive: member.isActive !== false,
       dueBreakdown,
     },

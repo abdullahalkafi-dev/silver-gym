@@ -37,6 +37,50 @@ export const normalizeMoney = (value: number): number => {
   return Math.abs(rounded) < 0.005 ? 0 : rounded;
 };
 
+export const startOfCalendarDay = (date: Date): Date => {
+  const nextDate = new Date(date);
+  nextDate.setHours(0, 0, 0, 0);
+  return nextDate;
+};
+
+export const startOfCalendarMonth = (date: Date): Date => {
+  return new Date(date.getFullYear(), date.getMonth(), 1);
+};
+
+export const isSameCalendarDay = (left: Date, right: Date): boolean => {
+  return startOfCalendarDay(left).getTime() === startOfCalendarDay(right).getTime();
+};
+
+export const isFirstDayOfCalendarMonth = (date: Date): boolean => {
+  return startOfCalendarDay(date).getDate() === 1;
+};
+
+export const isDateWithinCurrentOrNextMonth = (
+  date: Date,
+  now = new Date(),
+): boolean => {
+  const normalizedDate = startOfCalendarDay(date);
+  const currentMonthStart = startOfCalendarMonth(now);
+  const monthAfterNextStart = startOfCalendarMonth(
+    addMonthsPreservingDay(currentMonthStart, 2),
+  );
+
+  return normalizedDate >= currentMonthStart && normalizedDate < monthAfterNextStart;
+};
+
+export const isMonthWithinCurrentOrNextMonth = (
+  date: Date,
+  now = new Date(),
+): boolean => {
+  const normalizedDate = startOfCalendarMonth(date);
+  const currentMonthStart = startOfCalendarMonth(now);
+  const monthAfterNextStart = startOfCalendarMonth(
+    addMonthsPreservingDay(currentMonthStart, 2),
+  );
+
+  return normalizedDate >= currentMonthStart && normalizedDate < monthAfterNextStart;
+};
+
 export const computePaymentSettlement = ({
   subTotal = 0,
   paidTotal = 0,

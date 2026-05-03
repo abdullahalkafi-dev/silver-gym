@@ -163,30 +163,59 @@ const pickValue = (row: TRawImportRow, keys: string[]): unknown => {
   return undefined;
 };
 
+const MONTH_NAMES = [
+  'january', 'february', 'march', 'april', 'may', 'june',
+  'july', 'august', 'september', 'october', 'november', 'december',
+];
+const MONTH_ABBRS = [
+  'jan', 'feb', 'mar', 'apr', 'may', 'jun',
+  'jul', 'aug', 'sep', 'oct', 'nov', 'dec',
+];
+
+const resolveMonthIndex = (monthStr: string): number => {
+  const key = monthStr.toLowerCase();
+  const full = MONTH_NAMES.indexOf(key);
+  if (full !== -1) return full;
+  return MONTH_ABBRS.indexOf(key);
+};
+
 const parseFlexibleDate = (value: unknown): Date | undefined => {
   if (value == null) return undefined;
   
   const str = String(value).trim();
   if (!str) return undefined;
 
-  // Try standard Date parsing first
-  const standard = new Date(str);
-  if (!Number.isNaN(standard.getTime())) return standard;
-
-  // Try "Month-Year" or "Month Year" format (e.g., "October-2026", "Jun 2026", "Sep-2026")
-  const monthYearMatch = str.match(/^([a-zA-Z]+)[-\s]?(\d{4})$/);
-  if (monthYearMatch && monthYearMatch[1] && monthYearMatch[2]) {
-    const monthStr = monthYearMatch[1];
-    const yearStr = monthYearMatch[2];
-    const months = ['january', 'february', 'march', 'april', 'may', 'june',
-                    'july', 'august', 'september', 'october', 'november', 'december'];
-    const monthAbbrs = ['jan', 'feb', 'mar', 'apr', 'may', 'jun',
-                        'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
-    const key = monthStr.toLowerCase();
-    const monthIndex = months.indexOf(key) !== -1 ? months.indexOf(key) : monthAbbrs.indexOf(key);
+  // "YY-Mon" format — number is the 2-digit year, e.g. "26-Jan" = Jan 2026.
+  // Must be checked BEFORE standard Date parsing because V8 silently misparses
+  // these strings into very old years (e.g., 2001).
+  const yearMonthMatch = str.match(/^(\d{2,4})[-\s]([a-zA-Z]{3,9})$/);
+  if (yearMonthMatch && yearMonthMatch[1] && yearMonthMatch[2]) {
+    const monthIndex = resolveMonthIndex(yearMonthMatch[2]);
+    let year = parseInt(yearMonthMatch[1], 10);
+    if (year < 100) year += 2000; // treat 2-digit years as 20xx
     if (monthIndex >= 0) {
-      return new Date(parseInt(yearStr), monthIndex, 1);
+      return new Date(year, monthIndex, 1);
     }
+  }
+
+  // "Mon-YY" or "Mon-YYYY" format — e.g. "Jan-26", "Jun-2026", "October-2026"
+  const monthYearMatch = str.match(/^([a-zA-Z]+)[-\s](\d{2,4})$/);
+  if (monthYearMatch && monthYearMatch[1] && monthYearMatch[2]) {
+    const monthIndex = resolveMonthIndex(monthYearMatch[1]);
+    let year = parseInt(monthYearMatch[2], 10);
+    if (year < 100) year += 2000; // treat 2-digit years as 20xx
+    if (monthIndex >= 0) {
+      return new Date(year, monthIndex, 1);
+    }
+  }
+
+  // Try standard Date parsing
+  const standard = new Date(str);
+  if (!Number.isNaN(standard.getTime())) {
+    // Reject implausible years that result from V8 mis-parsing ambiguous strings
+    const year = standard.getFullYear();
+    if (year < 1970 || year > 2100) return undefined;
+    return standard;
   }
   
   return undefined;

@@ -15,7 +15,13 @@ import {
   PaymentType,
   TPayment,
 } from "../payment/payment.interface";
-import { computePaymentSettlement, normalizeMoney } from "../payment/payment.balance";
+import {
+  computePaymentSettlement,
+  isDateWithinCurrentOrNextMonth,
+  isFirstDayOfCalendarMonth,
+  isMonthWithinCurrentOrNextMonth,
+  normalizeMoney,
+} from "../payment/payment.balance";
 import { PaymentRepository } from "../payment/payment.repository";
 import { TStaff } from "../staff/staff.interface";
 import {
@@ -119,6 +125,33 @@ const addMonths = (date: Date, months: number): Date => {
   const nextDate = new Date(date);
   nextDate.setMonth(nextDate.getMonth() + months);
   return nextDate;
+};
+
+const assertMonthBasedNewMemberStartDate = (
+  membershipStartDate: Date,
+  subject: string,
+) => {
+  if (
+    !isFirstDayOfCalendarMonth(membershipStartDate) ||
+    !isMonthWithinCurrentOrNextMonth(membershipStartDate)
+  ) {
+    throw new AppError(
+      StatusCodes.BAD_REQUEST,
+      `${subject} must start on the first day of the current month or next month`,
+    );
+  }
+};
+
+const assertFlexibleNewMemberStartDate = (
+  membershipStartDate: Date,
+  subject: string,
+) => {
+  if (!isDateWithinCurrentOrNextMonth(membershipStartDate)) {
+    throw new AppError(
+      StatusCodes.BAD_REQUEST,
+      `${subject} must start within the current month or next month`,
+    );
+  }
 };
 
 const isTransactionNotSupported = (error: unknown): boolean => {
@@ -469,6 +502,24 @@ const createMember = async (
     packageDuration = packageDoc.duration;
     packageDurationType = packageDoc.durationType;
     packageIdForPayment = packageDoc._id as Types.ObjectId;
+
+    try {
+      if (packageDoc.durationType === PackageDurationType.MONTH) {
+        assertMonthBasedNewMemberStartDate(
+          membershipStartDate,
+          "Month-based packages",
+        );
+      } else {
+        assertFlexibleNewMemberStartDate(membershipStartDate, "Packages");
+      }
+    } catch (error) {
+      if (photoFile) {
+        await unlinkFile(getPhotoRelativePath(photoFile.path));
+      }
+
+      throw error;
+    }
+
     membershipEndDate = addDuration(
       membershipStartDate,
       packageDoc.duration,
@@ -486,6 +537,19 @@ const createMember = async (
     subTotal = packageDoc.amount + (resolvedAdmissionFeeAmount ?? 0);
   } else {
     // Monthly billing mode: triggered when no package is provided + paidMonths given
+    try {
+      assertMonthBasedNewMemberStartDate(
+        membershipStartDate,
+        "Monthly memberships",
+      );
+    } catch (error) {
+      if (photoFile) {
+        await unlinkFile(getPhotoRelativePath(photoFile.path));
+      }
+
+      throw error;
+    }
+
     const monthlyFeeFromPayload =
       typeof payload.customMonthlyFeeAmount === "number" ? payload.customMonthlyFeeAmount : undefined;
     const monthlyFeeFromBranch =

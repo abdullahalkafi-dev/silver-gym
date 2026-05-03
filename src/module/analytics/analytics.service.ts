@@ -705,7 +705,7 @@ const getOverviewSummary = async (
     transaction: Omit<TOverviewTransaction, "balance">;
   }> = [];
 
-  (paymentRows as Array<Record<string, unknown>>).forEach((row) => {
+  (paymentRows as unknown as Array<Record<string, unknown>>).forEach((row) => {
     const rawDate = row.paymentDate || row.createdAt;
     const dateValue = rawDate ? new Date(String(rawDate)) : new Date();
 
@@ -725,7 +725,7 @@ const getOverviewSummary = async (
     });
   });
 
-  (expenseRows as Array<Record<string, unknown>>).forEach((row) => {
+  (expenseRows as unknown as Array<Record<string, unknown>>).forEach((row) => {
     const rawDate = row.expenseDate || row.createdAt;
     const dateValue = rawDate ? new Date(String(rawDate)) : new Date();
 
