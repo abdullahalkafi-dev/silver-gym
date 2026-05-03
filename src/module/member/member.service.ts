@@ -743,7 +743,20 @@ const getMembers = async (
   );
 
   if (query.searchTerm) {
-    queryBuilder.search(["fullName", "email", "contact", "memberId", "barcode"]);
+    const isObjectId = Types.ObjectId.isValid(query.searchTerm as string) &&
+      String(new Types.ObjectId(query.searchTerm as string)) === query.searchTerm;
+    if (isObjectId) {
+      queryBuilder.modelQuery = queryBuilder.modelQuery.find({
+        $or: [
+          { _id: new Types.ObjectId(query.searchTerm as string) },
+          ...["fullName", "email", "contact", "memberId", "barcode"].map((field) => ({
+            [field]: new RegExp((query.searchTerm as string).replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i"),
+          })),
+        ],
+      });
+    } else {
+      queryBuilder.search(["fullName", "email", "contact", "memberId", "barcode"]);
+    }
   }
 
   queryBuilder.filter().sort().paginate();

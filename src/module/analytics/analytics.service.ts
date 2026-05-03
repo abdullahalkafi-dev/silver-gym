@@ -716,6 +716,7 @@ const getOverviewSummary = async (
         date: formatBDDateTime(dateValue),
         categoryName: String(row.memberName || row.paymentType || "Payment"),
         memberId: row.memberId ? String(row.memberId) : null,
+        memberCustomId: row.memberCustomId ? String(row.memberCustomId) : null,
         category:
           String(row.paymentType || "Other").charAt(0).toUpperCase() +
           String(row.paymentType || "Other").slice(1),
@@ -736,6 +737,7 @@ const getOverviewSummary = async (
         date: formatBDDateTime(dateValue),
         categoryName: String(row.categoryTitle || "Expense"),
         memberId: null,
+        memberCustomId: null,
         category: "Expense",
         payment: String(row.paymentMethod || "Cash"),
         amount: Number(row.amount || 0),

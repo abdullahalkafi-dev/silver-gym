@@ -557,18 +557,48 @@ export const AnalyticsRepository = {
     const todayEndUTC = new Date(todayStartUTC.getTime() + 24 * 60 * 60 * 1000);
 
     return Promise.all([
-      Payment.find({
-        branchId: toBranchObjectId(branchId),
-        status: { $in: validIncomeStatuses },
-        $or: [
-          { paymentDate: { $gte: todayStartUTC, $lt: todayEndUTC } },
-          { createdAt: { $gte: todayStartUTC, $lt: todayEndUTC } },
-        ],
-      })
-        .select("invoiceNo paymentDate createdAt memberId memberName paymentType paymentMethod paidTotal billAmount")
-        .sort({ paymentDate: -1, createdAt: -1 })
-        .limit(limit)
-        .lean(),
+      Payment.aggregate([
+        {
+          $match: {
+            branchId: toBranchObjectId(branchId),
+            status: { $in: validIncomeStatuses },
+            "metadata.entryKind": { $ne: "opening_import_balance" },
+            $or: [
+              { paymentDate: { $gte: todayStartUTC, $lt: todayEndUTC } },
+              { createdAt: { $gte: todayStartUTC, $lt: todayEndUTC } },
+            ],
+          },
+        },
+        { $sort: { paymentDate: -1, createdAt: -1 } },
+        { $limit: limit },
+        {
+          $lookup: {
+            from: "members",
+            localField: "memberId",
+            foreignField: "_id",
+            as: "memberDoc",
+          },
+        },
+        {
+          $addFields: {
+            memberCustomId: { $arrayElemAt: ["$memberDoc.memberId", 0] },
+          },
+        },
+        {
+          $project: {
+            invoiceNo: 1,
+            paymentDate: 1,
+            createdAt: 1,
+            memberId: 1,
+            memberCustomId: 1,
+            memberName: 1,
+            paymentType: 1,
+            paymentMethod: 1,
+            paidTotal: 1,
+            billAmount: 1,
+          },
+        },
+      ]),
       Expense.find({
         branchId: toBranchObjectId(branchId),
         isActive: true,
