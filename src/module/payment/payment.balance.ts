@@ -9,6 +9,7 @@ type TRecurringBillingInput = {
   recurringChargeAmount?: number | null;
   openingNetBalance?: number | null;
   isActive?: boolean | null;
+  accrualEndDate?: Date | null;
   now?: Date;
 };
 
@@ -45,6 +46,10 @@ export const startOfCalendarDay = (date: Date): Date => {
 
 export const startOfCalendarMonth = (date: Date): Date => {
   return new Date(date.getFullYear(), date.getMonth(), 1);
+};
+
+export const startOfNextCalendarMonth = (date: Date): Date => {
+  return new Date(date.getFullYear(), date.getMonth() + 1, 1);
 };
 
 export const isSameCalendarDay = (left: Date, right: Date): boolean => {
@@ -123,6 +128,7 @@ export const reconcileRecurringBillingBalance = ({
   recurringChargeAmount,
   openingNetBalance = 0,
   isActive = true,
+  accrualEndDate,
   now = new Date(),
 }: TRecurringBillingInput): TRecurringBillingBalance => {
   const normalizedOpeningNet = normalizeMoney(openingNetBalance ?? 0);
@@ -130,7 +136,6 @@ export const reconcileRecurringBillingBalance = ({
 
   if (
     !nextPaymentDate ||
-    !isActive ||
     recurringChargeAmount == null ||
     recurringChargeAmount <= 0
   ) {
@@ -142,11 +147,28 @@ export const reconcileRecurringBillingBalance = ({
     };
   }
 
+  if (!isActive && !accrualEndDate) {
+    return {
+      ...openingSnapshot,
+      overdueMonths: 0,
+      accruedAmount: 0,
+      updatedNextPaymentDate: nextPaymentDate ?? undefined,
+    };
+  }
+
   let updatedNextPaymentDate = new Date(nextPaymentDate);
   let overdueMonths = 0;
   let loopGuard = 0;
+  const activeAccrualCutoff = startOfCalendarMonth(now);
+  const stoppedAccrualCutoff = accrualEndDate
+    ? startOfNextCalendarMonth(accrualEndDate)
+    : undefined;
+  const accrualCutoff =
+    stoppedAccrualCutoff && stoppedAccrualCutoff < activeAccrualCutoff
+      ? stoppedAccrualCutoff
+      : activeAccrualCutoff;
 
-  while (updatedNextPaymentDate <= now && loopGuard < 600) {
+  while (updatedNextPaymentDate < accrualCutoff && loopGuard < 600) {
     overdueMonths += 1;
     updatedNextPaymentDate = addMonthsPreservingDay(updatedNextPaymentDate, 1);
     loopGuard += 1;

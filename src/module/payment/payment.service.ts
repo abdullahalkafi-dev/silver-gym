@@ -9,6 +9,7 @@ import { BusinessProfileRepository } from "../businessProfile/businessProfile.re
 import {
   buildMemberBillingUpdate,
   calculateMonthlyCycleEndDate,
+  mergeMemberBillingProfileMetadata,
   reconcileMemberBillingState,
   resolveMemberMonthlyFeeAmount,
 } from "../member/member.billing";
@@ -24,6 +25,7 @@ import {
 } from "../member/member.billingLedger";
 import { Member } from "../member/member.model";
 import { MemberRepository } from "../member/member.repository";
+import { summarizeCollectBillResolution } from "./payment.collectBillSummary";
 import { PackageDurationType } from "../package/package.interface";
 import { PackageRepository } from "../package/package.repository";
 import { TStaff } from "../staff/staff.interface";
@@ -35,6 +37,7 @@ import {
   normalizeMoney,
   toMemberBalanceSnapshot,
 } from "./payment.balance";
+import { resolveShortTermMonthlyTransition } from "./payment.shortTermTransition";
 import {
   PaymentStatus,
   PaymentType,
@@ -137,6 +140,7 @@ type TCollectBillCycleDetails = {
   collectionMode: TCollectBillMode;
   paymentType: PaymentType;
   cycleCharge: number;
+  recurringMonthlyFeeAmount?: number;
   admissionFeeAmount?: number;
   periodStart?: Date;
   periodEnd?: Date;
@@ -288,17 +292,24 @@ const assertCollectBillStartDate = (
   startDate: Date,
   requiredStartDate: Date,
   collectionMode: Exclude<TCollectBillMode, "due_only">,
+  alternateStartDate?: Date,
 ) => {
-  if (isSameCalendarDay(startDate, requiredStartDate)) {
+  if (
+    isSameCalendarDay(startDate, requiredStartDate) ||
+    (alternateStartDate && isSameCalendarDay(startDate, alternateStartDate))
+  ) {
     return;
   }
 
   const modeLabel = collectionMode === "package" ? "Package billing" : "Billing";
   const requiredDateLabel = requiredStartDate.toLocaleDateString("en-GB");
+  const alternateDateLabel = alternateStartDate
+    ? ` or ${alternateStartDate.toLocaleDateString("en-GB")}`
+    : "";
 
   throw new AppError(
     StatusCodes.BAD_REQUEST,
-    `${modeLabel} must start on ${requiredDateLabel}. Skipping ahead is not allowed`,
+    `${modeLabel} must start on ${requiredDateLabel}${alternateDateLabel}. Skipping ahead is not allowed`,
   );
 };
 
@@ -538,15 +549,46 @@ const resolveCollectBillMember = async (
     throw new AppError(StatusCodes.NOT_FOUND, "Member not found");
   }
 
-  const billing = reconcileMemberBillingState(member, branch);
-  const dueLedger = reconcileMemberBillingLedger(member, billing);
+  const currentPackageDurationType = member.currentPackageId
+    ? (
+        await PackageRepository.findOne({
+          _id: member.currentPackageId,
+          branchId: new Types.ObjectId(branchId),
+        })
+      )?.durationType
+    : undefined;
+
+  const shortTermTransition = resolveShortTermMonthlyTransition({
+    currentPackageDurationType,
+    membershipStartDate: member.membershipStartDate,
+    membershipEndDate: member.membershipEndDate,
+    nextPaymentDate: member.nextPaymentDate,
+    monthlyFeeAmount: resolveMemberMonthlyFeeAmount(member, branch),
+    isActive: member.isActive,
+  });
+  const billingInput = shortTermTransition.shouldDeactivateMember
+    ? { ...(member.toObject?.() ?? member), isActive: false }
+    : member;
+  const billing = reconcileMemberBillingState(billingInput, branch);
+  const dueLedger = reconcileMemberBillingLedger(billingInput, billing);
   const shouldPersistLedger = hasMemberBillingLedgerChanged(
     member.metadata,
     dueLedger,
   );
 
-  if (!billing.shouldPersist && !shouldPersistLedger) {
-    return { branch, member, billing, dueLedger };
+  if (
+    !billing.shouldPersist &&
+    !shouldPersistLedger &&
+    !shortTermTransition.shouldDeactivateMember
+  ) {
+    return {
+      branch,
+      member,
+      billing,
+      dueLedger,
+      currentPackageDurationType,
+      shortTermTransition,
+    };
   }
 
   const updatedMember = await MemberRepository.updateById(
@@ -554,6 +596,7 @@ const resolveCollectBillMember = async (
     {
       ...buildMemberBillingUpdate(billing),
       metadata: mergeMemberBillingLedgerMetadata(member.metadata, dueLedger),
+      ...(shortTermTransition.shouldDeactivateMember ? { isActive: false } : {}),
     },
   );
 
@@ -571,6 +614,8 @@ const resolveCollectBillMember = async (
     member: updatedMember,
     billing,
     dueLedger,
+    currentPackageDurationType,
+    shortTermTransition,
   };
 };
 
@@ -584,6 +629,14 @@ const resolveCollectBillCycleDetails = async (
     payload.collectionMode === "due_only"
       ? undefined
       : resolveRequiredCollectBillStartDate(member);
+  const currentPackageDurationType = member?.currentPackageId
+    ? (
+        await PackageRepository.findOne({
+          _id: member.currentPackageId,
+          branchId: new Types.ObjectId(branchId),
+        })
+      )?.durationType
+    : undefined;
 
   const startDate =
     payload.startDate instanceof Date
@@ -618,6 +671,14 @@ const resolveCollectBillCycleDetails = async (
         : member
           ? resolveMemberMonthlyFeeAmount(member, branch)
           : undefined;
+      const shortTermTransition = resolveShortTermMonthlyTransition({
+        currentPackageDurationType,
+        membershipStartDate: member?.membershipStartDate,
+        membershipEndDate: member?.membershipEndDate,
+        nextPaymentDate: requiredStartDate,
+        monthlyFeeAmount,
+        isActive: member?.isActive,
+      });
 
       if (!paidMonths) {
         throw new AppError(StatusCodes.BAD_REQUEST, "Paid months is required");
@@ -630,12 +691,22 @@ const resolveCollectBillCycleDetails = async (
         );
       }
 
+      assertCollectBillStartDate(
+        startDate,
+        requiredStartDate!,
+        payload.collectionMode,
+        shortTermTransition.canTransitionToMonthly
+          ? shortTermTransition.monthlyAnchorDate
+          : undefined,
+      );
+
       const periodEnd = calculateMonthlyCycleEndDate(startDate, paidMonths);
 
       return {
         collectionMode: payload.collectionMode,
         paymentType: PaymentType.MONTHLY,
         cycleCharge: normalizeMoney(monthlyFeeAmount * paidMonths),
+        recurringMonthlyFeeAmount: monthlyFeeAmount,
         periodStart: startDate,
         periodEnd,
         nextPaymentDate: periodEnd,
@@ -675,15 +746,6 @@ const resolveCollectBillCycleDetails = async (
         throw new AppError(StatusCodes.NOT_FOUND, "Package not found in this branch");
       }
 
-      const currentPackageDurationType = member?.currentPackageId
-        ? (
-            await PackageRepository.findOne({
-              _id: member.currentPackageId,
-              branchId: new Types.ObjectId(branchId),
-            })
-          )?.durationType
-        : undefined;
-
       if (
         member &&
         (!member.currentPackageId ||
@@ -707,13 +769,25 @@ const resolveCollectBillCycleDetails = async (
         );
       }
 
-      const admissionFeeAmount = packageDoc.includeAdmissionFee
-        ? typeof packageDoc.admissionFeeAmount === "number"
-          ? packageDoc.admissionFeeAmount
-          : typeof branch?.admissionFeeAmount === "number"
-            ? branch.admissionFeeAmount
-            : 0
-        : 0;
+      // Admission fee only applies to brand-new members (no prior billing history)
+      const isExistingMember = !!member?.membershipStartDate;
+      const admissionFeeAmount =
+        !isExistingMember && packageDoc.includeAdmissionFee
+          ? typeof packageDoc.admissionFeeAmount === "number"
+            ? packageDoc.admissionFeeAmount
+            : typeof branch?.admissionFeeAmount === "number"
+              ? branch.admissionFeeAmount
+              : 0
+          : 0;
+
+      // Support custom package fee override (reuses the same payload fields as monthly)
+      const useCustomPackageFee =
+        payload.useCustomMonthlyFee === true &&
+        payload.customMonthlyFeeAmount != null &&
+        payload.customMonthlyFeeAmount > 0;
+      const packageFeeAmount = useCustomPackageFee
+        ? payload.customMonthlyFeeAmount!
+        : packageDoc.amount;
 
       const periodEnd = addPackageDuration(
         startDate,
@@ -724,7 +798,7 @@ const resolveCollectBillCycleDetails = async (
       return {
         collectionMode: payload.collectionMode,
         paymentType: PaymentType.PACKAGE,
-        cycleCharge: normalizeMoney(packageDoc.amount + admissionFeeAmount),
+        cycleCharge: normalizeMoney(packageFeeAmount + admissionFeeAmount),
         admissionFeeAmount,
         periodStart: startDate,
         periodEnd,
@@ -985,7 +1059,7 @@ const getCollectBillContext = async (
   memberId: string,
   actor: TAccessActor,
 ) => {
-  const { member, billing, dueLedger } = await resolveCollectBillMember(
+  const { member, billing, dueLedger, shortTermTransition } = await resolveCollectBillMember(
     branchId,
     actor,
     memberId,
@@ -1010,6 +1084,20 @@ const getCollectBillContext = async (
       recommendedStartDate: requiredStartDate,
       requiredStartDate,
       isActive: member.isActive !== false,
+      ...(shortTermTransition.canTransitionToMonthly &&
+      shortTermTransition.monthlyAnchorDate
+        ? {
+            monthlyStartDate: shortTermTransition.monthlyAnchorDate,
+            transitionToMonthly: {
+              packageExpiryDate: shortTermTransition.expiryDate,
+              suggestedDiscountAmount:
+                shortTermTransition.suggestedDiscountAmount ?? 0,
+              coveredDaysInAnchorMonth:
+                shortTermTransition.coveredDaysInAnchorMonth ?? 0,
+              daysInAnchorMonth: shortTermTransition.daysInAnchorMonth ?? 0,
+            },
+          }
+        : {}),
       dueBreakdown,
     },
   };
@@ -1117,6 +1205,7 @@ const collectBill = async (
     discount,
     paidTotal,
   });
+  const resolutionSummary = summarizeCollectBillResolution(resolvedInvoiceLines);
 
   const hasUnresolvedCycleAmount = resolvedInvoiceLines.some(
     (line) => line.kind === "cycle" && line.unresolvedAmount > 0.01,
@@ -1146,6 +1235,23 @@ const collectBill = async (
     finalDueAmount: finalBalanceSnapshot.currentDueAmount,
     paymentDate,
   });
+  const nextMemberMetadata =
+    payload.collectionMode === "due_only"
+      ? mergeMemberBillingLedgerMetadata(member.metadata, updatedDueLedger)
+      : mergeMemberBillingLedgerMetadata(
+          mergeMemberBillingProfileMetadata(member.metadata, {
+            cycleType: payload.collectionMode === "monthly" ? "monthly" : "package",
+            accrualStoppedAt: undefined,
+            ...(payload.collectionMode === "monthly" &&
+            cycleDetails.recurringMonthlyFeeAmount != null
+              ? {
+                  recurringMonthlyFeeAmount:
+                    cycleDetails.recurringMonthlyFeeAmount,
+                }
+              : {}),
+          }),
+          updatedDueLedger,
+        );
 
   const memberUpdatePayload: Record<string, unknown> = {
     ...buildMemberBillingUpdate({
@@ -1153,7 +1259,7 @@ const collectBill = async (
       updatedNextPaymentDate: finalNextPaymentDate,
     }),
     ...cycleDetails.memberUpdate,
-    metadata: mergeMemberBillingLedgerMetadata(member.metadata, updatedDueLedger),
+    metadata: nextMemberMetadata,
   };
 
   if (cycleDetails.memberUnset && Object.keys(cycleDetails.memberUnset).length > 0) {
@@ -1255,6 +1361,12 @@ const collectBill = async (
         (item) => item.type === "monthly_due",
       ).length,
       effectiveDuePaymentAmount,
+      waivedDueAmount: resolutionSummary.waivedDueAmount,
+      waivedDueItemCount: resolutionSummary.waivedDueItemCount,
+      waivedDueLabels: resolutionSummary.waivedDueLabels,
+      discountedCycleAmount: resolutionSummary.discountedCycleAmount,
+      paidDueAmount: resolutionSummary.paidDueAmount,
+      paidDueItemCount: resolutionSummary.paidDueItemCount,
     },
   };
 };

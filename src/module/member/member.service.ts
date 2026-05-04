@@ -21,13 +21,16 @@ import {
   isFirstDayOfCalendarMonth,
   isMonthWithinCurrentOrNextMonth,
   normalizeMoney,
+  startOfCalendarMonth,
 } from "../payment/payment.balance";
 import { PaymentRepository } from "../payment/payment.repository";
 import { TStaff } from "../staff/staff.interface";
 import {
   applyBillingToMember,
   buildMemberBillingUpdate,
+  mergeMemberBillingProfileMetadata,
   reconcileMemberBillingState,
+  resolveReactivatedNextPaymentDate,
 } from "./member.billing";
 import {
   createAdmissionDueLedgerItem,
@@ -257,15 +260,17 @@ const reconcileBranchMemberBilling = async (
     return;
   }
 
+  const overdueCutoff = startOfCalendarMonth(new Date());
+
   const overdueMembers = await MemberRepository.findMany(
     {
       branchId: new Types.ObjectId(branchId),
       isActive: true,
-      nextPaymentDate: { $lte: new Date() },
+      nextPaymentDate: { $lt: overdueCutoff },
     },
     {
       select:
-        "currentDueAmount nextPaymentDate isActive isCustomMonthlyFee customMonthlyFeeAmount _id",
+        "currentDueAmount nextPaymentDate isActive isCustomMonthlyFee customMonthlyFeeAmount metadata _id",
     },
   ).lean();
 
@@ -439,10 +444,13 @@ const createMemberAndPayment = async (
 
     return { member, payment };
   } catch {
+    const failedAt = new Date();
     await MemberRepository.updateById(String(member._id), {
       isActive: false,
       metadata: {
-        ...(member.metadata || {}),
+        ...mergeMemberBillingProfileMetadata(member.metadata, {
+          accrualStoppedAt: failedAt.toISOString(),
+        }),
         paymentConsistencyIssue: true,
       },
     });
@@ -612,18 +620,31 @@ const createMember = async (
   }
 
   const now = new Date();
+  const baseBillingMetadata = mergeMemberBillingProfileMetadata(
+    (memberPayload as Record<string, unknown>).metadata ?? {},
+    {
+      cycleType: payload.currentPackageId ? "package" : "monthly",
+      accrualStoppedAt: undefined,
+      recurringMonthlyFeeAmount: payload.currentPackageId
+        ? typeof memberPayload.customMonthlyFeeAmount === "number" &&
+          memberPayload.customMonthlyFeeAmount > 0
+          ? memberPayload.customMonthlyFeeAmount
+          : undefined
+        : resolvedMonthlyFeeAmount,
+    },
+  );
 
   const admissionDueLedgerMetadata =
     settlement.dueAmount > 0
       ? mergeMemberBillingLedgerMetadata(
-          (memberPayload as Record<string, unknown>).metadata ?? {},
+          baseBillingMetadata,
           {
             version: 1,
             items: [createAdmissionDueLedgerItem(settlement.dueAmount, now)],
             updatedAt: now.toISOString(),
           },
         )
-      : undefined;
+      : baseBillingMetadata;
 
   const memberData: TMember = {
     ...memberPayload,
@@ -825,6 +846,12 @@ const updateMember = async (
   const updatePayload: Record<string, unknown> = {
     ...payload,
   };
+  let nextMetadata: unknown = Object.prototype.hasOwnProperty.call(
+    updatePayload,
+    "metadata",
+  )
+    ? updatePayload.metadata
+    : member.metadata;
 
   const unsetPayload: Record<string, 1> = {};
   const branchMonthlyFeeAmount =
@@ -861,6 +888,9 @@ const updateMember = async (
       packageDoc.durationType,
     );
     updatePayload.nextPaymentDate = updatePayload.membershipEndDate;
+    nextMetadata = mergeMemberBillingProfileMetadata(nextMetadata, {
+      cycleType: "package",
+    });
   }
 
   // ─── VALIDATION: standalone customMonthlyFeeAmount requires isCustomMonthlyFee ─
@@ -925,6 +955,70 @@ const updateMember = async (
     unsetPayload.currentPackageId = 1;
     unsetPayload.currentPackageName = 1;
     unsetPayload.membershipEndDate = 1;
+    nextMetadata = mergeMemberBillingProfileMetadata(nextMetadata, {
+      cycleType: "monthly",
+      recurringMonthlyFeeAmount: resolvedMonthlyFeeAmount,
+    });
+  }
+
+  if (
+    payload.isCustomMonthlyFee === true &&
+    typeof payload.customMonthlyFeeAmount === "number" &&
+    payload.customMonthlyFeeAmount > 0
+  ) {
+    nextMetadata = mergeMemberBillingProfileMetadata(nextMetadata, {
+      recurringMonthlyFeeAmount: payload.customMonthlyFeeAmount,
+    });
+  }
+
+  const statusChangedAt = new Date();
+  const isDeactivating = payload.isActive === false && member.isActive !== false;
+  const isReactivating = payload.isActive === true && member.isActive === false;
+
+  if (isDeactivating) {
+    const frozenBilling = reconcileMemberBillingState(member, branch, statusChangedAt);
+    const frozenDueLedger = reconcileMemberBillingLedger(
+      member,
+      frozenBilling,
+      statusChangedAt,
+    );
+
+    updatePayload.currentDueAmount = frozenBilling.currentDueAmount;
+
+    if (frozenBilling.updatedNextPaymentDate) {
+      updatePayload.nextPaymentDate = frozenBilling.updatedNextPaymentDate;
+    }
+
+    nextMetadata = mergeMemberBillingLedgerMetadata(
+      mergeMemberBillingProfileMetadata(nextMetadata, {
+        accrualStoppedAt: statusChangedAt.toISOString(),
+      }),
+      frozenDueLedger,
+    );
+  } else if (isReactivating) {
+    const frozenInactiveBilling = reconcileMemberBillingState(
+      member,
+      branch,
+      statusChangedAt,
+    );
+    const frozenDueLedger = reconcileMemberBillingLedger(
+      member,
+      frozenInactiveBilling,
+      statusChangedAt,
+    );
+
+    updatePayload.currentDueAmount = frozenInactiveBilling.currentDueAmount;
+    updatePayload.nextPaymentDate = resolveReactivatedNextPaymentDate(
+      frozenInactiveBilling.updatedNextPaymentDate ?? member.nextPaymentDate,
+      statusChangedAt,
+    );
+
+    nextMetadata = mergeMemberBillingLedgerMetadata(
+      mergeMemberBillingProfileMetadata(nextMetadata, {
+        accrualStoppedAt: undefined,
+      }),
+      frozenDueLedger,
+    );
   }
 
   if (photoFile) {
@@ -932,6 +1026,13 @@ const updateMember = async (
       await unlinkFile(member.photo);
     }
     updatePayload.photo = getPhotoRelativePath(photoFile.path);
+  }
+
+  if (
+    nextMetadata !== member.metadata ||
+    Object.prototype.hasOwnProperty.call(updatePayload, "metadata")
+  ) {
+    updatePayload.metadata = nextMetadata;
   }
 
   if (Object.keys(unsetPayload).length > 0) {
@@ -957,7 +1058,7 @@ const updateMember = async (
 };
 
 const deleteMember = async (branchId: string, memberId: string, actor: TAccessActor) => {
-  await resolveBranchAccess(branchId, actor);
+  const branch = await resolveBranchAccess(branchId, actor);
 
   const member = await MemberRepository.findOne({
     _id: new Types.ObjectId(memberId),
@@ -968,8 +1069,23 @@ const deleteMember = async (branchId: string, memberId: string, actor: TAccessAc
     throw new AppError(StatusCodes.NOT_FOUND, "Member not found");
   }
 
+  const deletedAt = new Date();
+  const frozenBilling = reconcileMemberBillingState(member, branch, deletedAt);
+  const frozenDueLedger = reconcileMemberBillingLedger(
+    member,
+    frozenBilling,
+    deletedAt,
+  );
+
   const deletedMember = await MemberRepository.updateById(memberId, {
+    ...buildMemberBillingUpdate(frozenBilling),
     isActive: false,
+    metadata: mergeMemberBillingLedgerMetadata(
+      mergeMemberBillingProfileMetadata(member.metadata, {
+        accrualStoppedAt: deletedAt.toISOString(),
+      }),
+      frozenDueLedger,
+    ),
   });
 
   if (!deletedMember) {
@@ -985,7 +1101,7 @@ const deleteMember = async (branchId: string, memberId: string, actor: TAccessAc
 };
 
 const restoreMember = async (branchId: string, memberId: string, actor: TAccessActor) => {
-  await resolveBranchAccess(branchId, actor);
+  const branch = await resolveBranchAccess(branchId, actor);
 
   const member = await MemberRepository.findOne({
     _id: new Types.ObjectId(memberId),
@@ -996,8 +1112,27 @@ const restoreMember = async (branchId: string, memberId: string, actor: TAccessA
     throw new AppError(StatusCodes.NOT_FOUND, "Member not found");
   }
 
+  const restoredAt = new Date();
+  const frozenBilling = reconcileMemberBillingState(member, branch, restoredAt);
+  const frozenDueLedger = reconcileMemberBillingLedger(
+    member,
+    frozenBilling,
+    restoredAt,
+  );
+
   const restoredMember = await MemberRepository.updateById(memberId, {
+    currentDueAmount: frozenBilling.currentDueAmount,
+    nextPaymentDate: resolveReactivatedNextPaymentDate(
+      frozenBilling.updatedNextPaymentDate ?? member.nextPaymentDate,
+      restoredAt,
+    ),
     isActive: true,
+    metadata: mergeMemberBillingLedgerMetadata(
+      mergeMemberBillingProfileMetadata(member.metadata, {
+        accrualStoppedAt: undefined,
+      }),
+      frozenDueLedger,
+    ),
   });
 
   if (!restoredMember) {

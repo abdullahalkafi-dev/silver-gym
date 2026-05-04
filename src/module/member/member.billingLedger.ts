@@ -123,15 +123,22 @@ const toIsoString = (value?: Date | string) => {
 const createMonthlyDueLedgerItem = (
   dueDate: Date,
   amount: number,
-): TMemberBillingLedgerItem => ({
-  key: `monthly_due:${dueDate.getFullYear()}-${String(dueDate.getMonth() + 1).padStart(2, "0")}`,
-  type: "monthly_due",
-  label: formatMonthLabel(dueDate),
-  originalAmount: normalizeMoney(amount),
-  remainingAmount: normalizeMoney(amount),
-  dueDate: dueDate.toISOString(),
-  createdAt: dueDate.toISOString(),
-});
+): TMemberBillingLedgerItem => {
+  const periodStart = new Date(dueDate);
+  const periodEnd = addMonthsPreservingDay(periodStart, 1);
+
+  return {
+    key: `monthly_due:${dueDate.getFullYear()}-${String(dueDate.getMonth() + 1).padStart(2, "0")}`,
+    type: "monthly_due",
+    label: formatMonthLabel(dueDate),
+    originalAmount: normalizeMoney(amount),
+    remainingAmount: normalizeMoney(amount),
+    dueDate: dueDate.toISOString(),
+    periodStart: periodStart.toISOString(),
+    periodEnd: periodEnd.toISOString(),
+    createdAt: dueDate.toISOString(),
+  };
+};
 
 const reduceLedgerItems = (
   items: TMemberBillingLedgerItem[],
