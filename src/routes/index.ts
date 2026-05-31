@@ -11,6 +11,9 @@ import PackageRoutes from "../module/package/package.route";
 import PaymentRoutes from "../module/payment/payment.route";
 import { ExpenseRoutes } from "../module/expense/expense.route";
 import { AnalyticsRoutes } from "../module/analytics/analytics.route";
+import { SmsRoutes } from "../module/sms/sms.route";
+import { TransactionRoutes } from "../module/transaction/transaction.route";
+import { LockerRoutes } from "../module/locker/locker.route";
 
 const router: Router = express.Router();
 
@@ -62,6 +65,18 @@ const apiRoutes = [
   {
     path: "/analytics",
     route: AnalyticsRoutes,
+  },
+  {
+    path: "/sms",
+    route: SmsRoutes,
+  },
+  {
+    path: "/transactions",
+    route: TransactionRoutes,
+  },
+  {
+    path: "/lockers",
+    route: LockerRoutes,
   },
 ];
 

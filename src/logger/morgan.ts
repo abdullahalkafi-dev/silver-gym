@@ -12,15 +12,7 @@ morgan.token(
 
 morgan.token(
   "body",
-  (req: Request) => {
-    if (req.method === "POST" || req.method === "PUT") {
-      const body = { ...req.body };
-      // Remove sensitive fields
-      delete body.password;
-      delete body.token;
-      delete body.creditCard;
-      return JSON.stringify(body);
-    }
+  (_req: Request) => {
     return "";
   }
 );

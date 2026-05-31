@@ -61,7 +61,7 @@ export const PaymentRepository = {
       }
     }
 
-    return query;
+    return query.lean();
   },
 
   updateById(id: string, payload: object) {

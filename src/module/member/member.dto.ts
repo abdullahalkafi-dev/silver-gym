@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { PaymentMethod, PaymentStatus } from "module/payment/payment.interface";
+import { normalizeBangladeshPhone } from "../../util/bangladeshPhone";
 
 const TRAINING_GOALS = [
   "Yoga",
@@ -14,9 +15,47 @@ const TRAINING_GOALS = [
 const emergencyContactSchema = z
   .object({
     relationship: z.string().trim().min(1, "Relationship is required"),
-    contactNumber: z.string().trim().min(1, "Emergency contact number is required"),
+    contactNumber: z
+      .string()
+      .trim()
+      .min(1, "Emergency contact number is required")
+      .transform((value, ctx) => {
+        const normalized = normalizeBangladeshPhone(value);
+
+        if (!normalized) {
+          ctx.addIssue({
+            code: "custom",
+            message: "Emergency contact number must be a valid Bangladesh mobile number",
+          });
+          return z.NEVER;
+        }
+
+        return normalized;
+      }),
   })
   .strict();
+
+const optionalBangladeshPhoneSchema = z
+  .string()
+  .trim()
+  .optional()
+  .transform((value, ctx) => {
+    if (!value) {
+      return undefined;
+    }
+
+    const normalized = normalizeBangladeshPhone(value);
+
+    if (!normalized) {
+      ctx.addIssue({
+        code: "custom",
+        message: "Contact number must be a valid Bangladesh mobile number",
+      });
+      return z.NEVER;
+    }
+
+    return normalized;
+  });
 
 const createPaymentSchema = z
   .object({
@@ -39,7 +78,7 @@ const createMemberDto = z.object({
       memberId: z.string().trim().optional(),
       barcode: z.string().trim().optional(),
       fullName: z.string().trim().min(1, "Full name is required"),
-      contact: z.string().trim().optional(),
+      contact: optionalBangladeshPhoneSchema,
       email: z.email("Invalid email").trim().toLowerCase().optional(),
       dateOfBirth: z.coerce.date().optional(),
       country: z.string().trim().optional(),
@@ -104,7 +143,7 @@ const updateMemberDto = z.object({
       isActive: z.boolean().optional(),
       memberId: z.string().trim().optional(),
       fullName: z.string().trim().min(1).optional(),
-      contact: z.string().trim().optional(),
+      contact: optionalBangladeshPhoneSchema,
       email: z.email("Invalid email").trim().toLowerCase().optional(),
       dateOfBirth: z.coerce.date().optional(),
       country: z.string().trim().optional(),
@@ -205,6 +244,7 @@ const listMembersDto = z.object({
       isActive: z.enum(["true", "false"]).optional(),
       includeInactive: z.enum(["true"]).optional(),
       paymentStatus: z.enum(["due", "complete"]).optional(),
+      billingPlan: z.enum(["custom", "system"]).optional(),
       page: z.string().optional(),
       limit: z.string().optional(),
       sort: z.string().optional(),

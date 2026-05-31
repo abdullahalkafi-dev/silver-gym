@@ -36,7 +36,7 @@ const ALLOWED_MIME_TYPES: Record<UploadField, Set<string>> = {
   media: new Set(["video/mp4", "audio/mpeg"]),
   doc: new Set(["application/pdf"]),
   docs: new Set(["application/pdf"]),
-  csv: new Set(["text/csv", "application/vnd.ms-excel", "text/plain", "application/octet-stream"]),
+  csv: new Set(["text/csv", "application/vnd.ms-excel", "text/plain", "application/octet-stream", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"]),
 };
 
 const ALLOWED_MIME_MESSAGES: Record<UploadField, string> = {
@@ -44,14 +44,16 @@ const ALLOWED_MIME_MESSAGES: Record<UploadField, string> = {
   media: "Only .mp4, .mp3 file supported",
   doc: "Only pdf supported",
   docs: "Only pdf supported",
-  csv: "Only .csv files are supported",
+  csv: "Only .csv and .xlsx files are supported",
 };
 
 const SUPPORTED_FIELDS = Object.keys(FIELD_CONFIG) as UploadField[];
 
-const ensureDirExists = (dirPath: string) => {
-  if (!fs.existsSync(dirPath)) {
-    fs.mkdirSync(dirPath, { recursive: true });
+const ensureDirExists = async (dirPath: string) => {
+  try {
+    await fs.promises.access(dirPath);
+  } catch {
+    await fs.promises.mkdir(dirPath, { recursive: true });
   }
 };
 
@@ -59,18 +61,18 @@ const isUploadField = (value: string): value is UploadField => {
   return value in FIELD_CONFIG;
 };
 
-const fileUploadHandler = (req: Request, res: Response, next: NextFunction) => {
-  ensureDirExists(BASE_UPLOAD_DIR);
+const fileUploadHandler = async (req: Request, res: Response, next: NextFunction) => {
+  await ensureDirExists(BASE_UPLOAD_DIR);
 
   const storage = multer.diskStorage({
-    destination: (_req, file, cb) => {
+    destination: async (_req, file, cb) => {
       if (!isUploadField(file.fieldname)) {
         cb(new AppError(StatusCodes.BAD_REQUEST, "File is not supported"), "");
         return;
       }
 
       const uploadDir = path.join(BASE_UPLOAD_DIR, FIELD_CONFIG[file.fieldname].folder);
-      ensureDirExists(uploadDir);
+      await ensureDirExists(uploadDir);
       cb(null, uploadDir);
     },
 
@@ -133,20 +135,22 @@ const fileUploadHandler = (req: Request, res: Response, next: NextFunction) => {
     }
 
     try {
-      for (const file of imageFiles) {
-        const inputFilePath = file.path;
-        const newFilePath = inputFilePath.replace(/\.tmp$/, ".webp");
+      await Promise.all(
+        imageFiles.map(async (file) => {
+          const inputFilePath = file.path;
+          const newFilePath = inputFilePath.replace(/\.tmp$/, ".webp");
 
-        await sharp(inputFilePath)
-          .resize({ width: 1024 })
-          .webp({ quality: 40, effort: 6, nearLossless: false })
-          .toFile(newFilePath);
+          await sharp(inputFilePath)
+            .resize({ width: 1024 })
+            .webp({ quality: 40, effort: 6, nearLossless: false })
+            .toFile(newFilePath);
 
-        await fs.promises.unlink(inputFilePath);
+          await fs.promises.unlink(inputFilePath);
 
-        file.path = newFilePath;
-        file.filename = path.basename(newFilePath);
-      }
+          file.path = newFilePath;
+          file.filename = path.basename(newFilePath);
+        })
+      );
     } catch {
       return next(
         new AppError(StatusCodes.INTERNAL_SERVER_ERROR, "Image processing failed"),

@@ -107,4 +107,46 @@ router.patch(
   BranchController.updateAdmissionFee
 );
 
+router.get(
+  "/:businessId/branches/:branchId/auto-deactivation-settings",
+  authStaff({ allowOwner: true }),
+  BranchController.getAutoDeactivationSettings
+);
+
+router.patch(
+  "/:businessId/branches/:branchId/auto-deactivation-settings",
+  authLimiter,
+  authStaff({ allowOwner: true }),
+  validateRequest(BranchDto.updateAutoDeactivationSettings),
+  BranchController.updateAutoDeactivationSettings
+);
+
+router.get(
+  "/:businessId/branches/:branchId/sms-settings",
+  authStaff({ allowOwner: true }),
+  BranchController.getSMSSettings
+);
+
+router.patch(
+  "/:businessId/branches/:branchId/sms-settings",
+  authLimiter,
+  authStaff({ allowOwner: true }),
+  validateRequest(BranchDto.updateSMSSettings),
+  BranchController.updateSMSSettings
+);
+
+router.get(
+  "/:businessId/branches/:branchId/starting-balance",
+  auth(),
+  BranchController.getStartingBalance
+);
+
+router.patch(
+  "/:businessId/branches/:branchId/starting-balance",
+  authLimiter,
+  auth(),
+  validateRequest(BranchDto.setStartingBalance),
+  BranchController.setStartingBalance
+);
+
 export const BranchRoutes = router;

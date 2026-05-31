@@ -15,6 +15,8 @@ const paymentSchema = new Schema<TPayment>(
     invoiceNo: {
       type: String,
       trim: true,
+      unique: true,
+      sparse: true,
     },
     memberId: {
       type: Schema.Types.ObjectId,
@@ -132,9 +134,12 @@ paymentSchema.pre("validate", async function () {
     this.memberId &&
     (this.isNew || this.isModified("memberId") || this.isModified("branchId"));
   if (shouldCheckMember) {
-    const member = await Member.findById(this.memberId)
-      .select("_id branchId")
-      .lean();
+    let memberQuery = Member.findById(this.memberId).select("_id branchId");
+    const session = this.$session();
+    if (session) {
+      memberQuery = memberQuery.session(session);
+    }
+    const member = await memberQuery.lean();
     if (!member) {
       throw new Error("Selected member does not exist.");
     }

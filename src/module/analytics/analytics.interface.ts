@@ -177,6 +177,8 @@ export type TOverviewTransaction = {
   payment: string;
   amount: number;
   balance: number;
+  type: "income" | "expense";
+  description: string;
 };
 
 export type TOverviewSummary = {
@@ -200,4 +202,14 @@ export type TOverviewSummary = {
   };
   transactions: TOverviewTransaction[];
   availableYears: number[];
+  runningBalance: number | null;
+  openingBalanceBeforeToday: number;
+};
+
+export type TTodaySummary = {
+  todayIncome: number;
+  todayExpense: number;
+  todayIncomeCount: number;
+  todayExpenseCount: number;
+  openingBalance: number;
 };

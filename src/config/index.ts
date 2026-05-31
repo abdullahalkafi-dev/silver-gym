@@ -37,6 +37,14 @@ export default {
     api_key: process.env.RESEND_API_KEY,
     mail_domain: process.env.MAIL_DOMAIN,
   },
+  sms: {
+    api_base_url:
+      process.env.SMS_WINTEL_API_BASE_URL || "https://smsapi.wintextbd.com/api",
+    wintel_user_id: process.env.SMS_WINTEL_USER_ID,
+    wintel_password: process.env.SMS_WINTEL_PASSWORD,
+    dry_run: process.env.SMS_DRY_RUN !== "false",
+    balance_cache_ttl_seconds: process.env.SMS_BALANCE_CACHE_TTL_SECONDS,
+  },
   super_admin: {
     email: process.env.SUPER_ADMIN_EMAIL,
     password: process.env.SUPER_ADMIN_PASSWORD,

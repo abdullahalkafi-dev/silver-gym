@@ -2,6 +2,7 @@ import { StatusCodes } from "http-status-codes";
 import { Types } from "mongoose";
 
 import AppError from "../../errors/AppError";
+import cacheService from "../../redis/cacheService";
 import { BranchRepository } from "../branch/branch.repository";
 import { TStaff } from "../staff/staff.interface";
 import {
@@ -16,10 +17,11 @@ import {
   ExpenseRepository,
   ExpenseSubcategoryRepository,
 } from "./expense.repository";
+import { InvoiceCounterService } from "../payment/invoiceCounter.service";
 
 type TAccessActor = {
   userId?: Types.ObjectId;
-  staff?: TStaff;
+  staff?: TStaff & { _id?: Types.ObjectId };
 };
 
 type TCreateCategoryPayload = {
@@ -65,17 +67,16 @@ const resolveActorId = (actor: TAccessActor): Types.ObjectId | undefined => {
   return undefined;
 };
 
-const generateInvoiceNo = (): string => {
-  const timestamp = Date.now().toString().slice(-8);
-  const random = Math.floor(1000 + Math.random() * 9000);
-  return `EXP-${timestamp}${random}`;
+const generateInvoiceNo = async (): Promise<string> => {
+  const sequence = await InvoiceCounterService.getNextInvoiceSequence("EXPENSE");
+  return `EXP-${String(sequence).padStart(12, "0")}`;
 };
 
 // ─── Category Service ─────────────────────────────────────────────────────────
 
 const createCategory = async (
   branchId: string,
-  actor: TAccessActor,
+  _actor: TAccessActor,
   payload: TCreateCategoryPayload,
 ) => {
   const branch = await BranchRepository.findById(branchId);
@@ -98,25 +99,32 @@ const getCategories = async (branchId: string) => {
 
   const categories = await ExpenseCategoryRepository.findByBranch(branchId);
 
-  const categoriesWithSubs = await Promise.all(
-    categories.map(async (cat) => {
-      const subcategories = await ExpenseSubcategoryRepository.findByCategory(
-        String(cat._id),
-      );
-      return {
-        ...cat.toObject(),
-        subcategories,
-      };
-    }),
-  );
+  // Batch fetch all subcategories in a single query (fixes N+1)
+  const categoryIds = categories.map((cat) => String(cat._id));
+  const allSubcategories = categoryIds.length > 0
+    ? await ExpenseSubcategoryRepository.findByCategoryIds(categoryIds)
+    : [];
 
-  return categoriesWithSubs;
+  // Group subcategories by categoryId
+  const subsByCategory = new Map<string, typeof allSubcategories>();
+  for (const sub of allSubcategories) {
+    const catId = String(sub.categoryId);
+    if (!subsByCategory.has(catId)) {
+      subsByCategory.set(catId, []);
+    }
+    subsByCategory.get(catId)!.push(sub);
+  }
+
+  return categories.map((cat) => ({
+    ...cat,
+    subcategories: subsByCategory.get(String(cat._id)) || [],
+  }));
 };
 
 const updateCategory = async (
   branchId: string,
   categoryId: string,
-  actor: TAccessActor,
+  _actor: TAccessActor,
   payload: Partial<TCreateCategoryPayload>,
 ) => {
   const category = await ExpenseCategoryRepository.findById(categoryId);
@@ -130,7 +138,7 @@ const updateCategory = async (
 const deleteCategory = async (
   branchId: string,
   categoryId: string,
-  actor: TAccessActor,
+  _actor: TAccessActor,
 ) => {
   const category = await ExpenseCategoryRepository.findById(categoryId);
   if (!category || String(category.branchId) !== branchId || !category.isActive) {
@@ -154,7 +162,7 @@ const deleteCategory = async (
 const createSubcategory = async (
   branchId: string,
   categoryId: string,
-  actor: TAccessActor,
+  _actor: TAccessActor,
   payload: TCreateSubcategoryPayload,
 ) => {
   const category = await ExpenseCategoryRepository.findById(categoryId);
@@ -175,7 +183,7 @@ const createSubcategory = async (
 const updateSubcategory = async (
   branchId: string,
   subcategoryId: string,
-  actor: TAccessActor,
+  _actor: TAccessActor,
   payload: Partial<TCreateSubcategoryPayload>,
 ) => {
   const subcategory =
@@ -196,7 +204,7 @@ const updateSubcategory = async (
 const deleteSubcategory = async (
   branchId: string,
   subcategoryId: string,
-  actor: TAccessActor,
+  _actor: TAccessActor,
 ) => {
   const subcategory =
     await ExpenseSubcategoryRepository.findById(subcategoryId);
@@ -254,7 +262,7 @@ const createExpense = async (
     subcategoryTitle: subcategory.title,
     categoryId: subcategory.categoryId,
     categoryTitle: category?.title,
-    invoiceNo: generateInvoiceNo(),
+    invoiceNo: await generateInvoiceNo(),
     description: payload.description,
     amount: payload.amount,
     paymentMethod: payload.paymentMethod,
@@ -263,12 +271,14 @@ const createExpense = async (
     createdBy: resolveActorId(actor),
   };
 
-  return ExpenseRepository.create(expenseData);
+  const result = await ExpenseRepository.create(expenseData);
+  await cacheService.invalidateByPattern(`analytics:${branchId}:*`).catch(() => {});
+  return result;
 };
 
 const getExpenses = async (
   branchId: string,
-  actor: TAccessActor,
+  _actor: TAccessActor,
   query: TQueryExpenses,
 ) => {
   const filter: Record<string, unknown> = {
@@ -337,7 +347,7 @@ const getExpenses = async (
 const getExpenseById = async (
   branchId: string,
   expenseId: string,
-  actor: TAccessActor,
+  _actor: TAccessActor,
 ) => {
   const expense = await ExpenseRepository.findById(expenseId);
   if (
@@ -370,13 +380,15 @@ const updateExpense = async (
   await ExpenseHistoryRepository.create({
     expenseId: expense._id as Types.ObjectId,
     branchId: new Types.ObjectId(branchId),
-    snapshot: expense.toObject(),
+    snapshot: expense.toObject() as unknown as Record<string, unknown>,
     changedBy: resolveActorId(actor),
     changeType: "update",
     changedAt: new Date(),
   });
 
-  return ExpenseRepository.updateById(expenseId, { $set: payload });
+  const result = await ExpenseRepository.updateById(expenseId, { $set: payload });
+  await cacheService.invalidateByPattern(`analytics:${branchId}:*`).catch(() => {});
+  return result;
 };
 
 const deleteExpense = async (
@@ -397,19 +409,21 @@ const deleteExpense = async (
   await ExpenseHistoryRepository.create({
     expenseId: expense._id as Types.ObjectId,
     branchId: new Types.ObjectId(branchId),
-    snapshot: expense.toObject(),
+    snapshot: expense.toObject() as unknown as Record<string, unknown>,
     changedBy: resolveActorId(actor),
     changeType: "delete",
     changedAt: new Date(),
   });
 
-  return ExpenseRepository.softDeleteById(expenseId);
+  const result = await ExpenseRepository.softDeleteById(expenseId);
+  await cacheService.invalidateByPattern(`analytics:${branchId}:*`).catch(() => {});
+  return result;
 };
 
 const getExpenseHistory = async (
   branchId: string,
   expenseId: string,
-  actor: TAccessActor,
+  _actor: TAccessActor,
 ) => {
   const expense = await ExpenseRepository.findById(expenseId);
   if (!expense || String(expense.branchId) !== branchId) {

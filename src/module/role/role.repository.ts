@@ -51,7 +51,7 @@ export const RoleRepository = {
       }
     }
 
-    return query;
+    return query.lean();
   },
 
   updateById(id: string, payload: object) {

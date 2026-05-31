@@ -1,11 +1,10 @@
 import { Types } from "mongoose";
 
+import { BD_OFFSET_MS } from "../../util/dhakaTime";
 import { Expense } from "../expense/expense.model";
 import { Member } from "../member/member.model";
 import { PaymentStatus } from "../payment/payment.interface";
 import { Payment } from "../payment/payment.model";
-
-const BD_OFFSET_MS = 6 * 60 * 60 * 1000;
 
 type TYearMonthBounds = {
   start: Date;
@@ -607,10 +606,84 @@ export const AnalyticsRepository = {
           { createdAt: { $gte: todayStartUTC, $lt: todayEndUTC } },
         ],
       })
-        .select("invoiceNo expenseDate createdAt categoryTitle paymentMethod amount")
+        .select("invoiceNo expenseDate createdAt categoryTitle paymentMethod amount description")
         .sort({ expenseDate: -1, createdAt: -1 })
         .limit(limit)
         .lean(),
+    ]);
+  },
+
+  getTodayIncomeExpenseSummary(branchId: string) {
+    const now = new Date();
+    const bdNow = new Date(now.getTime() + BD_OFFSET_MS);
+    const todayStartUTC = new Date(
+      Date.UTC(bdNow.getUTCFullYear(), bdNow.getUTCMonth(), bdNow.getUTCDate()) - BD_OFFSET_MS,
+    );
+    const todayEndUTC = new Date(todayStartUTC.getTime() + 24 * 60 * 60 * 1000);
+
+    return Promise.all([
+      Payment.aggregate([
+        {
+          $match: {
+            branchId: toBranchObjectId(branchId),
+            status: { $in: validIncomeStatuses },
+            "metadata.entryKind": { $ne: "opening_import_balance" },
+            $or: [
+              { paymentDate: { $gte: todayStartUTC, $lt: todayEndUTC } },
+              { createdAt: { $gte: todayStartUTC, $lt: todayEndUTC } },
+            ],
+          },
+        },
+        {
+          $group: {
+            _id: null,
+            total: { $sum: { $ifNull: ["$billAmount", 0] } },
+            count: { $sum: 1 },
+          },
+        },
+      ]),
+      Expense.aggregate([
+        {
+          $match: {
+            branchId: toBranchObjectId(branchId),
+            isActive: true,
+            $or: [
+              { expenseDate: { $gte: todayStartUTC, $lt: todayEndUTC } },
+              { createdAt: { $gte: todayStartUTC, $lt: todayEndUTC } },
+            ],
+          },
+        },
+        {
+          $group: {
+            _id: null,
+            total: { $sum: { $ifNull: ["$amount", 0] } },
+            count: { $sum: 1 },
+          },
+        },
+      ]),
+    ]);
+  },
+
+  getAllTimeIncomeExpenseTotals(branchId: string) {
+    return Promise.all([
+      Payment.aggregate([
+        {
+          $match: {
+            branchId: toBranchObjectId(branchId),
+            status: { $in: validIncomeStatuses },
+          },
+        },
+        { $group: { _id: null, total: { $sum: { $ifNull: ["$billAmount", 0] } } } },
+      ]),
+      Expense.aggregate([
+        {
+          $match: {
+            branchId: toBranchObjectId(branchId),
+            isActive: true,
+          },
+        },
+        { $group: { _id: null, total: { $sum: { $ifNull: ["$amount", 0] } } } },
+      ]),
     ]);
   },
 };

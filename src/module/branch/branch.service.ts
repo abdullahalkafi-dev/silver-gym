@@ -2,11 +2,17 @@ import { StatusCodes } from "http-status-codes";
 import { Types } from "mongoose";
 import AppError from "../../errors/AppError";
 import { TStaffPermissionSnapshot } from "../auth/auth.util";
-import { TBranch } from "./branch.interface";
+import {
+	normalizeBranchAutoDeactivateAfterUnpaidMonths,
+  normalizeBranchSMSSettings,
+  TBranch,
+  TBranchSMSSettings,
+} from "./branch.interface";
 import { BranchRepository } from "./branch.repository";
 import { BusinessProfileRepository } from "../businessProfile/businessProfile.repository";
 import unlinkFile from "../../shared/unlinkFile";
 import { RoleService } from "../role/role.service";
+import { RoleRepository } from "../role/role.repository";
 import { TStaff } from "../staff/staff.interface";
 import { logger } from "logger/logger";
 
@@ -29,6 +35,19 @@ type TBranchAccessActor = {
 type TBranchFeeSnapshot = Pick<TBranch, "monthlyFeeAmount" | "admissionFeeAmount">;
 
 type TBranchFeeType = "monthly" | "admission";
+
+type TBranchSMSSettingsUpdate = Partial<
+  Pick<
+    TBranchSMSSettings,
+    | "autoSendEnabled"
+    | "reminderDayOfMonth"
+    | "template"
+    | "occasionTemplate"
+    | "promotionTemplate"
+    | "defaultDeliveryMode"
+    | "maskingSender"
+  >
+>;
 
 /**
  * Create a new branch for a business with ownership verification
@@ -191,6 +210,73 @@ const ensureBranchFeePermission = (
     `You do not have permission to ${actionLabel} the branch ${targetFee.label}`,
   );
 };
+
+const ensureBranchSMSPermission = (actor: TBranchAccessActor) => {
+  if (actor.userId) {
+    return;
+  }
+
+  if (actor.staffPermissions?.canSendSMS || actor.staffPermissions?.canEditSMSTemplate) {
+    return;
+  }
+
+  throw new AppError(
+    StatusCodes.FORBIDDEN,
+    "You do not have permission to manage branch SMS settings",
+  );
+};
+
+const ensureBranchSMSSettingsPermission = (actor: TBranchAccessActor) => {
+  if (actor.userId || actor.staffPermissions?.canSendSMS) {
+    return;
+  }
+
+  throw new AppError(
+    StatusCodes.FORBIDDEN,
+    "You do not have permission to manage branch SMS settings",
+  );
+};
+
+const ensureBranchSMSTemplatePermission = (actor: TBranchAccessActor) => {
+  if (actor.userId || actor.staffPermissions?.canEditSMSTemplate) {
+    return;
+  }
+
+  throw new AppError(
+    StatusCodes.FORBIDDEN,
+    "You do not have permission to edit SMS templates",
+  );
+};
+
+const canEditDueSMSTemplate = async (actor: TBranchAccessActor) => {
+  if (actor.userId) {
+    return true;
+  }
+
+  if (!actor.staff?.roleId) {
+    return false;
+  }
+
+  const role = await RoleRepository.findById(String(actor.staff.roleId));
+  return Boolean(role?.roleName?.trim().toLowerCase().includes("admin"));
+};
+
+const buildBranchSMSSettingsSnapshot = (branch: TBranch & { _id?: Types.ObjectId }) => ({
+  branchId: branch._id,
+  branchName: branch.branchName,
+  smsSettings: normalizeBranchSMSSettings(branch.smsSettings),
+});
+
+const buildBranchAutoDeactivationSettingsSnapshot = (
+  branch: TBranch & { _id?: Types.ObjectId },
+) => ({
+  branchId: branch._id,
+  branchName: branch.branchName,
+  autoDeactivateAfterUnpaidMonths:
+    normalizeBranchAutoDeactivateAfterUnpaidMonths(
+      branch.autoDeactivateAfterUnpaidMonths,
+    ),
+});
 
 /**
  * Get all branches for a business with ownership verification
@@ -443,6 +529,193 @@ const updateBranchAdmissionFee = async (
   return updatedBranch;
 };
 
+const getBranchAutoDeactivationSettings = async (
+  businessId: string,
+  branchId: string,
+  actor: TBranchAccessActor,
+) => {
+  const branch = await resolveBranchFeeAccess(businessId, branchId, actor);
+
+  return buildBranchAutoDeactivationSettingsSnapshot(branch);
+};
+
+const updateBranchAutoDeactivationSettings = async (
+  businessId: string,
+  branchId: string,
+  actor: TBranchAccessActor,
+  autoDeactivateAfterUnpaidMonths: number,
+) => {
+  await resolveBranchFeeAccess(businessId, branchId, actor);
+
+  if (!actor.userId) {
+    throw new AppError(
+      StatusCodes.FORBIDDEN,
+      "Only the owner can update branch auto-deactivation settings",
+    );
+  }
+
+  const updatedBranch = await BranchRepository.updateById(branchId, {
+    autoDeactivateAfterUnpaidMonths:
+      normalizeBranchAutoDeactivateAfterUnpaidMonths(
+        autoDeactivateAfterUnpaidMonths,
+      ),
+  });
+
+  if (!updatedBranch) {
+    throw new AppError(
+      StatusCodes.INTERNAL_SERVER_ERROR,
+      "Failed to update branch auto-deactivation settings",
+    );
+  }
+
+  return buildBranchAutoDeactivationSettingsSnapshot(updatedBranch);
+};
+
+const getBranchSMSSettings = async (
+  businessId: string,
+  branchId: string,
+  actor: TBranchAccessActor,
+) => {
+  const branch = await resolveBranchFeeAccess(businessId, branchId, actor);
+  ensureBranchSMSPermission(actor);
+
+  return buildBranchSMSSettingsSnapshot(branch);
+};
+
+const updateBranchSMSSettings = async (
+  businessId: string,
+  branchId: string,
+  actor: TBranchAccessActor,
+  payload: TBranchSMSSettingsUpdate,
+) => {
+  const branch = await resolveBranchFeeAccess(businessId, branchId, actor);
+  ensureBranchSMSPermission(actor);
+
+  const isUpdatingGeneralSettings =
+    typeof payload.autoSendEnabled === "boolean" ||
+    typeof payload.reminderDayOfMonth === "number" ||
+    typeof payload.maskingSender !== "undefined" ||
+    typeof payload.defaultDeliveryMode !== "undefined";
+  const isUpdatingDueTemplate = typeof payload.template === "string";
+  const isUpdatingSavedTemplates =
+    typeof payload.occasionTemplate === "string" ||
+    typeof payload.promotionTemplate === "string";
+
+  if (isUpdatingGeneralSettings) {
+    ensureBranchSMSSettingsPermission(actor);
+  }
+
+  if (isUpdatingSavedTemplates) {
+    ensureBranchSMSTemplatePermission(actor);
+  }
+
+  if (isUpdatingDueTemplate && !(await canEditDueSMSTemplate(actor))) {
+    throw new AppError(
+      StatusCodes.FORBIDDEN,
+      "Only admins can edit the due reminder template",
+    );
+  }
+
+  if (
+    typeof payload.defaultDeliveryMode !== "undefined" &&
+    payload.defaultDeliveryMode !== "masking"
+  ) {
+    throw new AppError(
+      StatusCodes.BAD_REQUEST,
+      "Only masking SMS is supported",
+    );
+  }
+
+  const currentSettings = normalizeBranchSMSSettings(branch.smsSettings);
+  const nextSettings = normalizeBranchSMSSettings({
+    ...currentSettings,
+    ...payload,
+    defaultDeliveryMode: "masking",
+    updatedAt: new Date(),
+    updatedBy: actor.userId ?? (actor.staff as (TStaff & { _id?: Types.ObjectId }) | undefined)?._id ?? null,
+  });
+
+  if (!nextSettings.maskingSender) {
+    throw new AppError(
+      StatusCodes.BAD_REQUEST,
+      "A branch-level masking sender is required before SMS can be sent",
+    );
+  }
+
+  const updatedBranch = await BranchRepository.updateById(branchId, {
+    smsSettings: nextSettings,
+  });
+
+  if (!updatedBranch) {
+    throw new AppError(
+      StatusCodes.INTERNAL_SERVER_ERROR,
+      "Failed to update branch SMS settings",
+    );
+  }
+
+  return buildBranchSMSSettingsSnapshot(updatedBranch);
+};
+
+const getBranchStartingBalance = async (
+  businessId: string,
+  branchId: string,
+  actor: TBranchAccessActor,
+) => {
+  const branch = await resolveBranchFeeAccess(businessId, branchId, actor);
+
+  return {
+    branchId: branch._id,
+    branchName: branch.branchName,
+    startingBalance:
+      typeof branch.startingBalance === "number"
+        ? branch.startingBalance
+        : null,
+    startingBalanceSetAt: branch.startingBalanceSetAt ?? null,
+  };
+};
+
+const setBranchStartingBalance = async (
+  businessId: string,
+  branchId: string,
+  actor: TBranchAccessActor,
+  startingBalance: number,
+) => {
+  const branch = await resolveBranchFeeAccess(businessId, branchId, actor);
+
+  if (!actor.userId) {
+    throw new AppError(
+      StatusCodes.FORBIDDEN,
+      "Only the owner can set the starting balance",
+    );
+  }
+
+  if (typeof branch.startingBalance === "number") {
+    throw new AppError(
+      StatusCodes.CONFLICT,
+      "Starting balance has already been set and cannot be changed",
+    );
+  }
+
+  const updatedBranch = await BranchRepository.updateById(branchId, {
+    startingBalance,
+    startingBalanceSetAt: new Date(),
+  });
+
+  if (!updatedBranch) {
+    throw new AppError(
+      StatusCodes.INTERNAL_SERVER_ERROR,
+      "Failed to set branch starting balance",
+    );
+  }
+
+  return {
+    branchId: updatedBranch._id,
+    branchName: updatedBranch.branchName,
+    startingBalance: updatedBranch.startingBalance!,
+    startingBalanceSetAt: updatedBranch.startingBalanceSetAt!,
+  };
+};
+
 export const BranchService = {
   createBranch,
   getBranches,
@@ -453,4 +726,10 @@ export const BranchService = {
   updateBranchMonthlyFee,
   getBranchAdmissionFee,
   updateBranchAdmissionFee,
+  getBranchAutoDeactivationSettings,
+  updateBranchAutoDeactivationSettings,
+  getBranchSMSSettings,
+  updateBranchSMSSettings,
+  getBranchStartingBalance,
+  setBranchStartingBalance,
 };

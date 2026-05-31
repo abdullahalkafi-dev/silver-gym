@@ -3,6 +3,7 @@ import mongoose, { Types } from "mongoose";
 
 import { QueryBuilder } from "../../Builder/QueryBuilder";
 import AppError from "../../errors/AppError";
+import { logger } from "../../logger/logger";
 import cacheService from "../../redis/cacheService";
 import { BranchRepository } from "../branch/branch.repository";
 import { BusinessProfileRepository } from "../businessProfile/businessProfile.repository";
@@ -43,6 +44,7 @@ import {
   PaymentType,
   TPayment,
 } from "./payment.interface";
+import { InvoiceCounterService } from "./invoiceCounter.service";
 import { PaymentRepository } from "./payment.repository";
 
 type TAccessActor = {
@@ -50,7 +52,7 @@ type TAccessActor = {
   staff?: TStaff;
 };
 
-type TCreatePaymentPayload = Omit<TPayment, "branchId" | "createdAt" | "updatedAt">;
+type TCreatePaymentPayload = Omit<TPayment, "branchId" | "createdAt" | "updatedAt" | "invoiceNo">;
 
 type TUpdatePaymentPayload = Partial<
   Omit<
@@ -221,29 +223,24 @@ const computePaymentStatus = (
   return PaymentStatus.PARTIAL;
 };
 
-const isTransactionNotSupported = (error: unknown): boolean => {
-  if (!(error instanceof Error)) {
-    return false;
-  }
-
-  const message = error.message.toLowerCase();
-
-  return (
-    message.includes("transaction numbers are only allowed") ||
-    message.includes("transactions are not supported") ||
-    message.includes("replica set")
-  );
-};
-
 const invalidateMemberBillingCaches = async (
   branchId: string,
   memberId: string,
 ) => {
-  await Promise.all([
-    cacheService.deleteCache(`members:${branchId}:${memberId}`),
-    cacheService.deleteCache(getBillingReconcileCacheKey(branchId)),
-    cacheService.invalidateByPattern(`members:${branchId}:list:*`),
-  ]);
+  try {
+    await Promise.all([
+      cacheService.deleteCache(`members:${branchId}:${memberId}`),
+      cacheService.deleteCache(getBillingReconcileCacheKey(branchId)),
+      cacheService.invalidateByPattern(`members:${branchId}:list:*`),
+      cacheService.invalidateByPattern(`analytics:${branchId}:*`),
+    ]);
+  } catch (error) {
+    logger.warn("Failed to invalidate billing caches (will auto-expire)", {
+      branchId,
+      memberId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
 };
 
 const addPackageDuration = (
@@ -624,19 +621,12 @@ const resolveCollectBillCycleDetails = async (
   branch: NonNullable<Awaited<ReturnType<typeof BranchRepository.findOne>>>,
   member: Awaited<ReturnType<typeof MemberRepository.findOne>>,
   payload: TCollectBillPayload,
+  currentPackageDurationType?: string,
 ): Promise<TCollectBillCycleDetails> => {
   const requiredStartDate =
     payload.collectionMode === "due_only"
       ? undefined
       : resolveRequiredCollectBillStartDate(member);
-  const currentPackageDurationType = member?.currentPackageId
-    ? (
-        await PackageRepository.findOne({
-          _id: member.currentPackageId,
-          branchId: new Types.ObjectId(branchId),
-        })
-      )?.durationType
-    : undefined;
 
   const startDate =
     payload.startDate instanceof Date
@@ -666,11 +656,19 @@ const resolveCollectBillCycleDetails = async (
         payload.useCustomMonthlyFee === true &&
         payload.customMonthlyFeeAmount != null &&
         payload.customMonthlyFeeAmount > 0;
+
+      // When admin explicitly turns off custom billing, reset member to system fee
+      const resetCustomFee =
+        payload.useCustomMonthlyFee === false &&
+        member?.isCustomMonthlyFee === true;
+
       const monthlyFeeAmount = useCustom
         ? payload.customMonthlyFeeAmount!
-        : member
-          ? resolveMemberMonthlyFeeAmount(member, branch)
-          : undefined;
+        : resetCustomFee
+          ? (branch.monthlyFeeAmount ?? 0)
+          : member
+            ? resolveMemberMonthlyFeeAmount(member, branch)
+            : undefined;
       const shortTermTransition = resolveShortTermMonthlyTransition({
         currentPackageDurationType,
         membershipStartDate: member?.membershipStartDate,
@@ -687,7 +685,7 @@ const resolveCollectBillCycleDetails = async (
       if (monthlyFeeAmount == null) {
         throw new AppError(
           StatusCodes.BAD_REQUEST,
-          "Monthly fee is not configured for this member or branch",
+          "Monthly fee is not configured. Please set the branch monthly fee in Accounts > Base Fees, or assign a custom fee to this member.",
         );
       }
 
@@ -720,11 +718,15 @@ const resolveCollectBillCycleDetails = async (
           ...(useCustom
             ? { isCustomMonthlyFee: true, customMonthlyFeeAmount: monthlyFeeAmount }
             : {}),
+          ...(resetCustomFee
+            ? { isCustomMonthlyFee: false }
+            : {}),
         },
         memberUnset: {
           currentPackageId: 1,
           currentPackageName: 1,
           membershipEndDate: 1,
+          ...(resetCustomFee ? { customMonthlyFeeAmount: 1 } : {}),
         },
       };
     }
@@ -831,10 +833,9 @@ const persistCollectedBill = async (
   paymentData: TPayment,
   memberUpdatePayload: Record<string, unknown>,
 ) => {
-  let session: mongoose.ClientSession | null = null;
+  const session = await mongoose.startSession();
 
   try {
-    session = await mongoose.startSession();
     session.startTransaction();
 
     const payment = await PaymentRepository.create(paymentData, { session });
@@ -851,32 +852,10 @@ const persistCollectedBill = async (
     await session.commitTransaction();
     return payment;
   } catch (error) {
-    if (session) {
-      await session.abortTransaction();
-    }
-
-    if (!isTransactionNotSupported(error)) {
-      throw error;
-    }
-  } finally {
-    if (session) {
-      await session.endSession();
-    }
-  }
-
-  const payment = await PaymentRepository.create(paymentData);
-
-  try {
-    const updatedMember = await MemberRepository.updateById(memberId, memberUpdatePayload);
-
-    if (!updatedMember) {
-      throw new AppError(StatusCodes.INTERNAL_SERVER_ERROR, "Failed to update member");
-    }
-
-    return payment;
-  } catch (error) {
-    await PaymentRepository.deleteById(String(payment._id));
+    await session.abortTransaction();
     throw error;
+  } finally {
+    await session.endSession();
   }
 };
 
@@ -918,13 +897,14 @@ const syncMemberBalanceDelta = async (
   ]);
 };
 
-const generateInvoiceNo = async (branchId: string): Promise<string> => {
-  const year = new Date().getFullYear();
-  const count = await PaymentRepository.count({
-    branchId: new Types.ObjectId(branchId),
-  });
-
-  return `INV-${year}-${String(count + 1).padStart(6, "0")}`;
+const generateInvoiceNo = async (
+  session?: mongoose.ClientSession | null,
+): Promise<string> => {
+  const sequence = await InvoiceCounterService.getNextInvoiceSequence(
+    "PAYMENT",
+    session,
+  );
+  return `PAY-${String(sequence).padStart(12, "0")}`;
 };
 
 const resolveMemberData = async (
@@ -1005,7 +985,7 @@ const createPayment = async (
   const packageData = await resolvePackageData(branchId, payload);
 
   // Generate invoice number if not provided
-  const invoiceNo = payload.invoiceNo || (await generateInvoiceNo(branchId));
+  const invoiceNo = await generateInvoiceNo();
 
   const discount = payload.discount || 0;
   const subTotal = payload.subTotal ?? 0;
@@ -1059,7 +1039,7 @@ const getCollectBillContext = async (
   memberId: string,
   actor: TAccessActor,
 ) => {
-  const { member, billing, dueLedger, shortTermTransition } = await resolveCollectBillMember(
+  const { branch, member, billing, dueLedger, shortTermTransition } = await resolveCollectBillMember(
     branchId,
     actor,
     memberId,
@@ -1080,6 +1060,7 @@ const getCollectBillContext = async (
       overdueMonths: dueLedger.items.filter((item) => item.type === "monthly_due").length,
       accruedAmount: overdueAmount,
       monthlyFeeAmount: billing.monthlyFeeAmount,
+      branchMonthlyFeeAmount: branch.monthlyFeeAmount ?? 0,
       nextPaymentDate: member.nextPaymentDate,
       recommendedStartDate: requiredStartDate,
       requiredStartDate,
@@ -1108,17 +1089,26 @@ const collectBill = async (
   actor: TAccessActor,
   payload: TCollectBillPayload,
 ) => {
-  const { branch, member, billing, dueLedger } = await resolveCollectBillMember(
+  // Owner-only guard: only the branch owner can override custom monthly fee
+  const sanitizedPayload =
+    !!actor.userId && payload.useCustomMonthlyFee === true
+      ? payload
+      : actor.staff && payload.useCustomMonthlyFee === true
+        ? { ...payload, useCustomMonthlyFee: undefined, customMonthlyFeeAmount: undefined }
+        : payload;
+
+  const { branch, member, billing, dueLedger, currentPackageDurationType } = await resolveCollectBillMember(
     branchId,
     actor,
-    payload.memberId,
+    sanitizedPayload.memberId,
   );
 
   const cycleDetails = await resolveCollectBillCycleDetails(
     branchId,
     branch,
     member,
-    payload,
+    sanitizedPayload,
+    currentPackageDurationType,
   );
   const paymentDate =
     payload.paymentDate instanceof Date
@@ -1212,9 +1202,13 @@ const collectBill = async (
   );
 
   if (hasUnresolvedCycleAmount) {
+    const modeLabel =
+      cycleDetails.collectionMode === "package"
+        ? "Package"
+        : "Monthly renewal";
     throw new AppError(
       StatusCodes.BAD_REQUEST,
-      "New monthly or package billing must be fully paid in the same transaction",
+      `${modeLabel} charge of ${normalizeMoney(cycleDetails.cycleCharge)} BDT must be fully paid. Please increase the paid amount to cover the full charge.`,
     );
   }
 
@@ -1266,7 +1260,9 @@ const collectBill = async (
     memberUpdatePayload.$unset = cycleDetails.memberUnset;
   }
 
-  const invoiceNo = await generateInvoiceNo(branchId);
+
+
+  const invoiceNo = await generateInvoiceNo();
   const paymentData: TPayment = {
     branchId: new Types.ObjectId(branchId),
     invoiceNo,

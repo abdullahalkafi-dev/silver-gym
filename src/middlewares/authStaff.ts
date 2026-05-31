@@ -13,6 +13,9 @@ import {
 import { RoleRepository } from "module/role/role.repository";
 import { StaffRepository } from "module/staff/staff.repository";
 import { UserRepository } from "module/user/user.repository";
+import cacheService from "../redis/cacheService";
+
+const AUTH_STAFF_CACHE_TTL = 60; // 60 seconds
 
 type AuthStaffOptions = {
   allowOwner?: boolean;
@@ -46,12 +49,19 @@ const normalizePermissions = (
   canExportAnalytics: Boolean(input?.canExportAnalytics),
   canViewSMS: Boolean(input?.canViewSMS),
   canSendSMS: Boolean(input?.canSendSMS),
+  canEditSMSTemplate: Boolean(input?.canEditSMSTemplate),
   canViewEmail: Boolean(input?.canViewEmail),
   canSendEmail: Boolean(input?.canSendEmail),
   canViewExpenseCategory: Boolean(input?.canViewExpenseCategory),
   canManageExpenseCategory: Boolean(input?.canManageExpenseCategory),
   canViewExpense: Boolean(input?.canViewExpense),
   canAddExpense: Boolean(input?.canAddExpense),
+  canViewTransactions: Boolean(input?.canViewTransactions),
+  canViewLockers: Boolean(input?.canViewLockers),
+  canAddLocker: Boolean(input?.canAddLocker),
+  canDeleteLocker: Boolean(input?.canDeleteLocker),
+  canAssignLocker: Boolean(input?.canAssignLocker),
+  canCollectLockerPayment: Boolean(input?.canCollectLockerPayment),
 });
 
 const authStaff =
@@ -80,7 +90,17 @@ const authStaff =
           throw new AppError(StatusCodes.UNAUTHORIZED, "You are not authorized");
         }
 
-        const staff = await StaffRepository.findById(decoded.staffId);
+        // Try cache first, fallback to DB
+        const staffCacheKey = `auth:staff:${decoded.staffId}`;
+        let staff = await cacheService.getCache<any>(staffCacheKey);
+
+        if (!staff) {
+          staff = await StaffRepository.findById(decoded.staffId);
+          if (staff) {
+            const staffObj = staff.toObject ? staff.toObject() : { ...staff };
+            await cacheService.setCache(staffCacheKey, staffObj, AUTH_STAFF_CACHE_TTL);
+          }
+        }
 
         if (!staff || !staff.isActive) {
           throw new AppError(StatusCodes.UNAUTHORIZED, "You are not authorized");
@@ -90,7 +110,17 @@ const authStaff =
           throw new AppError(StatusCodes.UNAUTHORIZED, "You are not authorized");
         }
 
-        const role = await RoleRepository.findById(String(staff.roleId));
+        // Try cache first for role
+        const roleCacheKey = `auth:role:${staff.roleId}`;
+        let role = await cacheService.getCache<any>(roleCacheKey);
+
+        if (!role) {
+          role = await RoleRepository.findById(String(staff.roleId));
+          if (role) {
+            const roleObj = role.toObject ? role.toObject() : { ...role };
+            await cacheService.setCache(roleCacheKey, roleObj, AUTH_STAFF_CACHE_TTL);
+          }
+        }
 
         if (!role) {
           throw new AppError(StatusCodes.UNAUTHORIZED, "You are not authorized");

@@ -7,7 +7,6 @@ const collectBillModeSchema = z.enum(["due_only", "monthly", "package"]);
 const createPaymentDto = z.object({
   data: z
     .object({
-      invoiceNo: z.string().trim().optional(),
       memberId: z.string().trim().optional(),
       memberName: z.string().trim().optional(),
       packageId: z.string().trim().optional(),
@@ -89,7 +88,6 @@ const createPaymentDto = z.object({
 const updatePaymentDto = z.object({
   data: z
     .object({
-      invoiceNo: z.string().trim().optional(),
       memberName: z.string().trim().optional(),
       packageName: z.string().trim().optional(),
       packageDuration: z.number().int().min(1).optional(),

@@ -1,3 +1,9 @@
+import {
+  dhakaStartOfDay,
+  dhakaStartOfMonth,
+  dhakaStartOfNextMonth,
+} from "../../util/dhakaTime";
+
 type TPaymentSettlementInput = {
   subTotal?: number;
   paidTotal?: number;
@@ -38,18 +44,19 @@ export const normalizeMoney = (value: number): number => {
   return Math.abs(rounded) < 0.005 ? 0 : rounded;
 };
 
+// All boundary functions use Dhaka (Bangladesh) timezone.
+// This ensures billing cutoffs are consistent regardless of server deployment timezone.
+
 export const startOfCalendarDay = (date: Date): Date => {
-  const nextDate = new Date(date);
-  nextDate.setHours(0, 0, 0, 0);
-  return nextDate;
+  return dhakaStartOfDay(date);
 };
 
 export const startOfCalendarMonth = (date: Date): Date => {
-  return new Date(date.getFullYear(), date.getMonth(), 1);
+  return dhakaStartOfMonth(date);
 };
 
 export const startOfNextCalendarMonth = (date: Date): Date => {
-  return new Date(date.getFullYear(), date.getMonth() + 1, 1);
+  return dhakaStartOfNextMonth(date);
 };
 
 export const isSameCalendarDay = (left: Date, right: Date): boolean => {
@@ -168,6 +175,13 @@ export const reconcileRecurringBillingBalance = ({
       ? stoppedAccrualCutoff
       : activeAccrualCutoff;
 
+  // NOTE: The accrual cutoff is the START of the current month (Dhaka time).
+  // A member whose nextPaymentDate falls on or after the 1st of this month
+  // is NOT yet overdue (nextPaymentDate >= cutoff). A member whose
+  // nextPaymentDate is the last day of LAST month IS overdue.
+  // The loop adds one month at a time using addMonthsPreservingDay, so a
+  // nextPaymentDate of Jan 31 becomes Feb 28 (day preserved), which is
+  // >= Feb 1 cutoff → overdueMonths = 1. This is correct behavior.
   while (updatedNextPaymentDate < accrualCutoff && loopGuard < 600) {
     overdueMonths += 1;
     updatedNextPaymentDate = addMonthsPreservingDay(updatedNextPaymentDate, 1);

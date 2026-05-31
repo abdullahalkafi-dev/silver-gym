@@ -180,7 +180,7 @@ const getStaffListByBranch = async (branchId: string, options?: any) => {
   );
 
   const staffWithPermissions = staffList.map((staff: any) => {
-    const staffObj = staff.toObject ? staff.toObject() : staff;
+    const staffObj = staff;
 
     return {
       ...staffObj,
@@ -256,10 +256,19 @@ const getStaffById = async (
     throw new AppError(StatusCodes.NOT_FOUND, "Branch not found");
   }
 
-  const businessProfile = await BusinessProfileRepository.findOne({
-    _id: branch.businessId,
-    userId,
-  });
+  const [businessProfile, staffWithRole] = await Promise.all([
+    BusinessProfileRepository.findOne({
+      _id: branch.businessId,
+      userId,
+    }),
+    StaffRepository.findOne(
+      {
+        _id: new Types.ObjectId(staffId),
+        branchId: new Types.ObjectId(branchId),
+      },
+      { populate: "roleId" },
+    ),
+  ]);
 
   if (!businessProfile) {
     throw new AppError(
@@ -267,14 +276,6 @@ const getStaffById = async (
       "You do not have permission to access this branch"
     );
   }
-
-  const staffWithRole = await StaffRepository.findOne(
-    {
-      _id: new Types.ObjectId(staffId),
-      branchId: new Types.ObjectId(branchId),
-    },
-    { populate: "roleId" },
-  );
 
   if (!staffWithRole) {
     throw new AppError(

@@ -2,6 +2,7 @@ import { Schema, model } from "mongoose";
 
 import { TMember, emergencyContact } from './member.interface';
 import { Package } from "../package/package.model";
+import { normalizeBangladeshPhone } from "../../util/bangladeshPhone";
 
 const TRAINING_GOALS = [
   "Yoga",
@@ -170,6 +171,30 @@ const memberSchema = new Schema<TMember>(
 );
 
 memberSchema.pre("validate", async function () {
+  if (typeof this.contact === "string" && this.contact.trim()) {
+    const normalizedContact = normalizeBangladeshPhone(this.contact);
+
+    if (!normalizedContact) {
+      throw new Error("Contact number must be a valid Bangladesh mobile number.");
+    }
+
+    this.contact = normalizedContact;
+  }
+
+  if (this.emergencyContact?.contactNumber?.trim()) {
+    const normalizedEmergencyContact = normalizeBangladeshPhone(
+      this.emergencyContact.contactNumber,
+    );
+
+    if (!normalizedEmergencyContact) {
+      throw new Error(
+        "Emergency contact number must be a valid Bangladesh mobile number.",
+      );
+    }
+
+    this.emergencyContact.contactNumber = normalizedEmergencyContact;
+  }
+
   if (this.isCustomMonthlyFee) {
     if (this.customMonthlyFeeAmount == null) {
       throw new Error("customMonthlyFeeAmount is required when isCustomMonthlyFee is true.");
@@ -206,7 +231,7 @@ memberSchema.index(
   { branchId: 1, contact: 1 },
   {
     unique: true,
-    partialFilterExpression: { contact: { $exists: true, $ne: null, $ne: "" } },
+    partialFilterExpression: { contact: { $exists: true, $gt: "" } },
   },
 );
 

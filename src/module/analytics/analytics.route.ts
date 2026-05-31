@@ -86,4 +86,17 @@ router.get(
   AnalyticsController.getOverviewSummary,
 );
 
+/**
+ * @route   GET /api/v1/analytics/:branchId/today-summary
+ * @desc    Get today's income/expense totals and counts for branch cards
+ * @access  Private (Owner or Staff with canViewAnalytics)
+ */
+router.get(
+  "/:branchId/today-summary",
+  authStaff({ allowOwner: true }),
+  requirePermission("canViewAnalytics"),
+  validateRequest(AnalyticsDto.todaySummary),
+  AnalyticsController.getTodaySummary,
+);
+
 export const AnalyticsRoutes = router;

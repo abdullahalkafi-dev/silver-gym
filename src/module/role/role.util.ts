@@ -32,12 +32,14 @@ export const getPermissionsByRoleId = async (roleId: string) => {
     canExportAnalytics: role.canExportAnalytics || false,
     canViewSMS: role.canViewSMS || false,
     canSendSMS: role.canSendSMS || false,
+    canEditSMSTemplate: role.canEditSMSTemplate || false,
     canViewEmail: role.canViewEmail || false,
     canSendEmail: role.canSendEmail || false,
     canViewExpenseCategory: role.canViewExpenseCategory || false,
     canManageExpenseCategory: role.canManageExpenseCategory || false,
     canViewExpense: role.canViewExpense || false,
     canAddExpense: role.canAddExpense || false,
+    canViewTransactions: role.canViewTransactions || false,
   };
 };
 
@@ -70,12 +72,14 @@ export const getAllPermissionFields = (): Record<string, boolean> => {
     canExportAnalytics: false,
     canViewSMS: false,
     canSendSMS: false,
+    canEditSMSTemplate: false,
     canViewEmail: false,
     canSendEmail: false,
     canViewExpenseCategory: false,
     canManageExpenseCategory: false,
     canViewExpense: false,
     canAddExpense: false,
+    canViewTransactions: false,
   };
 };
 

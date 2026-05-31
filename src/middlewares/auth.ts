@@ -6,6 +6,9 @@ import config from "../config";
 import AppError from "../errors/AppError";
 import { verifyJwtToken } from "jwt";
 import { UserRepository } from "module/user/user.repository";
+import cacheService from "../redis/cacheService";
+
+const AUTH_CACHE_TTL = 60; // 60 seconds
 
 const auth =
   (...roles: string[]) =>
@@ -33,7 +36,18 @@ const auth =
         config.jwt.jwt_secret as Secret,
       );
 
-      const user = await UserRepository.findById(verifyUser._id);
+      // Try cache first, fallback to DB
+      const cacheKey = `auth:user:${verifyUser._id}`;
+      let user = await cacheService.getCache<any>(cacheKey);
+
+      if (!user) {
+        user = await UserRepository.findById(verifyUser._id);
+        if (user) {
+          // Cache as plain object (lean-compatible)
+          const userObj = user.toObject ? user.toObject() : { ...user };
+          await cacheService.setCache(cacheKey, userObj, AUTH_CACHE_TTL);
+        }
+      }
 
       if (!user) {
         throw new AppError(

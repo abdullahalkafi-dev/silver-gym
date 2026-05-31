@@ -101,7 +101,7 @@ const createLedger = (
 const createCarryForwardLedgerItem = (
   amount: number,
   now: Date,
-  label = "Previous balance",
+  label = "Balance adjustment",
 ): TMemberBillingLedgerItem => ({
   key: `carry_forward:${now.getTime()}`,
   type: "carry_forward",

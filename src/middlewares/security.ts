@@ -26,7 +26,7 @@ export const helmetConfig = helmet({
 // ============ RATE LIMITERS ============
 export const generalLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 1000,
+  max: 10000,
   message: {
     success: false,
     message: "Too many requests, please try again later.",
@@ -37,7 +37,7 @@ export const generalLimiter = rateLimit({
 
 export const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 10,
+  max: 1000,
   message: {
     success: false,
     message: "Too many authentication attempts, please try again later.",
@@ -49,7 +49,7 @@ export const authLimiter = rateLimit({
 
 export const strictLimiter = rateLimit({
   windowMs: 60 * 1000,
-  max: 5,
+  max: 500,
   message: {
     success: false,
     message: "Too many requests for this operation.",

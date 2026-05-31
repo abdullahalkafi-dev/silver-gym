@@ -33,7 +33,7 @@ export const ExpenseCategoryRepository = {
   findByBranch(branchId: string) {
     return ExpenseCategory.find({ branchId, isActive: true }).sort({
       createdAt: 1,
-    });
+    }).lean();
   },
 
   updateById(id: string, payload: object) {
@@ -67,13 +67,20 @@ export const ExpenseSubcategoryRepository = {
     return ExpenseSubcategory.find({
       categoryId,
       isActive: true,
-    }).sort({ createdAt: 1 });
+    }).sort({ createdAt: 1 }).lean();
+  },
+
+  findByCategoryIds(categoryIds: string[]) {
+    return ExpenseSubcategory.find({
+      categoryId: { $in: categoryIds },
+      isActive: true,
+    }).sort({ createdAt: 1 }).lean();
   },
 
   findByBranch(branchId: string) {
     return ExpenseSubcategory.find({ branchId, isActive: true }).sort({
       createdAt: 1,
-    });
+    }).lean();
   },
 
   updateById(id: string, payload: object) {
@@ -137,7 +144,7 @@ export const ExpenseRepository = {
       }
     }
 
-    return query;
+    return query.lean();
   },
 
   countDocuments(filter: object = {}) {
@@ -165,7 +172,7 @@ export const ExpenseRepository = {
   },
 
   aggregate(pipeline: object[]) {
-    return Expense.aggregate(pipeline);
+    return Expense.aggregate(pipeline as Parameters<typeof Expense.aggregate>[0]);
   },
 };
 
@@ -177,6 +184,6 @@ export const ExpenseHistoryRepository = {
   },
 
   findByExpenseId(expenseId: string) {
-    return ExpenseHistory.find({ expenseId }).sort({ changedAt: -1 });
+    return ExpenseHistory.find({ expenseId }).sort({ changedAt: -1 }).lean();
   },
 };

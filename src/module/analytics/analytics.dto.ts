@@ -77,6 +77,10 @@ const overviewDto = z.object({
   query: overviewQueryDto,
 });
 
+const todaySummaryDto = z.object({
+  params: paramsDto,
+});
+
 export const AnalyticsDto = {
   memberSummary: memberSummaryDto,
   financial: financialDto,
@@ -84,4 +88,5 @@ export const AnalyticsDto = {
   packages: packagesDto,
   compare: compareDto,
   overview: overviewDto,
+  todaySummary: todaySummaryDto,
 };

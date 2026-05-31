@@ -24,6 +24,7 @@ import {
   startOfCalendarMonth,
 } from "../payment/payment.balance";
 import { PaymentRepository } from "../payment/payment.repository";
+import { InvoiceCounterService } from "../payment/invoiceCounter.service";
 import { TStaff } from "../staff/staff.interface";
 import {
   applyBillingToMember,
@@ -666,6 +667,7 @@ const createMember = async (
 
   const paymentData: Omit<TPayment, "memberId" | "memberName"> = {
     branchId: new Types.ObjectId(branchId),
+    invoiceNo: `PAY-${String(await InvoiceCounterService.getNextInvoiceSequence("PAYMENT")).padStart(12, "0")}`,
     packageId: packageIdForPayment,
     packageName: currentPackageName,
     packageDuration,
@@ -726,10 +728,16 @@ const getMembers = async (
       ? query.paymentStatus
       : undefined;
 
+  const billingPlan =
+    query.billingPlan === "custom" || query.billingPlan === "system"
+      ? query.billingPlan
+      : undefined;
+
   const sanitizedQuery = { ...query };
   delete sanitizedQuery.includeInactive;
   delete sanitizedQuery.isActive;
   delete sanitizedQuery.paymentStatus;
+  delete sanitizedQuery.billingPlan;
   delete sanitizedQuery.sort;
 
   await reconcileBranchMemberBilling(branchId, branch);
@@ -748,6 +756,12 @@ const getMembers = async (
     baseFilter.currentDueAmount = { $gt: 0 };
   } else if (paymentStatus === "complete") {
     baseFilter.currentDueAmount = { $lte: 0 };
+  }
+
+  if (billingPlan === "custom") {
+    baseFilter.isCustomMonthlyFee = true;
+  } else if (billingPlan === "system") {
+    baseFilter.isCustomMonthlyFee = { $ne: true };
   }
 
   const cacheKey = `members:${branchId}:list:${JSON.stringify(Object.entries(query).sort())}`;
@@ -907,6 +921,17 @@ const updateMember = async (
       StatusCodes.BAD_REQUEST,
       "customMonthlyFeeAmount can only be set when isCustomMonthlyFee is true",
     );
+  }
+
+  // ─── RESET CUSTOM FEE: when isCustomMonthlyFee is set to false ─────────────
+  if (
+    payload.isCustomMonthlyFee === false &&
+    member.isCustomMonthlyFee === true
+  ) {
+    unsetPayload.customMonthlyFeeAmount = 1;
+    nextMetadata = mergeMemberBillingProfileMetadata(nextMetadata, {
+      recurringMonthlyFeeAmount: undefined,
+    });
   }
 
   // ─── MONTHLY BILLING TRANSITION ─────────────────────────────────────────────

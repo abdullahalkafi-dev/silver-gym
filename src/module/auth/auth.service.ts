@@ -74,43 +74,39 @@ const register = async (payload: TUser) => {
   const normalizedEmail = payload.email?.trim().toLowerCase();
   const normalizedPhone = payload.phone?.trim();
 
-  if (normalizedEmail) {
-    const verifiedEmailOwner = await UserRepository.findOne({
-      email: normalizedEmail,
-      isEmailVerified: true,
-    });
+  // Parallel checks for existing verified accounts and cleanup unverified ones
+  const [verifiedEmailOwner, verifiedPhoneOwner] = await Promise.all([
+    normalizedEmail
+      ? UserRepository.findOne({ email: normalizedEmail, isEmailVerified: true })
+      : Promise.resolve(null),
+    normalizedPhone
+      ? UserRepository.findOne({ phone: normalizedPhone, isPhoneVerified: true })
+      : Promise.resolve(null),
+  ]);
 
-    if (verifiedEmailOwner) {
-      throw new AppError(
-        StatusCodes.CONFLICT,
-        "A verified account already uses this email",
-      );
-    }
-
-    await UserRepository.deleteMany({
-      email: normalizedEmail,
-      isEmailVerified: false,
-    });
+  if (verifiedEmailOwner) {
+    throw new AppError(
+      StatusCodes.CONFLICT,
+      "A verified account already uses this email",
+    );
   }
 
-  if (normalizedPhone) {
-    const verifiedPhoneOwner = await UserRepository.findOne({
-      phone: normalizedPhone,
-      isPhoneVerified: true,
-    });
-
-    if (verifiedPhoneOwner) {
-      throw new AppError(
-        StatusCodes.CONFLICT,
-        "A verified account already uses this phone number",
-      );
-    }
-
-    await UserRepository.deleteMany({
-      phone: normalizedPhone,
-      isPhoneVerified: false,
-    });
+  if (verifiedPhoneOwner) {
+    throw new AppError(
+      StatusCodes.CONFLICT,
+      "A verified account already uses this phone number",
+    );
   }
+
+  // Cleanup unverified accounts
+  await Promise.all([
+    normalizedEmail
+      ? UserRepository.deleteMany({ email: normalizedEmail, isEmailVerified: false })
+      : Promise.resolve(),
+    normalizedPhone
+      ? UserRepository.deleteMany({ phone: normalizedPhone, isPhoneVerified: false })
+      : Promise.resolve(),
+  ]);
 
   const userPayload: TUser = {
     ...payload,
@@ -221,17 +217,15 @@ const login = async (payload: TLoginPayload) => {
     config.jwt.jwt_refresh_expire_in || "30d",
   );
 
-  await UserRepository.updateById(String(user._id), { lastLogin: new Date() });
+  const [_, businessProfile] = await Promise.all([
+    UserRepository.updateById(String(user._id), { lastLogin: new Date() }),
+    BusinessProfileRepository.findOne({ userId: user._id }),
+  ]);
 
   const userObject = user.toObject() as ReturnType<typeof user.toObject> & {
     password?: string;
   };
   const { password: _password, ...sanitizedUser } = userObject;
-
-  // Fetch business profile
-  const businessProfile = await BusinessProfileRepository.findOne({
-    userId: user._id,
-  });
 
   return {
     accessToken,

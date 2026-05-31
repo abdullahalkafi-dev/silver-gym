@@ -34,7 +34,10 @@ const allowedOrigins =
         "http://localhost:3000",
         "http://localhost:3001",
         "http://10.10.12.125:3000",
-        "https://nwqs97k3-3000.asse.devtunnels.ms"
+        "https://nwqs97k3-3000.asse.devtunnels.ms",
+        "https://nwqs97k3-5004.asse.devtunnels.ms",
+        "http://192.168.0.200:3000"
+        
       ];
 
 app.use(

@@ -109,6 +109,19 @@ const getOverviewSummary = catchAsync(async (req: Request, res: Response) => {
   });
 });
 
+const getTodaySummary = catchAsync(async (req: Request, res: Response) => {
+  const branchId = req.params.branchId as string;
+
+  const result = await AnalyticsService.getTodaySummary(branchId, resolveActor(req));
+
+  sendResponse(res, {
+    statusCode: StatusCodes.OK,
+    success: true,
+    message: "Today summary retrieved successfully",
+    data: result,
+  });
+});
+
 export const AnalyticsController = {
   getMemberSummary,
   getFinancialSummary,
@@ -116,4 +129,5 @@ export const AnalyticsController = {
   getPackagesSummary,
   getCompareSummary,
   getOverviewSummary,
+  getTodaySummary,
 };

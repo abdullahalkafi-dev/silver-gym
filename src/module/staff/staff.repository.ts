@@ -69,7 +69,7 @@ export const StaffRepository = {
       }
     }
 
-    return query;
+    return query.lean();
   },
 
   updateById(id: string, payload: object) {

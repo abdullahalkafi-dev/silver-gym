@@ -2,6 +2,8 @@ import { StatusCodes } from "http-status-codes";
 import { Types } from "mongoose";
 
 import AppError from "../../errors/AppError";
+import { BD_OFFSET_MS } from "../../util/dhakaTime";
+import cacheService from "../../redis/cacheService";
 import { BranchRepository } from "../branch/branch.repository";
 import { BusinessProfileRepository } from "../businessProfile/businessProfile.repository";
 import { PackageRepository } from "../package/package.repository";
@@ -20,6 +22,7 @@ import {
   TOverviewTransaction,
   TPackageListItem,
   TPackagesAnalyticsSummary,
+  TTodaySummary,
 } from "./analytics.interface";
 import { AnalyticsRepository } from "./analytics.repository";
 
@@ -72,7 +75,12 @@ const categoryPalette = [
   "#B7B976",
 ];
 
-const BD_OFFSET_MS = 6 * 60 * 60 * 1000;
+const ANALYTICS_CACHE_TTL = 120; // 2 minutes
+const ANALYTICS_TODAY_CACHE_TTL = 60; // 1 minute for today's summary
+
+const getAnalyticsCacheKey = (branchId: string, fn: string, ...parts: (string | number)[]) => {
+  return `analytics:${branchId}:${fn}:${parts.join(":")}`;
+};
 
 const getBDDate = (date?: Date) => {
   const d = date || new Date();
@@ -183,6 +191,11 @@ const getMemberSummary = async (
   const bdNow = getBDDate(now);
   const year = query.year ?? bdNow.getUTCFullYear();
   const month = query.month ?? "All Months";
+
+  const cacheKey = getAnalyticsCacheKey(branchId, "member", year, month);
+  const cached = await cacheService.getCache<TMemberAnalyticsSummary & { availableYears: number[] }>(cacheKey);
+  if (cached) return cached;
+
   const { start, end } = AnalyticsRepository.getYearMonthBounds(year, month);
 
   const [
@@ -220,7 +233,7 @@ const getMemberSummary = async (
   const currentAdmissions = admissionChart[admissionChart.length - 1]?.value ?? 0;
   const previousAdmissions = admissionChart[admissionChart.length - 2]?.value ?? 0;
 
-  return {
+  const result = {
     totalMembers,
     activeMembers,
     newAdmissions,
@@ -230,6 +243,9 @@ const getMemberSummary = async (
     admissionGrowthPercent: percentageChange(currentAdmissions, previousAdmissions),
     availableYears,
   };
+
+  await cacheService.setCache(cacheKey, result, ANALYTICS_CACHE_TTL);
+  return result;
 };
 
 const getFinancialSummary = async (
@@ -242,6 +258,11 @@ const getFinancialSummary = async (
   const bdNow = getBDDate();
   const year = query.year ?? bdNow.getUTCFullYear();
   const month = query.month ?? "All Months";
+
+  const cacheKey = getAnalyticsCacheKey(branchId, "financial", year, month);
+  const cached = await cacheService.getCache<TFinancialAnalyticsSummary>(cacheKey);
+  if (cached) return cached;
+
   const { start, end } = AnalyticsRepository.getYearMonthBounds(year, month);
 
   let data: TFinancialAnalyticsPoint[] = [];
@@ -326,7 +347,7 @@ const getFinancialSummary = async (
 
   const availableYears = await AnalyticsRepository.getAvailableYears(branchId);
 
-  return {
+  const result = {
     month,
     year,
     data,
@@ -340,6 +361,9 @@ const getFinancialSummary = async (
     },
     availableYears,
   };
+
+  await cacheService.setCache(cacheKey, result, ANALYTICS_CACHE_TTL);
+  return result;
 };
 
 const getCostSummary = async (
@@ -352,6 +376,11 @@ const getCostSummary = async (
   const bdNow = getBDDate();
   const year = query.year ?? bdNow.getUTCFullYear();
   const month = query.month ?? "All Months";
+
+  const cacheKey = getAnalyticsCacheKey(branchId, "cost", year, month);
+  const cached = await cacheService.getCache<TCostAnalyticsSummary>(cacheKey);
+  if (cached) return cached;
+
   const { start, end } = AnalyticsRepository.getYearMonthBounds(year, month);
 
   const [rows, availableYears] = await Promise.all([
@@ -373,13 +402,16 @@ const getCostSummary = async (
     }),
   );
 
-  return {
+  const result = {
     totalCost,
     month,
     year,
     categories,
     availableYears,
   };
+
+  await cacheService.setCache(cacheKey, result, ANALYTICS_CACHE_TTL);
+  return result;
 };
 
 const getPackagesSummary = async (
@@ -391,6 +423,10 @@ const getPackagesSummary = async (
 
   const bdNow = getBDDate();
   const year = query.year ?? bdNow.getUTCFullYear();
+
+  const cacheKey = getAnalyticsCacheKey(branchId, "packages", year);
+  const cached = await cacheService.getCache<TPackagesAnalyticsSummary>(cacheKey);
+  if (cached) return cached;
 
   const [joinRows, availableYears, packageDocs, memberPackageRows] = await Promise.all([
     AnalyticsRepository.getMemberJoinChart(branchId, year),
@@ -501,7 +537,7 @@ const getPackagesSummary = async (
     { label: "Weekly", count: totals.Weekly },
   ].filter((item) => item.count > 0);
 
-  return {
+  const result: TPackagesAnalyticsSummary = {
     year,
     chartData,
     stats: [
@@ -518,6 +554,9 @@ const getPackagesSummary = async (
     memberPackageSummary,
     availableYears,
   };
+
+  await cacheService.setCache(cacheKey, result, ANALYTICS_CACHE_TTL);
+  return result;
 };
 
 const getCompareSummary = async (
@@ -532,6 +571,10 @@ const getCompareSummary = async (
   for (let year = query.startYear; year <= query.endYear; year += 1) {
     years.push(year);
   }
+
+  const cacheKey = getAnalyticsCacheKey(branchId, "compare", query.startYear, query.endYear, query.metric);
+  const cached = await cacheService.getCache<{ metric: string; years: number[]; chartData: TCompareChartPoint[]; tableData: TCompareTableRow[]; balance: number }>(cacheKey);
+  if (cached) return cached;
 
   const [incomeRows, expenseRows] = await AnalyticsRepository.getCompareYearTotals(
     branchId,
@@ -577,13 +620,16 @@ const getCompareSummary = async (
 
   const balance = tableData.reduce((sum, row) => sum + row.netIncome, 0);
 
-  return {
+  const result = {
     metric,
     years,
     chartData,
     tableData,
     balance,
   };
+
+  await cacheService.setCache(cacheKey, result, ANALYTICS_CACHE_TTL);
+  return result;
 };
 
 const getOverviewSummary = async (
@@ -593,10 +639,17 @@ const getOverviewSummary = async (
 ): Promise<TOverviewSummary> => {
   await resolveBranchAccess(branchId, actor);
 
+  const branch = await BranchRepository.findById(branchId);
+  const startingBalance = branch?.startingBalance ?? null;
+
   const bdNow = getBDDate();
   const selectedYear = query.year ?? bdNow.getUTCFullYear();
   const selectedMonth = query.month ?? monthNames[bdNow.getUTCMonth()] ?? "January";
   const transactionLimit = query.transactionLimit ?? 20;
+
+  const cacheKey = getAnalyticsCacheKey(branchId, "overview", selectedYear, selectedMonth, transactionLimit);
+  const cached = await cacheService.getCache<TOverviewSummary>(cacheKey);
+  if (cached) return cached;
 
   const selectedRange = AnalyticsRepository.getYearMonthBounds(selectedYear, selectedMonth);
   const monthRange = AnalyticsRepository.getYearMonthBounds(selectedYear, selectedMonth);
@@ -605,32 +658,38 @@ const getOverviewSummary = async (
     selectedTotals,
     monthMembers,
     yearlyProgressRows,
-    monthlyIncomeRows,
-    monthlyExpenseRows,
+    financialData,
     expensePieRows,
     transactionRows,
     availableYears,
     dailyProgressRows,
+    allTimeTotals,
+    previousYearTotals,
   ] = await Promise.all([
     AnalyticsRepository.getIncomeExpenseTotals(branchId, selectedRange.start, selectedRange.end),
     AnalyticsRepository.countNewMembers(branchId, monthRange.start, monthRange.end),
     AnalyticsRepository.getOverviewProgressYearly(branchId, selectedYear),
-    AnalyticsRepository.getFinancialDataByMonth(branchId, selectedYear).then((value) => value[0]),
-    AnalyticsRepository.getFinancialDataByMonth(branchId, selectedYear).then((value) => value[1]),
+    AnalyticsRepository.getFinancialDataByMonth(branchId, selectedYear),
     AnalyticsRepository.getExpenseBreakdown(branchId, monthRange.start, monthRange.end),
     AnalyticsRepository.getOverviewRecentTransactions(branchId, transactionLimit),
     AnalyticsRepository.getAvailableYears(branchId),
     AnalyticsRepository.getFinancialDataByDay(branchId, monthRange.start, monthRange.end).then((value) => value[0]),
+    startingBalance !== null
+      ? AnalyticsRepository.getAllTimeIncomeExpenseTotals(branchId)
+      : Promise.resolve([[], []] as [Array<{ total: number }>, Array<{ total: number }>]),
+    AnalyticsRepository.getIncomeExpenseTotals(
+      branchId,
+      new Date(Date.UTC(selectedYear - 1, 0, 1)),
+      new Date(Date.UTC(selectedYear, 0, 1)),
+    ),
   ]);
+
+  const monthlyIncomeRows = financialData[0];
+  const monthlyExpenseRows = financialData[1];
 
   const totalIncome = selectedTotals[0]?.[0]?.total ?? 0;
   const totalExpense = selectedTotals[1]?.[0]?.total ?? 0;
 
-  const previousYearTotals = await AnalyticsRepository.getIncomeExpenseTotals(
-    branchId,
-    new Date(Date.UTC(selectedYear - 1, 0, 1)),
-    new Date(Date.UTC(selectedYear, 0, 1)),
-  );
   const previousYearIncome = previousYearTotals[0]?.[0]?.total ?? 0;
   const growthPercent = percentageChange(totalIncome, previousYearIncome);
 
@@ -712,7 +771,7 @@ const getOverviewSummary = async (
     merged.push({
       dateValue,
       transaction: {
-        id: `#${String(row.invoiceNo || "PAY")}`,
+        id: `#${String(row.invoiceNo)}`,
         date: formatBDDateTime(dateValue),
         categoryName: String(row.memberName || row.paymentType || "Payment"),
         memberId: row.memberId ? String(row.memberId) : null,
@@ -722,6 +781,8 @@ const getOverviewSummary = async (
           String(row.paymentType || "Other").slice(1),
         payment: String(row.paymentMethod || "Cash"),
         amount: Number(row.billAmount || row.paidTotal || 0),
+        type: "income" as const,
+        description: String(row.memberName || ""),
       },
     });
   });
@@ -733,7 +794,7 @@ const getOverviewSummary = async (
     merged.push({
       dateValue,
       transaction: {
-        id: `#${String(row.invoiceNo || "EXP")}`,
+        id: `#${String(row.invoiceNo)}`,
         date: formatBDDateTime(dateValue),
         categoryName: String(row.categoryTitle || "Expense"),
         memberId: null,
@@ -741,44 +802,73 @@ const getOverviewSummary = async (
         category: "Expense",
         payment: String(row.paymentMethod || "Cash"),
         amount: Number(row.amount || 0),
+        type: "expense" as const,
+        description: String(row.description || ""),
       },
     });
   });
 
   merged.sort((a, b) => b.dateValue.getTime() - a.dateValue.getTime());
 
-  let runningBalance = 0;
+  let transactionRunningBalance = 0;
   const transactions: TOverviewTransaction[] = merged.slice(0, transactionLimit).map((item) => {
     const isExpense = item.transaction.category === "Expense";
-    runningBalance += isExpense ? -item.transaction.amount : item.transaction.amount;
+    transactionRunningBalance += isExpense ? -item.transaction.amount : item.transaction.amount;
 
     return {
       ...item.transaction,
-      balance: runningBalance,
+      balance: transactionRunningBalance,
     };
   });
 
-  return {
+  const allTimeIncome = allTimeTotals[0]?.[0]?.total ?? 0;
+  const allTimeExpense = allTimeTotals[1]?.[0]?.total ?? 0;
+  const branchRunningBalance =
+    startingBalance !== null
+      ? Number((startingBalance + allTimeIncome - allTimeExpense).toFixed(2))
+      : null;
+
+  // Calculate today's net from all today's transactions (before limit slicing)
+  const todayNet = merged.reduce((sum, item) => {
+    return sum + (item.transaction.category === "Expense" ? -item.transaction.amount : item.transaction.amount);
+  }, 0);
+
+  const openingBalanceBeforeToday =
+    branchRunningBalance !== null
+      ? Number((branchRunningBalance - todayNet).toFixed(2))
+      : 0;
+
+  const stats = [
+    {
+      label: "Income",
+      description: "Monthly income of your company",
+      value: Number(totalIncome.toFixed(2)),
+    },
+    {
+      label: "Expense",
+      description: "Monthly expense of your company",
+      value: Number(totalExpense.toFixed(2)),
+    },
+    {
+      label: "New Member",
+      description: "Total new members in this month",
+      value: monthMembers,
+      unit: "/Person",
+    },
+  ];
+
+  if (branchRunningBalance !== null) {
+    stats.push({
+      label: "Balance",
+      description: "Running balance since initialization",
+      value: branchRunningBalance,
+    });
+  }
+
+  const overviewResult: TOverviewSummary = {
     selectedYear,
     selectedMonth,
-    stats: [
-      {
-        label: "Income",
-        description: "Monthly income of your company",
-        value: Number(totalIncome.toFixed(2)),
-      },
-      {
-        label: "Expense",
-        description: "Monthly expense of your company",
-        value: Number(totalExpense.toFixed(2)),
-      },
-      {
-        label: "New Member",
-        description: "Total new members in this month",
-        value: monthMembers,
-        unit: "/Person",
-      },
-    ],
+    stats,
     progress: {
       yearlyData,
       monthlyData,
@@ -796,7 +886,69 @@ const getOverviewSummary = async (
     },
     transactions,
     availableYears,
+    runningBalance: branchRunningBalance,
+    openingBalanceBeforeToday,
   };
+
+  await cacheService.setCache(cacheKey, overviewResult, ANALYTICS_CACHE_TTL);
+  return overviewResult;
+};
+
+const getTodaySummary = async (
+  branchId: string,
+  actor: TAnalyticsActor,
+): Promise<TTodaySummary> => {
+  await resolveBranchAccess(branchId, actor);
+
+  const cacheKey = getAnalyticsCacheKey(branchId, "today");
+  const cached = await cacheService.getCache<TTodaySummary>(cacheKey);
+  if (cached) return cached;
+
+  const branch = await BranchRepository.findById(branchId);
+  const startingBalance = branch?.startingBalance ?? null;
+
+  const [todayTotals, allTimeTotals] = await Promise.all([
+    AnalyticsRepository.getTodayIncomeExpenseSummary(branchId),
+    startingBalance !== null
+      ? AnalyticsRepository.getAllTimeIncomeExpenseTotals(branchId)
+      : Promise.resolve([[], []] as [Array<{ total: number; count: number }>, Array<{ total: number; count: number }>]),
+  ]);
+
+  const todayIncome = todayTotals[0]?.[0]?.total ?? 0;
+  const todayExpense = todayTotals[1]?.[0]?.total ?? 0;
+  const todayIncomeCount = todayTotals[0]?.[0]?.count ?? 0;
+  const todayExpenseCount = todayTotals[1]?.[0]?.count ?? 0;
+
+  const todayNet = todayIncome - todayExpense;
+
+  if (startingBalance !== null) {
+    const allTimeIncome = allTimeTotals[0]?.[0]?.total ?? 0;
+    const allTimeExpense = allTimeTotals[1]?.[0]?.total ?? 0;
+    const branchRunningBalance = Number((startingBalance + allTimeIncome - allTimeExpense).toFixed(2));
+    const openingBalance = Number((branchRunningBalance - todayNet).toFixed(2));
+
+    const result: TTodaySummary = {
+      todayIncome: Number(todayIncome.toFixed(2)),
+      todayExpense: Number(todayExpense.toFixed(2)),
+      todayIncomeCount,
+      todayExpenseCount,
+      openingBalance,
+    };
+
+    await cacheService.setCache(cacheKey, result, ANALYTICS_TODAY_CACHE_TTL);
+    return result;
+  }
+
+  const fallbackResult: TTodaySummary = {
+    todayIncome: Number(todayIncome.toFixed(2)),
+    todayExpense: Number(todayExpense.toFixed(2)),
+    todayIncomeCount,
+    todayExpenseCount,
+    openingBalance: 0,
+  };
+
+  await cacheService.setCache(cacheKey, fallbackResult, ANALYTICS_TODAY_CACHE_TTL);
+  return fallbackResult;
 };
 
 export const AnalyticsService = {
@@ -842,4 +994,5 @@ export const AnalyticsService = {
   getPackagesSummary,
   getCompareSummary,
   getOverviewSummary,
+  getTodaySummary,
 };

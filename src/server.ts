@@ -5,7 +5,9 @@ import app from "./app";
 import config from "./config";
 import { errorLogger, logger } from "./logger/logger";
 import ConnectDB from "./db";
+import { MemberAutoDeactivationService } from "./module/member/member.autoDeactivation";
 import { MemberImportService } from "./module/member/memberImport.service";
+import { SmsService } from "./module/sms/sms.service";
 
 // ============ CREATE SERVER ============
 const server = http.createServer(app);
@@ -28,7 +30,13 @@ async function main() {
     // 4. Resume pending member import batches
     await MemberImportService.resumePendingBatches();
 
-    // 5. Start server
+    // 5. Start SMS automation sweep
+    SmsService.startAutomationScheduler();
+
+    // 6. Start member auto-deactivation sweep
+    MemberAutoDeactivationService.startScheduler();
+
+    // 7. Start server
     const port = Number(config.port) || 5000;
 
     server.listen(port, "0.0.0.0", () => {

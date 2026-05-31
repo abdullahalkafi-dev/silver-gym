@@ -207,6 +207,120 @@ const updateAdmissionFee = catchAsync(async (req: Request, res: Response) => {
   });
 });
 
+const getAutoDeactivationSettings = catchAsync(async (req: Request, res: Response) => {
+  const businessId = req.params.businessId as string;
+  const branchId = req.params.branchId as string;
+
+  const result = await BranchService.getBranchAutoDeactivationSettings(
+    businessId,
+    branchId,
+    resolveActor(req)
+  );
+
+  sendResponse(res, {
+    statusCode: StatusCodes.OK,
+    success: true,
+    message: "Branch auto-deactivation settings retrieved successfully",
+    data: result,
+  });
+});
+
+const updateAutoDeactivationSettings = catchAsync(async (req: Request, res: Response) => {
+  const businessId = req.params.businessId as string;
+  const branchId = req.params.branchId as string;
+  const payload = req.body.data || req.body;
+
+  const result = await BranchService.updateBranchAutoDeactivationSettings(
+    businessId,
+    branchId,
+    resolveActor(req),
+    payload.autoDeactivateAfterUnpaidMonths
+  );
+
+  sendResponse(res, {
+    statusCode: StatusCodes.OK,
+    success: true,
+    message: "Branch auto-deactivation settings updated successfully",
+    data: result,
+  });
+});
+
+const getSMSSettings = catchAsync(async (req: Request, res: Response) => {
+  const businessId = req.params.businessId as string;
+  const branchId = req.params.branchId as string;
+
+  const result = await BranchService.getBranchSMSSettings(
+    businessId,
+    branchId,
+    resolveActor(req)
+  );
+
+  sendResponse(res, {
+    statusCode: StatusCodes.OK,
+    success: true,
+    message: "Branch SMS settings retrieved successfully",
+    data: result,
+  });
+});
+
+const updateSMSSettings = catchAsync(async (req: Request, res: Response) => {
+  const businessId = req.params.businessId as string;
+  const branchId = req.params.branchId as string;
+  const payload = req.body.data || req.body;
+
+  const result = await BranchService.updateBranchSMSSettings(
+    businessId,
+    branchId,
+    resolveActor(req),
+    payload
+  );
+
+  sendResponse(res, {
+    statusCode: StatusCodes.OK,
+    success: true,
+    message: "Branch SMS settings updated successfully",
+    data: result,
+  });
+});
+
+const getStartingBalance = catchAsync(async (req: Request, res: Response) => {
+  const businessId = req.params.businessId as string;
+  const branchId = req.params.branchId as string;
+
+  const result = await BranchService.getBranchStartingBalance(
+    businessId,
+    branchId,
+    resolveActor(req)
+  );
+
+  sendResponse(res, {
+    statusCode: StatusCodes.OK,
+    success: true,
+    message: "Branch starting balance retrieved successfully",
+    data: result,
+  });
+});
+
+const setStartingBalance = catchAsync(async (req: Request, res: Response) => {
+  const businessId = req.params.businessId as string;
+  const branchId = req.params.branchId as string;
+  const payload = req.body.data || req.body;
+
+  const result = await BranchService.setBranchStartingBalance(
+    businessId,
+    branchId,
+    resolveActor(req),
+    payload.startingBalance
+  );
+
+  sendResponse(res, {
+    statusCode: StatusCodes.OK,
+    success: true,
+    message: "Branch starting balance set successfully",
+    data: result,
+  });
+});
+
 export const BranchController = {
   create,
   getAll,
@@ -216,4 +330,10 @@ export const BranchController = {
   updateMonthlyFee,
   getAdmissionFee,
   updateAdmissionFee,
+  getAutoDeactivationSettings,
+  updateAutoDeactivationSettings,
+  getSMSSettings,
+  updateSMSSettings,
+  getStartingBalance,
+  setStartingBalance,
 };

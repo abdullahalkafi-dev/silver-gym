@@ -30,12 +30,19 @@ export type TStaffPermissionSnapshot = {
   canExportAnalytics: boolean;
   canViewSMS: boolean;
   canSendSMS: boolean;
+  canEditSMSTemplate: boolean;
   canViewEmail: boolean;
   canSendEmail: boolean;
   canViewExpenseCategory: boolean;
   canManageExpenseCategory: boolean;
-  canViewExpense: boolean;
-  canAddExpense: boolean;
+	canViewExpense: boolean;
+	canAddExpense: boolean;
+	canViewTransactions: boolean;
+	canViewLockers: boolean;
+	canAddLocker: boolean;
+	canDeleteLocker: boolean;
+	canAssignLocker: boolean;
+	canCollectLockerPayment: boolean;
 };
 
 export type TStaffPermissionKey = keyof TStaffPermissionSnapshot;
@@ -122,12 +129,19 @@ export const getStaffPermissionSnapshot = (role: TRole): TStaffPermissionSnapsho
   canExportAnalytics: role.canExportAnalytics ?? false,
   canViewSMS: role.canViewSMS ?? false,
   canSendSMS: role.canSendSMS ?? false,
+  canEditSMSTemplate: role.canEditSMSTemplate ?? false,
   canViewEmail: role.canViewEmail ?? false,
   canSendEmail: role.canSendEmail ?? false,
   canViewExpenseCategory: role.canViewExpenseCategory ?? false,
   canManageExpenseCategory: role.canManageExpenseCategory ?? false,
   canViewExpense: role.canViewExpense ?? false,
   canAddExpense: role.canAddExpense ?? false,
+  canViewTransactions: role.canViewTransactions ?? false,
+  canViewLockers: role.canViewLockers ?? false,
+  canAddLocker: role.canAddLocker ?? false,
+  canDeleteLocker: role.canDeleteLocker ?? false,
+  canAssignLocker: role.canAssignLocker ?? false,
+  canCollectLockerPayment: role.canCollectLockerPayment ?? false,
 });
 
 export const buildStaffTokenPayload = (

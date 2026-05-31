@@ -28,12 +28,19 @@ export interface TRole {
 	canExportAnalytics?: boolean;
 	canViewSMS?: boolean;
 	canSendSMS?: boolean;
+	canEditSMSTemplate?: boolean;
 	canViewEmail?: boolean;
 	canSendEmail?: boolean;
 	canViewExpenseCategory?: boolean;
 	canManageExpenseCategory?: boolean;
 	canViewExpense?: boolean;
 	canAddExpense?: boolean;
+	canViewTransactions?: boolean;
+	canViewLockers?: boolean;
+	canAddLocker?: boolean;
+	canDeleteLocker?: boolean;
+	canAssignLocker?: boolean;
+	canCollectLockerPayment?: boolean;
 	createdAt?: Date;
 	updatedAt?: Date;
 }

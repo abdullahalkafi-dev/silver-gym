@@ -21,12 +21,14 @@ const permissionsSchema = z.object({
   canExportAnalytics: z.boolean().optional(),
   canViewSMS: z.boolean().optional(),
   canSendSMS: z.boolean().optional(),
+  canEditSMSTemplate: z.boolean().optional(),
   canViewEmail: z.boolean().optional(),
   canSendEmail: z.boolean().optional(),
   canViewExpenseCategory: z.boolean().optional(),
   canManageExpenseCategory: z.boolean().optional(),
   canViewExpense: z.boolean().optional(),
   canAddExpense: z.boolean().optional(),
+  canViewTransactions: z.boolean().optional(),
 });
 
 const updateRolePermissionsDto = z.object({

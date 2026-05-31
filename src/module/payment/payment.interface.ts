@@ -5,6 +5,7 @@ export enum PaymentType {
 	MONTHLY = "monthly",
 	ADMISSION = "admission",
 	REGISTRATION = "registration",
+	LOCKER = "locker",
 	OTHER = "other",
 }
 
@@ -28,7 +29,7 @@ export enum PaymentMethod {
 
 export interface TPayment {
 	branchId: Types.ObjectId;
-	invoiceNo?: string;
+	invoiceNo: string;
 	memberId?: Types.ObjectId;
 	memberName?: string;
 	packageId?: Types.ObjectId;
