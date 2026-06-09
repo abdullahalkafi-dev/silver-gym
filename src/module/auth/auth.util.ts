@@ -5,44 +5,12 @@ import { TStaff } from "module/staff/staff.interface";
 import { Types } from "mongoose";
 
 export type TStaffPermissionSnapshot = {
-  canViewMembers: boolean;
-  canAddMember: boolean;
-  canEditMember: boolean;
-  canDeleteMember: boolean;
-  canViewPackages: boolean;
-  canAddPackage: boolean;
-  canEditPackage: boolean;
-  canDeletePackage: boolean;
-  canViewPayments: boolean;
-  canAddPayment: boolean;
-  canEditPayment: boolean;
-  canDeletePayment: boolean;
-  canRefundPayment: boolean;
-  canViewBilling: boolean;
-  canAddBilling: boolean;
-  canEditBilling: boolean;
-  canDeleteBilling: boolean;
-  canAddMonthlyFee: boolean;
-  canEditMonthlyFee: boolean;
-  canAddAdmissionFee: boolean;
-  canEditAdmissionFee: boolean;
-  canViewAnalytics: boolean;
-  canExportAnalytics: boolean;
-  canViewSMS: boolean;
-  canSendSMS: boolean;
-  canEditSMSTemplate: boolean;
-  canViewEmail: boolean;
-  canSendEmail: boolean;
-  canViewExpenseCategory: boolean;
-  canManageExpenseCategory: boolean;
-	canViewExpense: boolean;
-	canAddExpense: boolean;
-	canViewTransactions: boolean;
-	canViewLockers: boolean;
-	canAddLocker: boolean;
-	canDeleteLocker: boolean;
-	canAssignLocker: boolean;
-	canCollectLockerPayment: boolean;
+  canManageMembers: boolean;
+  canManagePackages: boolean;
+  canManagePayments: boolean;
+  canManageBilling: boolean;
+  canManageExpenses: boolean;
+  canManageLockers: boolean;
 };
 
 export type TStaffPermissionKey = keyof TStaffPermissionSnapshot;
@@ -104,44 +72,12 @@ export const buildTokenPayload = (user: {
 });
 
 export const getStaffPermissionSnapshot = (role: TRole): TStaffPermissionSnapshot => ({
-  canViewMembers: role.canViewMembers ?? false,
-  canAddMember: role.canAddMember ?? false,
-  canEditMember: role.canEditMember ?? false,
-  canDeleteMember: role.canDeleteMember ?? false,
-  canViewPackages: role.canViewPackages ?? false,
-  canAddPackage: role.canAddPackage ?? false,
-  canEditPackage: role.canEditPackage ?? false,
-  canDeletePackage: role.canDeletePackage ?? false,
-  canViewPayments: role.canViewPayments ?? false,
-  canAddPayment: role.canAddPayment ?? false,
-  canEditPayment: role.canEditPayment ?? false,
-  canDeletePayment: role.canDeletePayment ?? false,
-  canRefundPayment: role.canRefundPayment ?? false,
-  canViewBilling: role.canViewBilling ?? false,
-  canAddBilling: role.canAddBilling ?? false,
-  canEditBilling: role.canEditBilling ?? false,
-  canDeleteBilling: role.canDeleteBilling ?? false,
-  canAddMonthlyFee: role.canAddMonthlyFee ?? false,
-  canEditMonthlyFee: role.canEditMonthlyFee ?? false,
-  canAddAdmissionFee: role.canAddAdmissionFee ?? false,
-  canEditAdmissionFee: role.canEditAdmissionFee ?? false,
-  canViewAnalytics: role.canViewAnalytics ?? false,
-  canExportAnalytics: role.canExportAnalytics ?? false,
-  canViewSMS: role.canViewSMS ?? false,
-  canSendSMS: role.canSendSMS ?? false,
-  canEditSMSTemplate: role.canEditSMSTemplate ?? false,
-  canViewEmail: role.canViewEmail ?? false,
-  canSendEmail: role.canSendEmail ?? false,
-  canViewExpenseCategory: role.canViewExpenseCategory ?? false,
-  canManageExpenseCategory: role.canManageExpenseCategory ?? false,
-  canViewExpense: role.canViewExpense ?? false,
-  canAddExpense: role.canAddExpense ?? false,
-  canViewTransactions: role.canViewTransactions ?? false,
-  canViewLockers: role.canViewLockers ?? false,
-  canAddLocker: role.canAddLocker ?? false,
-  canDeleteLocker: role.canDeleteLocker ?? false,
-  canAssignLocker: role.canAssignLocker ?? false,
-  canCollectLockerPayment: role.canCollectLockerPayment ?? false,
+  canManageMembers: role.canManageMembers ?? false,
+  canManagePackages: role.canManagePackages ?? false,
+  canManagePayments: role.canManagePayments ?? false,
+  canManageBilling: role.canManageBilling ?? false,
+  canManageExpenses: role.canManageExpenses ?? false,
+  canManageLockers: role.canManageLockers ?? false,
 });
 
 export const buildStaffTokenPayload = (

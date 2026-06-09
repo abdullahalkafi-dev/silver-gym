@@ -289,6 +289,7 @@ const assignMember = async (
         status: LockerStatus.OCCUPIED,
         assignedMemberId: new Types.ObjectId(payload.memberId),
         assignedMemberName: member.fullName,
+        assignedMemberCode: member.memberId || undefined,
         assignedAt: now,
         nextBillingDate,
         isCustomPrice: isCustom,
@@ -435,11 +436,9 @@ const collectLockerPayment = async (
 
     const lockerUpdate: Partial<TLocker> = {
       nextBillingDate,
+      isCustomPrice: isCustom,
+      customPrice: isCustom ? paymentAmount : 0,
     };
-    if (isCustom) {
-      lockerUpdate.isCustomPrice = true;
-      lockerUpdate.customPrice = paymentAmount;
-    }
 
     const updatedLocker = await LockerRepository.updateById(
       lockerId,
@@ -483,10 +482,11 @@ const unassignMember = async (
 
   const updated = await LockerRepository.updateById(lockerId, {
     status: LockerStatus.AVAILABLE,
-    assignedMemberId: undefined,
-    assignedMemberName: undefined,
-    assignedAt: undefined,
-    nextBillingDate: undefined,
+    assignedMemberId: null,
+    assignedMemberName: null,
+    assignedMemberCode: undefined,
+    assignedAt: null,
+    nextBillingDate: null,
     isCustomPrice: false,
     customPrice: 0,
   });

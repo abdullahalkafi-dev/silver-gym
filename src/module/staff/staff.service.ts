@@ -189,48 +189,12 @@ const getStaffListByBranch = async (branchId: string, options?: any) => {
             roleId: staffObj.roleId._id,
             roleName: staffObj.roleId.roleName,
             permissions: {
-              members: {
-                canView: staffObj.roleId.canViewMembers,
-                canAdd: staffObj.roleId.canAddMember,
-                canEdit: staffObj.roleId.canEditMember,
-                canDelete: staffObj.roleId.canDeleteMember,
-              },
-              packages: {
-                canView: staffObj.roleId.canViewPackages,
-                canAdd: staffObj.roleId.canAddPackage,
-                canEdit: staffObj.roleId.canEditPackage,
-                canDelete: staffObj.roleId.canDeletePackage,
-              },
-              billing: {
-                canView: staffObj.roleId.canViewBilling,
-                canAdd: staffObj.roleId.canAddBilling,
-                canEdit: staffObj.roleId.canEditBilling,
-                canDelete: staffObj.roleId.canDeleteBilling,
-              },
-              fees: {
-                monthly: {
-                  canAdd: staffObj.roleId.canAddMonthlyFee,
-                  canEdit: staffObj.roleId.canEditMonthlyFee,
-                },
-                admission: {
-                  canAdd: staffObj.roleId.canAddAdmissionFee,
-                  canEdit: staffObj.roleId.canEditAdmissionFee,
-                },
-              },
-              analytics: {
-                canView: staffObj.roleId.canViewAnalytics,
-                canExport: staffObj.roleId.canExportAnalytics,
-              },
-              communications: {
-                sms: {
-                  canView: staffObj.roleId.canViewSMS,
-                  canSend: staffObj.roleId.canSendSMS,
-                },
-                email: {
-                  canView: staffObj.roleId.canViewEmail,
-                  canSend: staffObj.roleId.canSendEmail,
-                },
-              },
+              canManageMembers: staffObj.roleId.canManageMembers ?? false,
+              canManagePackages: staffObj.roleId.canManagePackages ?? false,
+              canManagePayments: staffObj.roleId.canManagePayments ?? false,
+              canManageBilling: staffObj.roleId.canManageBilling ?? false,
+              canManageExpenses: staffObj.roleId.canManageExpenses ?? false,
+              canManageLockers: staffObj.roleId.canManageLockers ?? false,
             },
           }
         : null,
@@ -293,48 +257,12 @@ const getStaffById = async (
           roleId: staffObj.roleId._id,
           roleName: staffObj.roleId.roleName,
           permissions: {
-            members: {
-              canView: staffObj.roleId.canViewMembers,
-              canAdd: staffObj.roleId.canAddMember,
-              canEdit: staffObj.roleId.canEditMember,
-              canDelete: staffObj.roleId.canDeleteMember,
-            },
-            packages: {
-              canView: staffObj.roleId.canViewPackages,
-              canAdd: staffObj.roleId.canAddPackage,
-              canEdit: staffObj.roleId.canEditPackage,
-              canDelete: staffObj.roleId.canDeletePackage,
-            },
-            billing: {
-              canView: staffObj.roleId.canViewBilling,
-              canAdd: staffObj.roleId.canAddBilling,
-              canEdit: staffObj.roleId.canEditBilling,
-              canDelete: staffObj.roleId.canDeleteBilling,
-            },
-            fees: {
-              monthly: {
-                canAdd: staffObj.roleId.canAddMonthlyFee,
-                canEdit: staffObj.roleId.canEditMonthlyFee,
-              },
-              admission: {
-                canAdd: staffObj.roleId.canAddAdmissionFee,
-                canEdit: staffObj.roleId.canEditAdmissionFee,
-              },
-            },
-            analytics: {
-              canView: staffObj.roleId.canViewAnalytics,
-              canExport: staffObj.roleId.canExportAnalytics,
-            },
-            communications: {
-              sms: {
-                canView: staffObj.roleId.canViewSMS,
-                canSend: staffObj.roleId.canSendSMS,
-              },
-              email: {
-                canView: staffObj.roleId.canViewEmail,
-                canSend: staffObj.roleId.canSendEmail,
-              },
-            },
+            canManageMembers: staffObj.roleId.canManageMembers ?? false,
+            canManagePackages: staffObj.roleId.canManagePackages ?? false,
+            canManagePayments: staffObj.roleId.canManagePayments ?? false,
+            canManageBilling: staffObj.roleId.canManageBilling ?? false,
+            canManageExpenses: staffObj.roleId.canManageExpenses ?? false,
+            canManageLockers: staffObj.roleId.canManageLockers ?? false,
           },
         }
       : null,

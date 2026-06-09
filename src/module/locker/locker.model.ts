@@ -38,6 +38,11 @@ const lockerSchema = new Schema<TLocker>(
       trim: true,
       default: null,
     },
+    assignedMemberCode: {
+      type: String,
+      trim: true,
+      default: null,
+    },
     assignedAt: {
       type: Date,
       default: null,

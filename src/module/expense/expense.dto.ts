@@ -75,21 +75,25 @@ const updateExpenseDto = z.object({
 });
 
 const queryExpensesDto = z.object({
-  searchTerm: z.string().trim().optional(),
-  subcategoryId: z.string().trim().optional(),
-  categoryId: z.string().trim().optional(),
-  dateFrom: z.coerce.date().optional(),
-  dateTo: z.coerce.date().optional(),
-  paymentMethod: z.enum(paymentMethodValues).optional(),
-  sort: z.string().trim().optional(),
-  page: z
-    .string()
-    .optional()
-    .transform((v) => (v ? Number(v) : 1)),
-  limit: z
-    .string()
-    .optional()
-    .transform((v) => (v ? Number(v) : 20)),
+  query: z
+    .object({
+      searchTerm: z.string().trim().optional(),
+      subcategoryId: z.string().trim().optional(),
+      categoryId: z.string().trim().optional(),
+      dateFrom: z.coerce.date().optional(),
+      dateTo: z.coerce.date().optional(),
+      paymentMethod: z.enum(paymentMethodValues).optional(),
+      sort: z.string().trim().optional(),
+      page: z
+        .string()
+        .optional()
+        .transform((v) => (v ? Number(v) : 1)),
+      limit: z
+        .string()
+        .optional()
+        .transform((v) => (v ? Number(v) : 20)),
+    })
+    .strict(),
 });
 
 export const ExpenseDto = {

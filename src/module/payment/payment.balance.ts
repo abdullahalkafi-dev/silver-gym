@@ -176,13 +176,10 @@ export const reconcileRecurringBillingBalance = ({
       : activeAccrualCutoff;
 
   // NOTE: The accrual cutoff is the START of the current month (Dhaka time).
-  // A member whose nextPaymentDate falls on or after the 1st of this month
-  // is NOT yet overdue (nextPaymentDate >= cutoff). A member whose
-  // nextPaymentDate is the last day of LAST month IS overdue.
-  // The loop adds one month at a time using addMonthsPreservingDay, so a
-  // nextPaymentDate of Jan 31 becomes Feb 28 (day preserved), which is
-  // >= Feb 1 cutoff → overdueMonths = 1. This is correct behavior.
-  while (updatedNextPaymentDate < accrualCutoff && loopGuard < 600) {
+  // A member whose nextPaymentDate is on or before the cutoff IS overdue.
+  // Example: nextPaymentDate = June 1, cutoff = June 1 → overdueMonths = 1.
+  // The loop adds one month at a time using addMonthsPreservingDay.
+  while (updatedNextPaymentDate <= accrualCutoff && loopGuard < 600) {
     overdueMonths += 1;
     updatedNextPaymentDate = addMonthsPreservingDay(updatedNextPaymentDate, 1);
     loopGuard += 1;

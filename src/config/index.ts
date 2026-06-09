@@ -2,19 +2,26 @@ import dotenv from "dotenv";
 import path from "path";
 dotenv.config({ path: path.join(process.cwd(), ".env") });
 
+const requiredEnv = (name: string, value: string | undefined): string => {
+  if (!value) {
+    throw new Error(`Missing required environment variable: ${name}`);
+  }
+  return value;
+};
+
 export default {
   app_name: process.env.APP_NAME,
   app_public_name: process.env.APP_PUBLIC_NAME,
   ip_address: process.env.IP_ADDRESS,
-  database_url: process.env.DATABASE_URL,
+  database_url: requiredEnv("DATABASE_URL", process.env.DATABASE_URL),
   node_env: process.env.NODE_ENV,
   port: process.env.PORT,
-  bcrypt_salt_rounds: process.env.BCRYPT_SALT_ROUNDS,
-  admin_secret_key: process.env.ADMIN_SECRET_KEY,
+  bcrypt_salt_rounds: Number(process.env.BCRYPT_SALT_ROUNDS) || 10,
+  admin_secret_key: requiredEnv("ADMIN_SECRET_KEY", process.env.ADMIN_SECRET_KEY),
   jwt: {
-    jwt_secret: process.env.JWT_SECRET,
+    jwt_secret: requiredEnv("JWT_SECRET", process.env.JWT_SECRET),
     jwt_expire_in: process.env.JWT_EXPIRE_IN,
-    jwt_refresh_secret: process.env.JWT_REFRESH_SECRET,
+    jwt_refresh_secret: requiredEnv("JWT_REFRESH_SECRET", process.env.JWT_REFRESH_SECRET),
     jwt_refresh_expire_in: process.env.JWT_REFRESH_EXPIRE_IN,
     staff_permission_sync_seconds:
       process.env.JWT_STAFF_PERMISSION_SYNC_SECONDS,

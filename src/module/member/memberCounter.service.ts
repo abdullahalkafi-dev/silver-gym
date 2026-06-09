@@ -22,7 +22,11 @@ const getNextSystemMemberId = async (
     },
   );
 
-  return updated!.lastSystemMemberId;
+  if (!updated) {
+    throw new Error(`Failed to increment member counter for branch: ${branchId}`);
+  }
+
+  return updated.lastSystemMemberId;
 };
 
 /**

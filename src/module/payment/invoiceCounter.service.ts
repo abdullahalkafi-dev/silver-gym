@@ -14,7 +14,11 @@ const getNextInvoiceSequence = async (
     },
   );
 
-  return updated!.lastSequence;
+  if (!updated) {
+    throw new Error(`Failed to generate next invoice sequence for type: ${type}`);
+  }
+
+  return updated.lastSequence;
 };
 
 export const InvoiceCounterService = {

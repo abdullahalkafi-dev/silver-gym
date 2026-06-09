@@ -1571,11 +1571,14 @@ const processBatch = async (batchId: string) => {
   }
 };
 
+const processQueueMutex = { locked: false };
+
 const processQueue = async () => {
-  if (queueRunning) {
+  if (queueRunning || processQueueMutex.locked) {
     return;
   }
 
+  processQueueMutex.locked = true;
   queueRunning = true;
 
   try {
@@ -1590,6 +1593,7 @@ const processQueue = async () => {
     }
   } finally {
     queueRunning = false;
+    processQueueMutex.locked = false;
   }
 };
 
@@ -1688,7 +1692,7 @@ const startCSVImport = async (
     if (isXLSXFile(csvFile.originalname)) {
       csvRows = parseXLSXFile(csvFile.path);
     } else {
-      const csvContent = fs.readFileSync(csvFile.path, "utf-8");
+      const csvContent = await fs.promises.readFile(csvFile.path, "utf-8");
       csvRows = parseCSVContent(csvContent);
     }
   } catch (error) {

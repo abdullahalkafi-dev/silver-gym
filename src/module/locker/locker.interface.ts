@@ -15,6 +15,7 @@ export interface TLocker {
   customPrice: number;
   assignedMemberId?: Types.ObjectId;
   assignedMemberName?: string;
+  assignedMemberCode?: string;
   assignedAt?: Date;
   nextBillingDate?: Date;
   isDeleted: boolean;

@@ -234,5 +234,7 @@ memberSchema.index(
     partialFilterExpression: { contact: { $exists: true, $gt: "" } },
   },
 );
+memberSchema.index({ branchId: 1, barcode: 1 }, { unique: true, sparse: true });
+memberSchema.index({ branchId: 1, email: 1 }, { sparse: true });
 
 export const Member = model<TMember>("Member", memberSchema);

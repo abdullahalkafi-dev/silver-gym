@@ -12,13 +12,13 @@ const router = Router();
 /**
  * @route   POST /api/v1/packages/:branchId
  * @desc    Create a new package
- * @access  Private (Owner or Staff with canAddPackage)
+ * @access  Private (Owner or Staff with canManagePackages)
  */
 router.post(
   "/:branchId",
   authLimiter,
   authStaff({ allowOwner: true }),
-  requirePermission("canAddPackage"),
+  requirePermission("canManagePackages"),
   validateRequest(PackageDto.create),
   PackageController.create,
 );
@@ -26,12 +26,11 @@ router.post(
 /**
  * @route   GET /api/v1/packages/:branchId
  * @desc    Get packages list for a branch
- * @access  Private (Owner or Staff with canViewPackages)
+ * @access  Private (Owner or Staff)
  */
 router.get(
   "/:branchId",
   authStaff({ allowOwner: true }),
-  requirePermission("canViewPackages"),
   validateRequest(PackageDto.query),
   PackageController.getAll,
 );
@@ -39,25 +38,24 @@ router.get(
 /**
  * @route   GET /api/v1/packages/:branchId/:packageId
  * @desc    Get a single package by ID
- * @access  Private (Owner or Staff with canViewPackages)
+ * @access  Private (Owner or Staff)
  */
 router.get(
   "/:branchId/:packageId",
   authStaff({ allowOwner: true }),
-  requirePermission("canViewPackages"),
   PackageController.getById,
 );
 
 /**
  * @route   PATCH /api/v1/packages/:branchId/:packageId
  * @desc    Update package details
- * @access  Private (Owner or Staff with canEditPackage)
+ * @access  Private (Owner or Staff with canManagePackages)
  */
 router.patch(
   "/:branchId/:packageId",
   authLimiter,
   authStaff({ allowOwner: true }),
-  requirePermission("canEditPackage"),
+  requirePermission("canManagePackages"),
   validateRequest(PackageDto.update),
   PackageController.update,
 );
@@ -65,26 +63,26 @@ router.patch(
 /**
  * @route   DELETE /api/v1/packages/:branchId/:packageId
  * @desc    Soft delete package
- * @access  Private (Owner or Staff with canDeletePackage)
+ * @access  Private (Owner or Staff with canManagePackages)
  */
 router.delete(
   "/:branchId/:packageId",
   authLimiter,
   authStaff({ allowOwner: true }),
-  requirePermission("canDeletePackage"),
+  requirePermission("canManagePackages"),
   PackageController.remove,
 );
 
 /**
  * @route   PATCH /api/v1/packages/:branchId/:packageId/restore
  * @desc    Restore soft-deleted package
- * @access  Private (Owner or Staff with canEditPackage)
+ * @access  Private (Owner or Staff with canManagePackages)
  */
 router.patch(
   "/:branchId/:packageId/restore",
   authLimiter,
   authStaff({ allowOwner: true }),
-  requirePermission("canEditPackage"),
+  requirePermission("canManagePackages"),
   PackageController.restore,
 );
 

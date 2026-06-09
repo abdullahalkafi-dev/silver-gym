@@ -95,12 +95,6 @@ app.use(
 app.get("/health", healthCheck);
 
 // ============ 11. ROOT ROUTE ============
-app.get("/", (_req: Request, res: Response) => {
-  res.status(StatusCodes.OK).json({
-    success: true,
-    message: "Server is running",
-  });
-});
 
 // ============ 12. MORGAN + ROUTES ============
 app.use(Morgan.successHandler);

@@ -38,6 +38,7 @@ import {
   hasMemberBillingLedgerChanged,
   mergeMemberBillingLedgerMetadata,
   reconcileMemberBillingLedger,
+  resolvePrimaryDueType,
 } from "./member.billingLedger";
 import { TMember } from "./member.interface";
 import { MemberRepository } from "./member.repository";
@@ -127,7 +128,11 @@ const addDuration = (
 
 const addMonths = (date: Date, months: number): Date => {
   const nextDate = new Date(date);
+  const day = nextDate.getDate();
   nextDate.setMonth(nextDate.getMonth() + months);
+  if (nextDate.getDate() !== day) {
+    nextDate.setDate(0);
+  }
   return nextDate;
 };
 
@@ -267,7 +272,7 @@ const reconcileBranchMemberBilling = async (
     {
       branchId: new Types.ObjectId(branchId),
       isActive: true,
-      nextPaymentDate: { $lt: overdueCutoff },
+      nextPaymentDate: { $lte: overdueCutoff },
     },
     {
       select:
@@ -306,12 +311,16 @@ const reconcileBranchMemberBilling = async (
   ).filter((memberId): memberId is string => Boolean(memberId));
 
   if (changedMemberIds.length > 0) {
-    await Promise.all([
-      ...changedMemberIds.map((memberId) =>
-        cacheService.deleteCache(`members:${branchId}:${memberId}`),
-      ),
-      cacheService.invalidateByPattern(`members:${branchId}:list:*`),
-    ]);
+    const BATCH_SIZE = 50;
+    for (let i = 0; i < changedMemberIds.length; i += BATCH_SIZE) {
+      const batch = changedMemberIds.slice(i, i + BATCH_SIZE);
+      await Promise.all(
+        batch.map((memberId) =>
+          cacheService.deleteCache(`members:${branchId}:${memberId}`),
+        ),
+      );
+    }
+    await cacheService.invalidateByPattern(`members:${branchId}:list:*`);
   }
 
   await cacheService.setCache(
@@ -444,17 +453,21 @@ const createMemberAndPayment = async (
     });
 
     return { member, payment };
-  } catch {
+  } catch (error) {
     const failedAt = new Date();
-    await MemberRepository.updateById(String(member._id), {
-      isActive: false,
-      metadata: {
-        ...mergeMemberBillingProfileMetadata(member.metadata, {
-          accrualStoppedAt: failedAt.toISOString(),
-        }),
-        paymentConsistencyIssue: true,
-      },
-    });
+    try {
+      await MemberRepository.updateById(String(member._id), {
+        isActive: false,
+        metadata: {
+          ...mergeMemberBillingProfileMetadata(member.metadata, {
+            accrualStoppedAt: failedAt.toISOString(),
+          }),
+          paymentConsistencyIssue: true,
+        },
+      });
+    } catch {
+      // If marking member as inactive also fails, log but continue
+    }
 
     throw new AppError(
       StatusCodes.INTERNAL_SERVER_ERROR,
@@ -724,7 +737,10 @@ const getMembers = async (
       ? query.isActive === "true"
       : undefined;
   const paymentStatus =
-    query.paymentStatus === "due" || query.paymentStatus === "complete"
+    query.paymentStatus === "due" ||
+    query.paymentStatus === "complete" ||
+    query.paymentStatus === "monthly_due" ||
+    query.paymentStatus === "admission_due"
       ? query.paymentStatus
       : undefined;
 
@@ -752,7 +768,23 @@ const getMembers = async (
     baseFilter.isActive = true;
   }
 
-  if (paymentStatus === "due") {
+  if (paymentStatus === "monthly_due") {
+    baseFilter.currentDueAmount = { $gt: 0 };
+    baseFilter["metadata.billingDueLedger.items"] = {
+      $elemMatch: {
+        type: { $in: ["monthly_due", "monthly_cycle_due"] },
+        remainingAmount: { $gt: 0 },
+      },
+    };
+  } else if (paymentStatus === "admission_due") {
+    baseFilter.currentDueAmount = { $gt: 0 };
+    baseFilter["metadata.billingDueLedger.items"] = {
+      $elemMatch: {
+        type: "admission_due",
+        remainingAmount: { $gt: 0 },
+      },
+    };
+  } else if (paymentStatus === "due") {
     baseFilter.currentDueAmount = { $gt: 0 };
   } else if (paymentStatus === "complete") {
     baseFilter.currentDueAmount = { $lte: 0 };
@@ -799,7 +831,15 @@ const getMembers = async (
   const data = await queryBuilder.modelQuery.lean();
   const meta = await queryBuilder.countTotal();
 
-  const result = { meta, data };
+  const enrichedData = data.map((member) => ({
+    ...member,
+    primaryDueType: resolvePrimaryDueType({
+      currentDueAmount: (member as Record<string, unknown>).currentDueAmount as number | undefined,
+      metadata: (member as Record<string, unknown>).metadata,
+    }),
+  }));
+
+  const result = { meta, data: enrichedData };
   await cacheService.setCache(cacheKey, result, 300);
   return result;
 };
@@ -855,6 +895,30 @@ const updateMember = async (
     }
 
     throw new AppError(StatusCodes.NOT_FOUND, "Member not found");
+  }
+
+  // ─── DUPLICATE CONTACT CHECK ──────────────────────────────────────────────
+  if (
+    typeof payload.contact === "string" &&
+    payload.contact.trim() &&
+    payload.contact !== member.contact
+  ) {
+    const existingMember = await MemberRepository.findOne({
+      branchId: new Types.ObjectId(branchId),
+      contact: payload.contact,
+      _id: { $ne: new Types.ObjectId(memberId) },
+    });
+
+    if (existingMember) {
+      if (photoFile) {
+        await unlinkFile(getPhotoRelativePath(photoFile.path));
+      }
+
+      throw new AppError(
+        StatusCodes.CONFLICT,
+        "This phone number already exists in this branch",
+      );
+    }
   }
 
   const updatePayload: Record<string, unknown> = {

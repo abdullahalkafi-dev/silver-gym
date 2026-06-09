@@ -51,9 +51,7 @@ export class QueryBuilder<T> {
   }
 
   paginate() {
-    const limit: number = this.query?.limit
-      ? Number(this.query.limit)
-      : DEFAULT_LIMIT;
+    const limit: number = Number(this.query?.limit) || DEFAULT_LIMIT;
 
     let skip = 0;
 

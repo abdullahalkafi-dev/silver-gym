@@ -61,11 +61,17 @@ async function gracefulShutdown(signal: string) {
   try {
     // 1. Stop accepting new requests and close existing connections
     await new Promise<void>((resolve) => {
+      const shutdownTimeout = setTimeout(() => {
+        errorLogger.error("Forced shutdown after 30s timeout");
+        process.exit(1);
+      }, 30000);
+
       if (server.closeAllConnections) {
         server.closeAllConnections();
       }
 
       server.close(() => {
+        clearTimeout(shutdownTimeout);
         logger.info("HTTP server closed");
         resolve();
       });

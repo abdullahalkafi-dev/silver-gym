@@ -27,7 +27,6 @@ const globalErrorHandler: ErrorRequestHandler = (err, req, res, _next): any => {
     message = simplifiedError?.message;
     errorSources = simplifiedError?.errorSources;
   } else if (err?.name === "ValidationError") {
-    console.log(err);
     const simplifiedError = handleValidationError(err);
     statusCode = simplifiedError?.statusCode;
     message = simplifiedError?.message;
@@ -96,7 +95,7 @@ const globalErrorHandler: ErrorRequestHandler = (err, req, res, _next): any => {
     success: false,
     message,
     errorSources,
-    err,
+    ...(config.node_env === "development" && { err }),
     stack: config.node_env === "development" ? err?.stack : null,
   });
 };

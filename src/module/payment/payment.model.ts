@@ -155,9 +155,12 @@ paymentSchema.pre("validate", async function () {
     this.packageId &&
     (this.isNew || this.isModified("packageId") || this.isModified("branchId"));
   if (shouldCheckPackage) {
-    const pkg = await Package.findById(this.packageId)
-      .select("_id branchId")
-      .lean();
+    let packageQuery = Package.findById(this.packageId).select("_id branchId");
+    const session = this.$session();
+    if (session) {
+      packageQuery = packageQuery.session(session);
+    }
+    const pkg = await packageQuery.lean();
     if (!pkg) {
       throw new Error("Selected package does not exist.");
     }
@@ -171,5 +174,7 @@ paymentSchema.pre("validate", async function () {
 });
 
 paymentSchema.index({ branchId: 1, memberId: 1, importBatchId: 1 });
+paymentSchema.index({ branchId: 1, status: 1, paymentDate: -1 });
+paymentSchema.index({ branchId: 1, "metadata.entryKind": 1 });
 
 export const Payment = model<TPayment>("Payment", paymentSchema);

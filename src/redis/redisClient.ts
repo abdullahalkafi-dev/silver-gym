@@ -30,7 +30,7 @@ class RedisClient {
           }
 
           // Exponential backoff using configured base delay, max 5 seconds.
-          return Math.min(this.retryCount * this.retryDelay, 5000);
+          return Math.min(Math.pow(2, this.retryCount) * this.retryDelay, 5000);
         },
       },
     });
@@ -128,10 +128,7 @@ class RedisClient {
     expiryInSec: number = 3600,
   ): Promise<void> {
     try {
-      // Only ensure connection if not already connected
-      if (!this.isConnected) {
-        await this.ensureConnected();
-      }
+      await this.ensureConnected();
       await this.clientInstance.setEx(key, expiryInSec, value);
     } catch (err) {
       console.error(`Error setting key ${key}:`, err);
@@ -141,10 +138,7 @@ class RedisClient {
 
   async get(key: string): Promise<string | null> {
     try {
-      // Only ensure connection if not already connected
-      if (!this.isConnected) {
-        await this.ensureConnected();
-      }
+      await this.ensureConnected();
       return await this.clientInstance.get(key);
     } catch (err) {
       console.error(`Error getting key ${key}:`, err);
@@ -154,10 +148,7 @@ class RedisClient {
 
   async delete(key: string): Promise<void> {
     try {
-      // Only ensure connection if not already connected
-      if (!this.isConnected) {
-        await this.ensureConnected();
-      }
+      await this.ensureConnected();
       await this.clientInstance.del(key);
     } catch (err) {
       console.error(`Error deleting key ${key}:`, err);
@@ -167,11 +158,15 @@ class RedisClient {
 
   async keys(pattern: string): Promise<string[]> {
     try {
-      // Only ensure connection if not already connected
-      if (!this.isConnected) {
-        await this.ensureConnected();
-      }
-      return await this.clientInstance.keys(pattern);
+      await this.ensureConnected();
+      const keys: string[] = [];
+      let cursor = "0";
+      do {
+        const result = await this.clientInstance.scan(cursor, { MATCH: pattern, COUNT: 100 });
+        cursor = String(result.cursor);
+        keys.push(...result.keys);
+      } while (cursor !== "0");
+      return keys;
     } catch (err) {
       console.error(`Error getting keys with pattern ${pattern}:`, err);
       throw err;
@@ -186,16 +181,5 @@ class RedisClient {
 }
 
 const redisClient = new RedisClient();
-
-// Graceful shutdown handling
-process.on("SIGINT", async () => {
-  await redisClient.gracefulShutdown();
-  process.exit(0);
-});
-
-process.on("SIGTERM", async () => {
-  await redisClient.gracefulShutdown();
-  process.exit(0);
-});
 
 export default redisClient;

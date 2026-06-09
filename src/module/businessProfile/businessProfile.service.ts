@@ -43,7 +43,7 @@ const createBusinessProfile = async (
   } catch (error) {
     // Cleanup file on validation failure
     if (logoFile) {
-      unlinkFile(getLogoRelativePath(logoFile.path));
+      await unlinkFile(getLogoRelativePath(logoFile.path));
     }
     throw error;
   }
@@ -80,8 +80,12 @@ const createBusinessProfile = async (
       isActive: true,
     });
   } catch (error) {
-    // If branch creation fails, it's not critical but log it
-    console.error("Failed to create default branch:", error);
+    // If branch creation fails, log and throw
+    await unlinkFile(getLogoRelativePath(logoFile?.path || '')).catch(() => {});
+    throw new AppError(
+      StatusCodes.INTERNAL_SERVER_ERROR,
+      "Business profile created but default branch setup failed"
+    );
   }
 
   return businessProfile;
@@ -157,7 +161,7 @@ const updateBusinessProfile = async (
   if (!updatedProfile) {
     // Cleanup new file if update fails
     if (logoFile) {
-      unlinkFile(getLogoRelativePath(logoFile.path));
+      await unlinkFile(getLogoRelativePath(logoFile.path));
     }
     throw new AppError(
       StatusCodes.INTERNAL_SERVER_ERROR,

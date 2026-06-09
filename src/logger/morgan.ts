@@ -10,12 +10,7 @@ morgan.token(
   (_req: Request, res: Response) => res?.locals?.errorMessage || ""
 );
 
-morgan.token(
-  "body",
-  (_req: Request) => {
-    return "";
-  }
-);
+
 
 // ============ FORMAT ============
 

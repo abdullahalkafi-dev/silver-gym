@@ -247,6 +247,8 @@ export const runAutoDeactivationSweep = async (now: Date = new Date()) => {
     logger.error("Member auto-deactivation sweep failed", {
       reason: error instanceof Error ? error.message : String(error),
     });
+  } finally {
+    await SchedulerLockService.releaseLock(LOCK_NAME);
   }
 };
 

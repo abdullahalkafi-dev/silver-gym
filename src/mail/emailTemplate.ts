@@ -1,5 +1,18 @@
 import config from "@config/index";
 import { TResetPassword, TCreateAccount } from "./emailTemplate.type";
+
+const escapeHtml = (str: string): string =>
+  str.replace(/[&<>"']/g, (c) => {
+    const map: Record<string, string> = {
+      '&': '&amp;',
+      '<': '&lt;',
+      '>': '&gt;',
+      '"': '&quot;',
+      "'": '&#39;',
+    };
+    return map[c] || c;
+  });
+
 const themes = {
   "theme-red": {
     primary: "#e74c3c",
@@ -79,7 +92,7 @@ const createAccount = (values: TCreateAccount) => {
                 <table border="0" cellpadding="0" cellspacing="0" width="100%">
                   <tr>
                     <td>
-                      <h2 style="color: ${theme.primary}; margin-top: 0;">Hello, ${values.name}!</h2>
+                      <h2 style="color: ${theme.primary}; margin-top: 0;">Hello, ${escapeHtml(values.name)}!</h2>
                       <p style="color: #333333; margin-bottom: 20px;">Thank you for signing up. Please verify your email address to complete your registration.</p>
 
                       <!-- Verification button -->
@@ -169,7 +182,7 @@ const resetPassword = (values: TResetPassword) => {
                 <table border="0" cellpadding="0" cellspacing="0" width="100%">
                   <tr>
                     <td>
-                      <h2 style="color: ${theme.primary}; margin-top: 0;">Hello, ${values.name}!</h2>
+                      <h2 style="color: ${theme.primary}; margin-top: 0;">Hello, ${escapeHtml(values.name)}!</h2>
                       <p style="color: #333333; margin-bottom: 20px;">We received a request to reset your password. If you didn't make this request, you can safely ignore this email.</p>
                       <p style="color: #333333; margin-bottom: 30px;">To reset your password, use the OTP below:</p>
 

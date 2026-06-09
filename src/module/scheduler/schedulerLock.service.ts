@@ -38,6 +38,15 @@ const tryAcquireLock = async (
   }
 };
 
+const releaseLock = async (name: string): Promise<void> => {
+  try {
+    await SchedulerLock.deleteOne({ name, lockedBy: instanceId });
+  } catch {
+    // Lock release failure is non-critical; it will expire naturally
+  }
+};
+
 export const SchedulerLockService = {
   tryAcquireLock,
+  releaseLock,
 };

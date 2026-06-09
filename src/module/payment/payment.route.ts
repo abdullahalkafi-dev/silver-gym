@@ -12,13 +12,12 @@ const router = Router();
 /**
  * @route   POST /api/v1/payments/:branchId
  * @desc    Create a new payment
- * @access  Private (Owner or Staff with canAddPayment)
+ * @access  Private (Owner or Staff)
  */
 router.post(
   "/:branchId",
   authLimiter,
   authStaff({ allowOwner: true }),
-  requirePermission("canAddPayment"),
   validateRequest(PaymentDto.create),
   PaymentController.create,
 );
@@ -26,12 +25,11 @@ router.post(
 /**
  * @route   GET /api/v1/payments/:branchId
  * @desc    Get payments list for a branch
- * @access  Private (Owner or Staff with canViewPayments)
+ * @access  Private (Owner or Staff)
  */
 router.get(
   "/:branchId",
   authStaff({ allowOwner: true }),
-  requirePermission("canViewPayments"),
   validateRequest(PaymentDto.query),
   PaymentController.getAll,
 );
@@ -39,12 +37,11 @@ router.get(
 /**
  * @route   GET /api/v1/payments/:branchId/collect-bill/:memberId
  * @desc    Get collect bill context for a member
- * @access  Private (Owner or Staff with canAddPayment)
+ * @access  Private (Owner or Staff)
  */
 router.get(
   "/:branchId/collect-bill/:memberId",
   authStaff({ allowOwner: true }),
-  requirePermission("canAddPayment"),
   validateRequest(PaymentDto.collectBillContext),
   PaymentController.getCollectBillContext,
 );
@@ -52,13 +49,12 @@ router.get(
 /**
  * @route   POST /api/v1/payments/:branchId/collect-bill
  * @desc    Collect a member bill and update membership atomically
- * @access  Private (Owner or Staff with canAddPayment)
+ * @access  Private (Owner or Staff)
  */
 router.post(
   "/:branchId/collect-bill",
   authLimiter,
   authStaff({ allowOwner: true }),
-  requirePermission("canAddPayment"),
   validateRequest(PaymentDto.collectBill),
   PaymentController.collectBill,
 );
@@ -66,25 +62,24 @@ router.post(
 /**
  * @route   GET /api/v1/payments/:branchId/:paymentId
  * @desc    Get a single payment by ID
- * @access  Private (Owner or Staff with canViewPayments)
+ * @access  Private (Owner or Staff)
  */
 router.get(
   "/:branchId/:paymentId",
   authStaff({ allowOwner: true }),
-  requirePermission("canViewPayments"),
   PaymentController.getById,
 );
 
 /**
  * @route   PATCH /api/v1/payments/:branchId/:paymentId
  * @desc    Update payment details
- * @access  Private (Owner or Staff with canEditPayment)
+ * @access  Private (Owner or Staff with canManagePayments)
  */
 router.patch(
   "/:branchId/:paymentId",
   authLimiter,
   authStaff({ allowOwner: true }),
-  requirePermission("canEditPayment"),
+  requirePermission("canManagePayments"),
   validateRequest(PaymentDto.update),
   PaymentController.update,
 );
@@ -92,26 +87,26 @@ router.patch(
 /**
  * @route   PATCH /api/v1/payments/:branchId/:paymentId/cancel
  * @desc    Cancel a payment
- * @access  Private (Owner or Staff with canDeletePayment)
+ * @access  Private (Owner or Staff with canManagePayments)
  */
 router.patch(
   "/:branchId/:paymentId/cancel",
   authLimiter,
   authStaff({ allowOwner: true }),
-  requirePermission("canDeletePayment"),
+  requirePermission("canManagePayments"),
   PaymentController.cancel,
 );
 
 /**
  * @route   PATCH /api/v1/payments/:branchId/:paymentId/refund
  * @desc    Refund a payment
- * @access  Private (Owner or Staff with canRefundPayment)
+ * @access  Private (Owner or Staff with canManagePayments)
  */
 router.patch(
   "/:branchId/:paymentId/refund",
   authLimiter,
   authStaff({ allowOwner: true }),
-  requirePermission("canRefundPayment"),
+  requirePermission("canManagePayments"),
   PaymentController.refund,
 );
 

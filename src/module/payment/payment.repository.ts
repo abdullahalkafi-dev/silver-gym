@@ -64,10 +64,11 @@ export const PaymentRepository = {
     return query.lean();
   },
 
-  updateById(id: string, payload: object) {
+  updateById(id: string, payload: object, options: CreateOptions = {}) {
     return Payment.findByIdAndUpdate(id, payload, {
       returnDocument: 'after',
       runValidators: true,
+      session: options.session,
     });
   },
 

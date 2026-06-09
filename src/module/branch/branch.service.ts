@@ -177,75 +177,23 @@ const ensureBranchFeePermission = (
   actor: TBranchAccessActor,
   feeType: TBranchFeeType,
 ) => {
-  if (actor.userId) {
-    return;
-  }
-
-  const permissionMap = {
-    monthly: {
-      currentValue: branch.monthlyFeeAmount,
-      add: "canAddMonthlyFee" as const,
-      edit: "canEditMonthlyFee" as const,
-      label: "monthly fee",
-    },
-    admission: {
-      currentValue: branch.admissionFeeAmount,
-      add: "canAddAdmissionFee" as const,
-      edit: "canEditAdmissionFee" as const,
-      label: "admission fee",
-    },
-  };
-
-  const targetFee = permissionMap[feeType];
-  const isConfigured = typeof targetFee.currentValue === "number";
-  const requiredPermission = isConfigured ? targetFee.edit : targetFee.add;
-  const actionLabel = isConfigured ? "edit" : "add";
-
-  if (actor.staffPermissions?.[requiredPermission]) {
-    return;
-  }
-
-  throw new AppError(
-    StatusCodes.FORBIDDEN,
-    `You do not have permission to ${actionLabel} the branch ${targetFee.label}`,
-  );
+  // All staff can manage branch fees
+  return;
 };
 
 const ensureBranchSMSPermission = (actor: TBranchAccessActor) => {
-  if (actor.userId) {
-    return;
-  }
-
-  if (actor.staffPermissions?.canSendSMS || actor.staffPermissions?.canEditSMSTemplate) {
-    return;
-  }
-
-  throw new AppError(
-    StatusCodes.FORBIDDEN,
-    "You do not have permission to manage branch SMS settings",
-  );
+  // All staff can manage SMS settings
+  return;
 };
 
 const ensureBranchSMSSettingsPermission = (actor: TBranchAccessActor) => {
-  if (actor.userId || actor.staffPermissions?.canSendSMS) {
-    return;
-  }
-
-  throw new AppError(
-    StatusCodes.FORBIDDEN,
-    "You do not have permission to manage branch SMS settings",
-  );
+  // All staff can manage SMS settings
+  return;
 };
 
 const ensureBranchSMSTemplatePermission = (actor: TBranchAccessActor) => {
-  if (actor.userId || actor.staffPermissions?.canEditSMSTemplate) {
-    return;
-  }
-
-  throw new AppError(
-    StatusCodes.FORBIDDEN,
-    "You do not have permission to edit SMS templates",
-  );
+  // All staff can manage SMS templates
+  return;
 };
 
 const canEditDueSMSTemplate = async (actor: TBranchAccessActor) => {

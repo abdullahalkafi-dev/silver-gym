@@ -28,10 +28,21 @@ const findByBranch = async (
   }
 
   if (filters?.search) {
-    const num = parseInt(filters.search, 10);
+    const trimmed = filters.search.trim();
+    const num = parseInt(trimmed, 10);
+    const escaped = trimmed.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const regex = new RegExp(escaped, "i");
+
+    const orConditions: Record<string, unknown>[] = [
+      { assignedMemberName: { $regex: regex } },
+      { assignedMemberCode: { $regex: regex } },
+    ];
+
     if (!isNaN(num)) {
-      query.lockerNumber = num;
+      orConditions.push({ lockerNumber: num });
     }
+
+    query.$or = orConditions;
   }
 
   return Locker.find(query).sort({ lockerNumber: 1 }).lean();

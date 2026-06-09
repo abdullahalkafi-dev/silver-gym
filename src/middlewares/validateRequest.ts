@@ -32,6 +32,12 @@ const validateRequest =
         if ("query" in result && req.query) {
           Object.assign(req.query, result.query);
         }
+        if ("body" in result && req.body) {
+          Object.assign(req.body, result.body);
+        }
+        if ("params" in result && req.params) {
+          Object.assign(req.params, result.params);
+        }
       }
 
       next();

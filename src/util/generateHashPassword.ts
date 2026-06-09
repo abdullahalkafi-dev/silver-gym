@@ -1,7 +1,7 @@
 import config from "@config/index";
 import bcrypt from "bcryptjs";
-const generateHashPassword = (password: string): string => {
-  const saltRounds = Number(config.bcrypt_salt_rounds);
-  return bcrypt.hashSync(password, saltRounds);
+const generateHashPassword = async (password: string): Promise<string> => {
+  const saltRounds = Number(config.bcrypt_salt_rounds) || 10;
+  return bcrypt.hash(password, saltRounds);
 };
 export default generateHashPassword;

@@ -10,7 +10,7 @@ const handleDuplicateError = (err: any): TGenericErrorResponse => {
   const match = err.message.match(/"([^"]*)"/);
 
   // The extracted value will be in the first capturing group
-  const extractedMessage = match && match[1];
+  const extractedMessage = match?.[1] || "Value";
 
   const errorSources: TErrorSources = [
     {
@@ -23,7 +23,7 @@ const handleDuplicateError = (err: any): TGenericErrorResponse => {
 
   return {
     statusCode,
-    message: "Invalid ID",
+    message: "Duplicate value",
     errorSources,
   };
 };

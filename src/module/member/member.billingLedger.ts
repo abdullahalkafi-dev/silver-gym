@@ -166,6 +166,33 @@ export const sumMemberBillingLedger = (items: TMemberBillingLedgerItem[]) => {
   );
 };
 
+export type TPrimaryDueType = "monthly_due" | "admission_due" | "due";
+
+export const resolvePrimaryDueType = (member: {
+  currentDueAmount?: number;
+  metadata?: unknown;
+}): TPrimaryDueType | undefined => {
+  if (typeof member.currentDueAmount !== "number" || member.currentDueAmount <= 0) {
+    return undefined;
+  }
+
+  const ledger = readMemberBillingLedger(member);
+
+  for (const item of ledger.items) {
+    if (item.remainingAmount > 0 && (item.type === "monthly_due" || item.type === "monthly_cycle_due")) {
+      return "monthly_due";
+    }
+  }
+
+  for (const item of ledger.items) {
+    if (item.remainingAmount > 0 && item.type === "admission_due") {
+      return "admission_due";
+    }
+  }
+
+  return "due";
+};
+
 export const createAdmissionDueLedgerItem = (
   amount: number,
   now: Date = new Date(),
@@ -238,7 +265,7 @@ export const readMemberBillingLedger = (
   const rawItems = rawLedger.items.filter(isRecord);
 
   return {
-    version: rawLedger.version === 1 ? 1 : 1,
+    version: 1,
     items: normalizeLedgerItems(
       rawItems.map((item) => ({
         key: String(item.key || ""),

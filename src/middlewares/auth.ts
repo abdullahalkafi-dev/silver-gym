@@ -55,8 +55,6 @@ const auth =
           "You are not authorized",
         );
       }
-      //set user to header
-      req.user = user;
       //check if user is active
       if (user.status !== "active") {
         throw new AppError(
@@ -64,6 +62,9 @@ const auth =
           "You account does not exist or is not active",
         );
       }
+
+      //set user to header
+      req.user = user;
 
       user.isSuperAdmin ? (verifyUser.role = "superAdmin") : (verifyUser.role = "user");
 

@@ -31,11 +31,13 @@ const secureEquals = (a: string, b: string): boolean => {
   const left = Buffer.from(a);
   const right = Buffer.from(b);
 
-  if (left.length !== right.length) {
-    return false;
-  }
+  const maxLen = Math.max(left.length, right.length);
+  const paddedLeft = Buffer.alloc(maxLen);
+  const paddedRight = Buffer.alloc(maxLen);
+  left.copy(paddedLeft);
+  right.copy(paddedRight);
 
-  return crypto.timingSafeEqual(left, right);
+  return crypto.timingSafeEqual(paddedLeft, paddedRight);
 };
 
 export const requireAdminApiKey = (

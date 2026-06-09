@@ -495,7 +495,7 @@ const resetPassword = async (payload: TResetPasswordPayload) => {
     throw new AppError(StatusCodes.UNAUTHORIZED, "Invalid reset token type");
   }
 
-  const hashedPassword = generateHashPassword(payload.newPassword);
+  const hashedPassword = await generateHashPassword(payload.newPassword);
 
   const updatedUser = await UserRepository.updateById(String(decoded._id), {
     password: hashedPassword,
@@ -533,7 +533,7 @@ const changePassword = async (userId: Types.ObjectId, payload: TChangePasswordPa
     throw new AppError(StatusCodes.UNAUTHORIZED, "Incorrect old password");
   }
 
-  const newHashedPassword = generateHashPassword(payload.newPassword);
+  const newHashedPassword = await generateHashPassword(payload.newPassword);
 
   await UserRepository.updateById(userId?.toString(), {
     password: newHashedPassword,

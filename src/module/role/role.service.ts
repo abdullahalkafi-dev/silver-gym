@@ -138,11 +138,6 @@ const updateRolePermissions = async (
   // Only permissions can be updated
   const updatePayload = { ...permissions };
 
-  // Enforce rule: If canAddExpense is true, canViewExpenseCategory must be forced to true
-  if (updatePayload.canAddExpense) {
-    updatePayload.canViewExpenseCategory = true;
-  }
-
   const updatedRole = await RoleRepository.updateById(roleId, updatePayload);
 
   if (!updatedRole) {

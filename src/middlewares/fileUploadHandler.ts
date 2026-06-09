@@ -115,6 +115,7 @@ const fileUploadHandler = async (req: Request, res: Response, next: NextFunction
   const upload = multer({
     storage,
     fileFilter,
+    limits: { fileSize: 100 * 1024 * 1024 },
   }).fields(
     SUPPORTED_FIELDS.map((fieldName) => ({
       name: fieldName,
@@ -151,7 +152,10 @@ const fileUploadHandler = async (req: Request, res: Response, next: NextFunction
           file.filename = path.basename(newFilePath);
         })
       );
-    } catch {
+    } catch (processingError) {
+      await Promise.all(
+        imageFiles.map((f) => fs.promises.unlink(f.path).catch(() => {})),
+      );
       return next(
         new AppError(StatusCodes.INTERNAL_SERVER_ERROR, "Image processing failed"),
       );

@@ -36,6 +36,8 @@ import {
   computePaymentSettlement,
   isSameCalendarDay,
   normalizeMoney,
+  startOfCalendarMonth,
+  startOfNextCalendarMonth,
   toMemberBalanceSnapshot,
 } from "./payment.balance";
 import { resolveShortTermMonthlyTransition } from "./payment.shortTermTransition";
@@ -534,7 +536,9 @@ const resolveCollectBillMember = async (
   branchId: string,
   actor: TAccessActor,
   memberId: string,
+  options: { persistChanges?: boolean } = {},
 ) => {
+  const { persistChanges = true } = options;
   const branch = await resolveBranchAccess(branchId, actor);
 
   const member = await MemberRepository.findOne({
@@ -588,6 +592,17 @@ const resolveCollectBillMember = async (
     };
   }
 
+  if (!persistChanges) {
+    return {
+      branch,
+      member,
+      billing,
+      dueLedger,
+      currentPackageDurationType,
+      shortTermTransition,
+    };
+  }
+
   const updatedMember = await MemberRepository.updateById(
     String(member._id),
     {
@@ -614,6 +629,32 @@ const resolveCollectBillMember = async (
     currentPackageDurationType,
     shortTermTransition,
   };
+};
+
+const resolveNextPaymentDateAfterDueSettlement = (
+  selectedDueItems: TResolvedCollectBillDueSelection[],
+  now: Date,
+): Date => {
+  const monthlyItems = selectedDueItems.filter(
+    (item) => item.ledgerItemType === "monthly_due" || item.ledgerItemType === "monthly_cycle_due",
+  );
+
+  if (monthlyItems.length > 0) {
+    let latestPeriodEnd: Date | undefined;
+    for (const item of monthlyItems) {
+      if (item.periodEnd) {
+        const endDate = new Date(item.periodEnd);
+        if (!latestPeriodEnd || endDate > latestPeriodEnd) {
+          latestPeriodEnd = endDate;
+        }
+      }
+    }
+    if (latestPeriodEnd) {
+      return startOfNextCalendarMonth(latestPeriodEnd);
+    }
+  }
+
+  return startOfCalendarMonth(now);
 };
 
 const resolveCollectBillCycleDetails = async (
@@ -1043,6 +1084,7 @@ const getCollectBillContext = async (
     branchId,
     actor,
     memberId,
+    { persistChanges: false },
   );
 
   const dueBreakdown = dueLedger.items.map(mapDueLedgerItemToResponse);
@@ -1222,7 +1264,9 @@ const collectBill = async (
   );
   const finalBalanceSnapshot = toMemberBalanceSnapshot(finalDueAmount);
   const finalNextPaymentDate =
-    cycleDetails.nextPaymentDate ?? billing.updatedNextPaymentDate ?? member.nextPaymentDate;
+    payload.collectionMode === "due_only"
+      ? resolveNextPaymentDateAfterDueSettlement(selectedDueItems, paymentDate)
+      : cycleDetails.nextPaymentDate ?? billing.updatedNextPaymentDate ?? member.nextPaymentDate;
   const updatedDueLedger = updateCollectBillDueLedger({
     dueLedger,
     resolvedInvoiceLines,

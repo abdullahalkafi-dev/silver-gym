@@ -7,19 +7,19 @@ const parsePositiveNumber = (value: unknown, fallback: number) => {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 };
 
+function setRunValidators() {
+  return { runValidators: true };
+}
+
+mongoose.plugin((schema: any) => {
+  schema.pre("findOneAndUpdate", setRunValidators);
+  schema.pre("updateMany", setRunValidators);
+  schema.pre("updateOne", setRunValidators);
+  schema.pre("update", setRunValidators);
+});
+
 const ConnectDB = async () => {
   mongoose.set("strictQuery", true);
-
-  function setRunValidators() {
-    return { runValidators: true };
-  }
-
-  mongoose.plugin((schema: any) => {
-    schema.pre("findOneAndUpdate", setRunValidators);
-    schema.pre("updateMany", setRunValidators);
-    schema.pre("updateOne", setRunValidators);
-    schema.pre("update", setRunValidators);
-  });
 
   const maxPoolSize = parsePositiveNumber(config.database.max_pool_size, 5);
   const serverSelectionTimeoutMS = parsePositiveNumber(
@@ -41,18 +41,18 @@ const ConnectDB = async () => {
     maxIdleTimeMS,
     bufferCommands: false,
   });
-
-  mongoose.connection.on("connected", () => {
-    logger.info("MongoDB connected successfully");
-  });
-
-  mongoose.connection.on("disconnecting", () => {
-    logger.info("MongoDB disconnecting...");
-  });
-
-  mongoose.connection.on("disconnected", () => {
-    logger.info("MongoDB disconnected");
-  });
 };
+
+mongoose.connection.on("connected", () => {
+  logger.info("MongoDB connected successfully");
+});
+
+mongoose.connection.on("disconnecting", () => {
+  logger.info("MongoDB disconnecting...");
+});
+
+mongoose.connection.on("disconnected", () => {
+  logger.info("MongoDB disconnected");
+});
 
 export default ConnectDB;

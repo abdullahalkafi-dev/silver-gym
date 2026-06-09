@@ -320,17 +320,16 @@ const getExpenses = async (
   const skip = (page - 1) * limit;
   const sort = query.sort ?? "-expenseDate";
 
-  const [result, total] = await Promise.all([
+  const [result, totals] = await Promise.all([
     ExpenseRepository.findMany(filter, { sort, skip, limit }),
-    ExpenseRepository.countDocuments(filter),
+    ExpenseRepository.aggregate([
+      { $match: filter },
+      { $group: { _id: null, total: { $sum: 1 }, totalAmount: { $sum: "$amount" } } },
+    ]),
   ]);
 
-  // Aggregate total amount for current filter
-  const aggregation = await ExpenseRepository.aggregate([
-    { $match: filter },
-    { $group: { _id: null, totalAmount: { $sum: "$amount" } } },
-  ]);
-  const totalAmount: number = aggregation[0]?.totalAmount ?? 0;
+  const total: number = totals[0]?.total ?? 0;
+  const totalAmount: number = totals[0]?.totalAmount ?? 0;
 
   return {
     result,

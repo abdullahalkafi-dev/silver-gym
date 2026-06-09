@@ -243,7 +243,7 @@ const listMembersDto = z.object({
       searchTerm: z.string().trim().optional(),
       isActive: z.enum(["true", "false"]).optional(),
       includeInactive: z.enum(["true"]).optional(),
-      paymentStatus: z.enum(["due", "complete"]).optional(),
+      paymentStatus: z.enum(["due", "complete", "monthly_due", "admission_due"]).optional(),
       billingPlan: z.enum(["custom", "system"]).optional(),
       page: z.string().optional(),
       limit: z.string().optional(),

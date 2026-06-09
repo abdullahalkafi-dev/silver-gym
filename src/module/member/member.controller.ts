@@ -26,7 +26,7 @@ const resolveActor = (req: Request) => {
 
 const create = catchAsync(async (req: Request, res: Response) => {
   const branchId = req.params.branchId as string;
-  const payload = req.body.data || req.body;
+  const payload = req.body.data ?? req.body;
   const photoFile = (req.files as any)?.image?.[0] as Express.Multer.File | undefined;
 
   const result = await MemberService.createMember(
@@ -86,7 +86,7 @@ const getById = catchAsync(async (req: Request, res: Response) => {
 const update = catchAsync(async (req: Request, res: Response) => {
   const branchId = req.params.branchId as string;
   const memberId = req.params.memberId as string;
-  const payload = req.body.data || req.body;
+  const payload = req.body.data ?? req.body;
   const photoFile = (req.files as any)?.image?.[0] as Express.Multer.File | undefined;
 
   const result = await MemberService.updateMember(
@@ -143,7 +143,7 @@ const restore = catchAsync(async (req: Request, res: Response) => {
 
 const startGoogleSheetImport = catchAsync(async (req: Request, res: Response) => {
   const branchId = req.params.branchId as string;
-  const payload = req.body.data || req.body;
+  const payload = req.body.data ?? req.body;
 
   const batch = await MemberImportService.startGoogleSheetImport(
     branchId,

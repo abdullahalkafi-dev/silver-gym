@@ -7,7 +7,7 @@ import path from 'path';
  * Retries up to 3 times with 100ms delays to handle file lock issues
  */
 const unlinkFile = async (file: string): Promise<void> => {
-  const filePath = path.join('uploads', file);
+  const filePath = path.resolve(process.cwd(), 'uploads', file);
   const maxRetries = 3;
   let lastError: Error | null = null;
 

@@ -94,29 +94,12 @@ userSchema.index(
     },
   },
 );
-userSchema.pre("save",async function (_next) {
+
+userSchema.pre("save", async function (_next) {
   if (this.isModified("password") && this.password) {
-    this.password = generateHashPassword(this.password);
+    this.password = await generateHashPassword(this.password);
   }
 });
-
-userSchema.index(
-  { email: 1 },
-  {
-    partialFilterExpression: {
-      email: { $exists: true, $type: "string" },
-    },
-  },
-);
-
-userSchema.index(
-  { phone: 1 },
-  {
-    partialFilterExpression: {
-      phone: { $exists: true, $type: "string" },
-    },
-  },
-);
 
 
 export const User = model<TUser>("User", userSchema);

@@ -17,7 +17,7 @@ export const UserRepository = {
   },
 
   findById(id: string) {
-    return User.findById(id);
+    return User.findById(id).lean();
   },
 
   findOne(filter: object, options: FindOneOptions = {}) {

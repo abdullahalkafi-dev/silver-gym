@@ -1,7 +1,6 @@
 import { Router } from "express";
 
 import authStaff from "@middlewares/authStaff";
-import requirePermission from "@middlewares/requirePermission";
 import validateRequest from "@middlewares/validateRequest";
 import { AnalyticsController } from "./analytics.controller";
 import { AnalyticsDto } from "./analytics.dto";
@@ -11,12 +10,11 @@ const router = Router();
 /**
  * @route   GET /api/v1/analytics/:branchId/member-summary
  * @desc    Get member analytics summary for a branch
- * @access  Private (Owner or Staff with canViewAnalytics)
+ * @access  Private (Owner or Staff)
  */
 router.get(
   "/:branchId/member-summary",
   authStaff({ allowOwner: true }),
-  requirePermission("canViewAnalytics"),
   validateRequest(AnalyticsDto.memberSummary),
   AnalyticsController.getMemberSummary,
 );
@@ -24,12 +22,11 @@ router.get(
 /**
  * @route   GET /api/v1/analytics/:branchId/financial
  * @desc    Get financial analytics for a branch
- * @access  Private (Owner or Staff with canViewAnalytics)
+ * @access  Private (Owner or Staff)
  */
 router.get(
   "/:branchId/financial",
   authStaff({ allowOwner: true }),
-  requirePermission("canViewAnalytics"),
   validateRequest(AnalyticsDto.financial),
   AnalyticsController.getFinancialSummary,
 );
@@ -37,12 +34,11 @@ router.get(
 /**
  * @route   GET /api/v1/analytics/:branchId/cost
  * @desc    Get expense cost breakdown analytics
- * @access  Private (Owner or Staff with canViewAnalytics)
+ * @access  Private (Owner or Staff)
  */
 router.get(
   "/:branchId/cost",
   authStaff({ allowOwner: true }),
-  requirePermission("canViewAnalytics"),
   validateRequest(AnalyticsDto.cost),
   AnalyticsController.getCostSummary,
 );
@@ -50,12 +46,11 @@ router.get(
 /**
  * @route   GET /api/v1/analytics/:branchId/packages
  * @desc    Get package analytics for a branch
- * @access  Private (Owner or Staff with canViewAnalytics)
+ * @access  Private (Owner or Staff)
  */
 router.get(
   "/:branchId/packages",
   authStaff({ allowOwner: true }),
-  requirePermission("canViewAnalytics"),
   validateRequest(AnalyticsDto.packages),
   AnalyticsController.getPackagesSummary,
 );
@@ -63,12 +58,11 @@ router.get(
 /**
  * @route   GET /api/v1/analytics/:branchId/compare
  * @desc    Get multi-year compare analytics
- * @access  Private (Owner or Staff with canViewAnalytics)
+ * @access  Private (Owner or Staff)
  */
 router.get(
   "/:branchId/compare",
   authStaff({ allowOwner: true }),
-  requirePermission("canViewAnalytics"),
   validateRequest(AnalyticsDto.compare),
   AnalyticsController.getCompareSummary,
 );
@@ -76,12 +70,11 @@ router.get(
 /**
  * @route   GET /api/v1/analytics/:branchId/overview
  * @desc    Get overview dashboard analytics data
- * @access  Private (Owner or Staff with canViewAnalytics)
+ * @access  Private (Owner or Staff)
  */
 router.get(
   "/:branchId/overview",
   authStaff({ allowOwner: true }),
-  requirePermission("canViewAnalytics"),
   validateRequest(AnalyticsDto.overview),
   AnalyticsController.getOverviewSummary,
 );
@@ -89,12 +82,11 @@ router.get(
 /**
  * @route   GET /api/v1/analytics/:branchId/today-summary
  * @desc    Get today's income/expense totals and counts for branch cards
- * @access  Private (Owner or Staff with canViewAnalytics)
+ * @access  Private (Owner or Staff)
  */
 router.get(
   "/:branchId/today-summary",
   authStaff({ allowOwner: true }),
-  requirePermission("canViewAnalytics"),
   validateRequest(AnalyticsDto.todaySummary),
   AnalyticsController.getTodaySummary,
 );
