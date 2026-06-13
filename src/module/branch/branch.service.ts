@@ -166,25 +166,25 @@ const ensureBranchFeesConfigured = (
 };
 
 const ensureBranchFeePermission = (
-  branch: TBranchFeeSnapshot,
-  actor: TBranchAccessActor,
-  feeType: TBranchFeeType,
+  _branch: TBranchFeeSnapshot,
+  _actor: TBranchAccessActor,
+  _feeType: TBranchFeeType,
 ) => {
   // All staff can manage branch fees
   return;
 };
 
-const ensureBranchSMSPermission = (actor: TBranchAccessActor) => {
+const ensureBranchSMSPermission = (_actor: TBranchAccessActor) => {
   // All staff can manage SMS settings
   return;
 };
 
-const ensureBranchSMSSettingsPermission = (actor: TBranchAccessActor) => {
+const ensureBranchSMSSettingsPermission = (_actor: TBranchAccessActor) => {
   // All staff can manage SMS settings
   return;
 };
 
-const ensureBranchSMSTemplatePermission = (actor: TBranchAccessActor) => {
+const ensureBranchSMSTemplatePermission = (_actor: TBranchAccessActor) => {
   // All staff can manage SMS templates
   return;
 };

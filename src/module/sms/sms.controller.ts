@@ -39,7 +39,7 @@ const listDueMembers = catchAsync(async (req: Request, res: Response) => {
   const businessId = req.params.businessId as string;
   const branchId = req.params.branchId as string;
   const result = await SmsService.listDueMembers(businessId, branchId, resolveActor(req), {
-    targetDate: req.query.targetDate as Date | undefined,
+    targetDate: req.query.targetDate ? new Date(req.query.targetDate as string) : undefined,
     dueDuration: req.query.dueDuration as
       | "thisMonth"
       | "last2Months"

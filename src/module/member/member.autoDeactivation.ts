@@ -1,8 +1,8 @@
 import { Types } from "mongoose";
 
 import { logger } from "../../logger/logger";
-import cacheService from "../../redis/cacheService";
-import { getDhakaDateString } from "../../util/dhakaTime";
+import cacheService from "../../redis-client/cacheService";
+import { getDhakaDateString } from "../../utils/dhakaTime";
 import {
   normalizeBranchAutoDeactivateAfterUnpaidMonths,
   TBranch,

@@ -1,6 +1,6 @@
 import { StatusCodes } from "http-status-codes";
 import AppError from "../../errors/AppError";
-import cacheService from "../../redis/cacheService";
+import cacheService from "../../redis-client/cacheService";
 import config from "../../config";
 import { logger } from "../../logger/logger";
 import { TSmsBalanceSnapshot } from "./sms.interface";

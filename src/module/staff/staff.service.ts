@@ -10,7 +10,7 @@ import {
   generateStaffUsernameOptions,
   isValidUsername,
 } from "./staff.util";
-import generateHashPassword from "@util/generateHashPassword";
+import generateHashPassword from "@utils/generateHashPassword";
 
 type CreateStaffPayload = Omit<
   TStaff,

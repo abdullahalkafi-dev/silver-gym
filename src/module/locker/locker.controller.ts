@@ -16,7 +16,7 @@ const resolveActor = (req: Request) => {
 
   if (req.staff) {
     return {
-      staff: req.staff,
+      staff: req.staff as unknown as { _id: string; branchId?: string; roleName?: string },
     };
   }
 

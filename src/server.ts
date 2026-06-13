@@ -1,6 +1,6 @@
 import mongoose from "mongoose";
 import http from "http";
-import redisClient from "./redis/redisClient";
+import redisClient from "./redis-client/redisClient";
 import app from "./app";
 import config from "./config";
 import { errorLogger, logger } from "./logger/logger";

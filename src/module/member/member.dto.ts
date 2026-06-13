@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { PaymentMethod, PaymentStatus } from "module/payment/payment.interface";
-import { normalizeBangladeshPhone } from "../../util/bangladeshPhone";
+import { normalizeBangladeshPhone } from "../../utils/bangladeshPhone";
 
 const TRAINING_GOALS = [
   "Yoga",

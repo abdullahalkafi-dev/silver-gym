@@ -2,7 +2,7 @@ import { StatusCodes } from "http-status-codes";
 import { Types } from "mongoose";
 
 import AppError from "../../errors/AppError";
-import cacheService from "../../redis/cacheService";
+import cacheService from "../../redis-client/cacheService";
 import { BranchRepository } from "../branch/branch.repository";
 import { TStaff } from "../staff/staff.interface";
 import {

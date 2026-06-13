@@ -1,6 +1,6 @@
 import { Types } from "mongoose";
 
-import { BD_OFFSET_MS, getDhakaDateString } from "../../util/dhakaTime";
+import { BD_OFFSET_MS, getDhakaDateString } from "../../utils/dhakaTime";
 import { Branch } from "../branch/branch.model";
 import { Expense } from "../expense/expense.model";
 import { PaymentStatus } from "../payment/payment.interface";

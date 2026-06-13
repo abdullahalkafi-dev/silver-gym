@@ -2,7 +2,7 @@ import { Schema, model } from "mongoose";
 
 import { TMember, emergencyContact } from './member.interface';
 import { Package } from "../package/package.model";
-import { normalizeBangladeshPhone } from "../../util/bangladeshPhone";
+import { normalizeBangladeshPhone } from "../../utils/bangladeshPhone";
 
 const TRAINING_GOALS = [
   "Yoga",

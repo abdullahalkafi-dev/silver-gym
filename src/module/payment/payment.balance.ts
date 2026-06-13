@@ -2,7 +2,7 @@ import {
   dhakaStartOfDay,
   dhakaStartOfMonth,
   dhakaStartOfNextMonth,
-} from "../../util/dhakaTime";
+} from "../../utils/dhakaTime";
 
 type TPaymentSettlementInput = {
   subTotal?: number;

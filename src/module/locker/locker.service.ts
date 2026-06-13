@@ -10,7 +10,7 @@ import { MemberRepository } from "../member/member.repository";
 import { PaymentRepository } from "../payment/payment.repository";
 import { PaymentType, PaymentStatus, PaymentMethod } from "../payment/payment.interface";
 import { InvoiceCounterService } from "../payment/invoiceCounter.service";
-import cacheService from "../../redis/cacheService";
+import cacheService from "../../redis-client/cacheService";
 
 type TAccessActor = {
   userId?: Types.ObjectId;
@@ -19,7 +19,7 @@ type TAccessActor = {
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
-const resolveBranchAccess = async (branchId: string, actor: TAccessActor) => {
+const resolveBranchAccess = async (branchId: string, _actor: TAccessActor) => {
   const branch = await BranchRepository.findById(branchId);
   if (!branch) {
     throw new AppError(StatusCodes.NOT_FOUND, "Branch not found");
@@ -125,7 +125,7 @@ const getLockerById = async (branchId: string, lockerId: string) => {
 const updateLocker = async (
   branchId: string,
   lockerId: string,
-  actor: TAccessActor,
+  _actor: TAccessActor,
   payload: { status?: LockerStatus; lockerNumber?: number },
 ) => {
   const locker = await LockerRepository.findById(lockerId);
@@ -175,7 +175,7 @@ const setBranchLockerPrice = async (
   actor: TAccessActor,
   price: number,
 ) => {
-  const branch = await resolveBranchAccess(branchId, actor);
+  await resolveBranchAccess(branchId, actor);
   const updated = await BranchRepository.updateById(branchId, {
     lockerFeeAmount: price,
   });
@@ -189,7 +189,7 @@ const setBranchLockerPrice = async (
 const setCustomLockerPrice = async (
   branchId: string,
   lockerId: string,
-  actor: TAccessActor,
+  _actor: TAccessActor,
   price: number,
 ) => {
   const locker = await LockerRepository.findById(lockerId);
@@ -211,7 +211,7 @@ const setCustomLockerPrice = async (
 
 // ─── Reset To System Price ──────────────────────────────────────────────────
 
-const resetToSystemPrice = async (branchId: string, lockerId: string, actor: TAccessActor) => {
+const resetToSystemPrice = async (branchId: string, lockerId: string, _actor: TAccessActor) => {
   const locker = await LockerRepository.findById(lockerId);
   if (!locker) {
     throw new AppError(StatusCodes.NOT_FOUND, "Locker not found");
@@ -464,7 +464,7 @@ const collectLockerPayment = async (
 const unassignMember = async (
   branchId: string,
   lockerId: string,
-  actor: TAccessActor,
+  _actor: TAccessActor,
 ) => {
   const locker = await LockerRepository.findById(lockerId);
   if (!locker) {
@@ -482,11 +482,11 @@ const unassignMember = async (
 
   const updated = await LockerRepository.updateById(lockerId, {
     status: LockerStatus.AVAILABLE,
-    assignedMemberId: null,
-    assignedMemberName: null,
+    assignedMemberId: undefined,
+    assignedMemberName: undefined,
     assignedMemberCode: undefined,
-    assignedAt: null,
-    nextBillingDate: null,
+    assignedAt: undefined,
+    nextBillingDate: undefined,
     isCustomPrice: false,
     customPrice: 0,
   });
@@ -500,7 +500,7 @@ const unassignMember = async (
 const deleteLocker = async (
   branchId: string,
   lockerId: string,
-  actor: TAccessActor,
+  _actor: TAccessActor,
 ) => {
   const locker = await LockerRepository.findById(lockerId);
   if (!locker) {

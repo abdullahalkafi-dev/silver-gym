@@ -1,7 +1,7 @@
 import { Schema, model } from "mongoose";
 
 import { LoginProvider, TUser } from "./user.interface";
-import generateHashPassword from "util/generateHashPassword";
+import generateHashPassword from "@utils/generateHashPassword";
 
 const userSchema = new Schema<TUser>(
   {

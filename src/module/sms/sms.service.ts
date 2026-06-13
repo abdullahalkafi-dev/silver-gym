@@ -4,13 +4,13 @@ import { Types } from "mongoose";
 import config from "../../config";
 import AppError from "../../errors/AppError";
 import { logger } from "../../logger/logger";
-import { normalizeBangladeshPhone } from "../../util/bangladeshPhone";
+import { normalizeBangladeshPhone } from "../../utils/bangladeshPhone";
 import {
   getDhakaDateString,
   getDhakaDayOfMonth,
   formatEnglishMonth,
   formatEnglishAmount,
-} from "../../util/dhakaTime";
+} from "../../utils/dhakaTime";
 import { normalizeBranchSMSSettings, TBranch } from "../branch/branch.interface";
 import { BranchRepository } from "../branch/branch.repository";
 import { BusinessProfileRepository } from "../businessProfile/businessProfile.repository";

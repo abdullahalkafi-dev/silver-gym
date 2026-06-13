@@ -2,8 +2,8 @@ import { StatusCodes } from "http-status-codes";
 import { Types } from "mongoose";
 
 import AppError from "../../errors/AppError";
-import { BD_OFFSET_MS } from "../../util/dhakaTime";
-import cacheService from "../../redis/cacheService";
+import { BD_OFFSET_MS } from "../../utils/dhakaTime";
+import cacheService from "../../redis-client/cacheService";
 import { BranchRepository } from "../branch/branch.repository";
 import { BusinessProfileRepository } from "../businessProfile/businessProfile.repository";
 import { PackageRepository } from "../package/package.repository";

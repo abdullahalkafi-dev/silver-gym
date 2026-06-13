@@ -142,7 +142,7 @@ const memberImportBatchSchema = new Schema<TMemberImportBatch>(
       default: [],
     },
     csvData: {
-      type: [Schema.Types.Mixed],
+      type: [Schema.Types.Mixed] as unknown as [typeof Schema.Types.Mixed],
       default: [],
     },
     metadata: {

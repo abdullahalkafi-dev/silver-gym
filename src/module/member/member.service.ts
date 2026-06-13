@@ -3,7 +3,7 @@ import mongoose, { Types } from "mongoose";
 
 import { QueryBuilder } from "../../Builder/QueryBuilder";
 import AppError from "../../errors/AppError";
-import cacheService from "../../redis/cacheService";
+import cacheService from "../../redis-client/cacheService";
 import unlinkFile from "../../shared/unlinkFile";
 import { storage } from "../../shared/storage";
 import { BranchRepository } from "../branch/branch.repository";

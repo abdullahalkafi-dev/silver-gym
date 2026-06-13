@@ -6,7 +6,7 @@ import config from "../config";
 import AppError from "../errors/AppError";
 import { verifyJwtToken } from "jwt";
 import { UserRepository } from "module/user/user.repository";
-import cacheService from "../redis/cacheService";
+import cacheService from "../redis-client/cacheService";
 
 const AUTH_CACHE_TTL = 60; // 60 seconds
 

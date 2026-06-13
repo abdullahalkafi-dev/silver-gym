@@ -13,7 +13,7 @@ import {
 import { RoleRepository } from "module/role/role.repository";
 import { StaffRepository } from "module/staff/staff.repository";
 import { UserRepository } from "module/user/user.repository";
-import cacheService from "../redis/cacheService";
+import cacheService from "../redis-client/cacheService";
 
 const AUTH_STAFF_CACHE_TTL = 60; // 60 seconds
 

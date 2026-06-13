@@ -4,7 +4,7 @@ import mongoose, { Types } from "mongoose";
 import { QueryBuilder } from "../../Builder/QueryBuilder";
 import AppError from "../../errors/AppError";
 import { logger } from "../../logger/logger";
-import cacheService from "../../redis/cacheService";
+import cacheService from "../../redis-client/cacheService";
 import { BranchRepository } from "../branch/branch.repository";
 import { BusinessProfileRepository } from "../businessProfile/businessProfile.repository";
 import {

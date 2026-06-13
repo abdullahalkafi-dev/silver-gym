@@ -4,7 +4,7 @@ import multer, { FileFilterCallback } from "multer";
 import path from "path";
 import AppError from "../errors/AppError";
 import sharp from "sharp";
-import generateUploadFileName from "../util/generateUploadFileName";
+import generateUploadFileName from "../utils/generateUploadFileName";
 import { storage } from "../shared/storage";
 
 type UploadField = "image" | "media" | "doc" | "docs" | "csv";

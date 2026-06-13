@@ -19,7 +19,7 @@ import {
   getNormalizedIdentity,
   getOtpChannel,
 } from "./auth.util";
-import generateHashPassword from "util/generateHashPassword";
+import generateHashPassword from "@utils/generateHashPassword";
 
 type TLoginPayload = {
   email?: string;

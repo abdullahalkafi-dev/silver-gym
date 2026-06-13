@@ -8,7 +8,7 @@ import { Types } from "mongoose";
 import config from "../../config";
 import AppError from "../../errors/AppError";
 import { errorLogger, logger } from "../../logger/logger";
-import cacheService from "../../redis/cacheService";
+import cacheService from "../../redis-client/cacheService";
 import { BranchRepository } from "../branch/branch.repository";
 import { BusinessProfileRepository } from "../businessProfile/businessProfile.repository";
 import {
@@ -61,12 +61,6 @@ type TImportMetricsQuery = {
 };
 
 type TRawImportRow = Record<string, unknown>;
-
-type TProcessRowResult = {
-  type: "success" | "failed";
-  warning?: TMemberImportFailureRow;
-  failure?: TMemberImportFailureRow;
-};
 
 type TImportRuntimeConfig = {
   chunkSize: number;
@@ -431,7 +425,7 @@ const batchCheckDBConflicts = async (
   return failures;
 };
 
-const ensureOpeningImportPayment = async ({
+export const ensureOpeningImportPayment = async ({
   branchId,
   batchId,
   source,
@@ -852,7 +846,7 @@ const getDuplicateConflictMessage = (error: unknown): string | null => {
     : `A member already exists with the same ${field}`;
 };
 
-const persistMember = async (
+export const persistMember = async (
   branchObjectId: Types.ObjectId,
   memberData: TMember,
   identifier: TMemberImportIdentifier,
