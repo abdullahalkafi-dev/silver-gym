@@ -77,19 +77,8 @@ app.use(additionalSanitization);
 app.use(performanceMonitor.requestMonitor());
 app.use(apiUsageTracker);
 
-// ============ 9. STATIC FILES (with prefix) ============
-app.use(
-  "/uploads",
-  express.static("uploads", {
-    maxAge: "1d", // ✅ Browser caching
-    etag: true,
-    dotfiles: "deny", // ✅ Block .env, .git etc.
-    setHeaders: (res) => {
-      // Allow images/files to be embedded by frontend on a different local origin.
-      res.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
-    },
-  }),
-);
+// ============ 9. STATIC FILES ============
+// Files are now served from MinIO. No local static serving needed.
 
 // ============ 10. HEALTH CHECK (no auth needed) ============
 app.get("/health", healthCheck);

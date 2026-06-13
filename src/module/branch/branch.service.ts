@@ -11,18 +11,11 @@ import {
 import { BranchRepository } from "./branch.repository";
 import { BusinessProfileRepository } from "../businessProfile/businessProfile.repository";
 import unlinkFile from "../../shared/unlinkFile";
+import { storage } from "../../shared/storage";
 import { RoleService } from "../role/role.service";
 import { RoleRepository } from "../role/role.repository";
 import { TStaff } from "../staff/staff.interface";
 import { logger } from "logger/logger";
-
-/**
- * Extract branch logo filename from file path (relative path)
- */
-const getLogoRelativePath = (fullPath: string): string => {
-  const relativePath = fullPath.replace(/\\/g, "/").split("uploads/")[1];
-  return relativePath || fullPath;
-};
 
 type CreateBranchPayload = Omit<TBranch, "_id" | "createdAt" | "updatedAt">;
 
@@ -67,7 +60,7 @@ const createBranch = async (
   if (!business) {
     // Cleanup uploaded file if not authorized
     if (logoFile) {
-      await unlinkFile(getLogoRelativePath(logoFile.path));
+      await unlinkFile(storage.getObjectKey(logoFile.path));
     }
 
     throw new AppError(
@@ -80,7 +73,7 @@ const createBranch = async (
   const branchData: CreateBranchPayload = {
     businessId: new Types.ObjectId(businessId),
     ...payload,
-    logo: logoFile ? getLogoRelativePath(logoFile.path) : null,
+    logo: logoFile ? storage.getObjectKey(logoFile.path) : null,
   };
 
   // Query 2: Create branch
@@ -89,7 +82,7 @@ const createBranch = async (
   if (!branch) {
     // Cleanup file if branch creation fails
     if (logoFile) {
-      await unlinkFile(getLogoRelativePath(logoFile.path));
+      await unlinkFile(storage.getObjectKey(logoFile.path));
     }
 
     throw new AppError(
@@ -331,7 +324,7 @@ const updateBranch = async (
   if (!branch) {
     // Cleanup file if branch not found or doesn't belong to business
     if (logoFile) {
-      await unlinkFile(getLogoRelativePath(logoFile.path));
+      await unlinkFile(storage.getObjectKey(logoFile.path));
     }
 
     throw new AppError(
@@ -349,7 +342,7 @@ const updateBranch = async (
   if (!business) {
     // Cleanup file if user is not the owner
     if (logoFile) {
-      await unlinkFile(getLogoRelativePath(logoFile.path));
+      await unlinkFile(storage.getObjectKey(logoFile.path));
     }
 
     throw new AppError(
@@ -368,7 +361,7 @@ const updateBranch = async (
   // Prepare update data
   const updateData: Partial<CreateBranchPayload> = {
     ...payload,
-    ...(logoFile && { logo: getLogoRelativePath(logoFile.path) }),
+    ...(logoFile && { logo: storage.getObjectKey(logoFile.path) }),
   };
 
   // Query 3: Update branch
@@ -377,7 +370,7 @@ const updateBranch = async (
   if (!updatedBranch) {
     // Cleanup new file if update fails
     if (logoFile) {
-      await unlinkFile(getLogoRelativePath(logoFile.path));
+      await unlinkFile(storage.getObjectKey(logoFile.path));
     }
 
     throw new AppError(

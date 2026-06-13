@@ -5,6 +5,7 @@ import { QueryBuilder } from "../../Builder/QueryBuilder";
 import AppError from "../../errors/AppError";
 import cacheService from "../../redis/cacheService";
 import unlinkFile from "../../shared/unlinkFile";
+import { storage } from "../../shared/storage";
 import { BranchRepository } from "../branch/branch.repository";
 import { BranchService } from "../branch/branch.service";
 import { BusinessProfileRepository } from "../businessProfile/businessProfile.repository";
@@ -91,11 +92,6 @@ type TAccessActor = {
 
 type TDashboardSummaryQuery = {
   days?: unknown;
-};
-
-const getPhotoRelativePath = (fullPath: string): string => {
-  const relativePath = fullPath.replace(/\\/g, "/").split("uploads/")[1];
-  return relativePath || fullPath;
 };
 
 const addDuration = (
@@ -342,7 +338,7 @@ const resolveBranchAccess = async (
 
   if (!branch) {
     if (photoFile) {
-      await unlinkFile(getPhotoRelativePath(photoFile.path));
+      await unlinkFile(storage.getObjectKey(photoFile.path));
     }
 
     throw new AppError(StatusCodes.NOT_FOUND, "Branch not found");
@@ -356,7 +352,7 @@ const resolveBranchAccess = async (
 
     if (!business) {
       if (photoFile) {
-        await unlinkFile(getPhotoRelativePath(photoFile.path));
+        await unlinkFile(storage.getObjectKey(photoFile.path));
       }
 
       throw new AppError(
@@ -513,7 +509,7 @@ const createMember = async (
 
     if (!packageDoc) {
       if (photoFile) {
-        await unlinkFile(getPhotoRelativePath(photoFile.path));
+        await unlinkFile(storage.getObjectKey(photoFile.path));
       }
 
       throw new AppError(StatusCodes.NOT_FOUND, "Package not found for this branch");
@@ -536,7 +532,7 @@ const createMember = async (
       }
     } catch (error) {
       if (photoFile) {
-        await unlinkFile(getPhotoRelativePath(photoFile.path));
+        await unlinkFile(storage.getObjectKey(photoFile.path));
       }
 
       throw error;
@@ -566,7 +562,7 @@ const createMember = async (
       );
     } catch (error) {
       if (photoFile) {
-        await unlinkFile(getPhotoRelativePath(photoFile.path));
+        await unlinkFile(storage.getObjectKey(photoFile.path));
       }
 
       throw error;
@@ -581,7 +577,7 @@ const createMember = async (
 
     if (resolvedMonthlyFeeAmount == null) {
       if (photoFile) {
-        await unlinkFile(getPhotoRelativePath(photoFile.path));
+        await unlinkFile(storage.getObjectKey(photoFile.path));
       }
 
       throw new AppError(
@@ -671,7 +667,7 @@ const createMember = async (
     currentDueAmount: settlement.dueAmount,
     isActive: true,
     source: payload.source || "app",
-    photo: photoFile ? getPhotoRelativePath(photoFile.path) : undefined,
+    photo: photoFile ? storage.getObjectKey(photoFile.path) : undefined,
     ...(admissionDueLedgerMetadata ? { metadata: admissionDueLedgerMetadata } : {}),
   };
 
@@ -891,7 +887,7 @@ const updateMember = async (
 
   if (!member) {
     if (photoFile) {
-      await unlinkFile(getPhotoRelativePath(photoFile.path));
+      await unlinkFile(storage.getObjectKey(photoFile.path));
     }
 
     throw new AppError(StatusCodes.NOT_FOUND, "Member not found");
@@ -911,7 +907,7 @@ const updateMember = async (
 
     if (existingMember) {
       if (photoFile) {
-        await unlinkFile(getPhotoRelativePath(photoFile.path));
+        await unlinkFile(storage.getObjectKey(photoFile.path));
       }
 
       throw new AppError(
@@ -945,7 +941,7 @@ const updateMember = async (
 
     if (!packageDoc) {
       if (photoFile) {
-        await unlinkFile(getPhotoRelativePath(photoFile.path));
+        await unlinkFile(storage.getObjectKey(photoFile.path));
       }
 
       throw new AppError(StatusCodes.NOT_FOUND, "Package not found for this branch");
@@ -978,7 +974,7 @@ const updateMember = async (
     member.isCustomMonthlyFee !== true
   ) {
     if (photoFile) {
-      await unlinkFile(getPhotoRelativePath(photoFile.path));
+      await unlinkFile(storage.getObjectKey(photoFile.path));
     }
 
     throw new AppError(
@@ -1016,7 +1012,7 @@ const updateMember = async (
 
     if (resolvedMonthlyFeeAmount == null) {
       if (photoFile) {
-        await unlinkFile(getPhotoRelativePath(photoFile.path));
+        await unlinkFile(storage.getObjectKey(photoFile.path));
       }
 
       throw new AppError(
@@ -1114,7 +1110,7 @@ const updateMember = async (
     if (member.photo) {
       await unlinkFile(member.photo);
     }
-    updatePayload.photo = getPhotoRelativePath(photoFile.path);
+    updatePayload.photo = storage.getObjectKey(photoFile.path);
   }
 
   if (
@@ -1132,7 +1128,7 @@ const updateMember = async (
 
   if (!updatedMember) {
     if (photoFile) {
-      await unlinkFile(getPhotoRelativePath(photoFile.path));
+      await unlinkFile(storage.getObjectKey(photoFile.path));
     }
 
     throw new AppError(StatusCodes.INTERNAL_SERVER_ERROR, "Failed to update member");

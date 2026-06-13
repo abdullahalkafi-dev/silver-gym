@@ -1,24 +1,22 @@
 import { Request, Response, NextFunction } from "express";
-import fs from "fs";
 import { StatusCodes } from "http-status-codes";
 import multer, { FileFilterCallback } from "multer";
 import path from "path";
 import AppError from "../errors/AppError";
 import sharp from "sharp";
 import generateUploadFileName from "../util/generateUploadFileName";
+import { storage } from "../shared/storage";
 
 type UploadField = "image" | "media" | "doc" | "docs" | "csv";
 
-const BASE_UPLOAD_DIR = path.join(process.cwd(), "uploads");
-
 const FIELD_CONFIG: Record<
   UploadField,
-  { folder: string; maxCount: number; forcedExtension?: string }
+  { folder: string; maxCount: number; forcedExtension?: string; contentType?: string }
 > = {
   image: { folder: "images", maxCount: 10, forcedExtension: ".tmp" },
   media: { folder: "medias", maxCount: 10 },
-  doc: { folder: "docs", maxCount: 10, forcedExtension: ".pdf" },
-  docs: { folder: "docs", maxCount: 10, forcedExtension: ".pdf" },
+  doc: { folder: "docs", maxCount: 10, forcedExtension: ".pdf", contentType: "application/pdf" },
+  docs: { folder: "docs", maxCount: 10, forcedExtension: ".pdf", contentType: "application/pdf" },
   csv: { folder: "csvs", maxCount: 1 },
 };
 
@@ -49,53 +47,12 @@ const ALLOWED_MIME_MESSAGES: Record<UploadField, string> = {
 
 const SUPPORTED_FIELDS = Object.keys(FIELD_CONFIG) as UploadField[];
 
-const ensureDirExists = async (dirPath: string) => {
-  try {
-    await fs.promises.access(dirPath);
-  } catch {
-    await fs.promises.mkdir(dirPath, { recursive: true });
-  }
-};
-
 const isUploadField = (value: string): value is UploadField => {
   return value in FIELD_CONFIG;
 };
 
 const fileUploadHandler = async (req: Request, res: Response, next: NextFunction) => {
-  await ensureDirExists(BASE_UPLOAD_DIR);
-
-  const storage = multer.diskStorage({
-    destination: async (_req, file, cb) => {
-      if (!isUploadField(file.fieldname)) {
-        cb(new AppError(StatusCodes.BAD_REQUEST, "File is not supported"), "");
-        return;
-      }
-
-      const uploadDir = path.join(BASE_UPLOAD_DIR, FIELD_CONFIG[file.fieldname].folder);
-      await ensureDirExists(uploadDir);
-      cb(null, uploadDir);
-    },
-
-    filename: (req, file, cb) => {
-      if (!isUploadField(file.fieldname)) {
-        cb(new AppError(StatusCodes.BAD_REQUEST, "This file is not supported"), "");
-        return;
-      }
-
-      const extension =
-        FIELD_CONFIG[file.fieldname].forcedExtension ??
-        path.extname(file.originalname).toLowerCase();
-      const useUserId =
-        file.fieldname === "image" && req.url === "/update-profile" && !!req.user?._id;
-
-      const fileName = generateUploadFileName({
-        originalName: file.originalname,
-        userId: useUserId ? String(req.user?._id) : undefined,
-      });
-
-      cb(null, `${fileName}${extension}`);
-    },
-  });
+  const storage_engine = multer.memoryStorage();
 
   const fileFilter = (_req: Request, file: Express.Multer.File, cb: FileFilterCallback) => {
     if (!isUploadField(file.fieldname)) {
@@ -113,7 +70,7 @@ const fileUploadHandler = async (req: Request, res: Response, next: NextFunction
   };
 
   const upload = multer({
-    storage,
+    storage: storage_engine,
     fileFilter,
     limits: { fileSize: 100 * 1024 * 1024 },
   }).fields(
@@ -129,35 +86,62 @@ const fileUploadHandler = async (req: Request, res: Response, next: NextFunction
     }
 
     const uploadedFiles = req.files as Record<string, Express.Multer.File[]> | undefined;
-    const imageFiles = uploadedFiles?.image;
 
-    if (!imageFiles || imageFiles.length === 0) {
+    if (!uploadedFiles) {
       return next();
     }
 
     try {
-      await Promise.all(
-        imageFiles.map(async (file) => {
-          const inputFilePath = file.path;
-          const newFilePath = inputFilePath.replace(/\.tmp$/, ".webp");
+      // Process and upload all files to MinIO
+      for (const fieldName of SUPPORTED_FIELDS) {
+        const files = uploadedFiles[fieldName];
+        if (!files || files.length === 0) continue;
 
-          await sharp(inputFilePath)
-            .resize({ width: 1024 })
-            .webp({ quality: 40, effort: 6, nearLossless: false })
-            .toFile(newFilePath);
+        await Promise.all(
+          files.map(async (file) => {
+            if (!isUploadField(file.fieldname)) return;
 
-          await fs.promises.unlink(inputFilePath);
+            const config = FIELD_CONFIG[file.fieldname];
+            const useUserId =
+              file.fieldname === "image" && req.url === "/update-profile" && !!req.user?._id;
 
-          file.path = newFilePath;
-          file.filename = path.basename(newFilePath);
-        })
-      );
+            const fileName = generateUploadFileName({
+              originalName: file.originalname,
+              userId: useUserId ? String(req.user?._id) : undefined,
+            });
+
+            let uploadBuffer: Buffer;
+            let objectKey: string;
+            let contentType: string;
+
+            if (file.fieldname === "image") {
+              // Compress image with sharp before upload
+              uploadBuffer = await sharp(file.buffer)
+                .resize({ width: 1024 })
+                .webp({ quality: 40, effort: 6, nearLossless: false })
+                .toBuffer();
+
+              objectKey = `${config.folder}/${fileName}.webp`;
+              contentType = "image/webp";
+            } else {
+              uploadBuffer = file.buffer;
+              const extension =
+                config.forcedExtension ?? path.extname(file.originalname).toLowerCase();
+              objectKey = `${config.folder}/${fileName}${extension}`;
+              contentType = config.contentType ?? file.mimetype;
+            }
+
+            await storage.upload(uploadBuffer, objectKey, contentType);
+
+            // Set file.path to the object key so downstream services can use it
+            file.path = objectKey;
+            file.filename = path.basename(objectKey);
+          }),
+        );
+      }
     } catch (processingError) {
-      await Promise.all(
-        imageFiles.map((f) => fs.promises.unlink(f.path).catch(() => {})),
-      );
       return next(
-        new AppError(StatusCodes.INTERNAL_SERVER_ERROR, "Image processing failed"),
+        new AppError(StatusCodes.INTERNAL_SERVER_ERROR, "File processing failed"),
       );
     }
 

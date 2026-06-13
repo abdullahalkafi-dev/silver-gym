@@ -297,10 +297,19 @@ const refreshAccessTokenDto = z.object({
     .strict(),
 });
 
+const googleLoginDto = z.object({
+  body: z
+    .object({
+      credential: z.string().min(1, "Google credential is required"),
+    })
+    .strict(),
+});
+
 export const AuthDto = {
   register: registerDto,
   login: loginDto,
   staffLogin: staffLoginDto,
+  googleLogin: googleLoginDto,
   verifyAccount: verifyAccountDto,
   resendOtp: resendOtpDto,
   forgotPassword: forgotPasswordDto,

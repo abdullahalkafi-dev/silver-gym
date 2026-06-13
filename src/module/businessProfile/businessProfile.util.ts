@@ -2,9 +2,6 @@ import AppError from "errors/AppError";
 import { StatusCodes } from "http-status-codes";
 import sharp from "sharp";
 
-/**
- * File upload validation rules for logo
- */
 const LOGO_VALIDATION = {
   maxSizeBytes: 5 * 1024 * 1024, // 5MB
   allowedMimeTypes: new Set([
@@ -17,15 +14,9 @@ const LOGO_VALIDATION = {
   minHeight: 200,
 };
 
-/**
- * Validate logo file before processing
- * @param file - Express Multer file object
- * @throws AppError if file is invalid
- */
 const validateLogoFile = (file: Express.Multer.File | undefined) => {
   if (!file) return;
 
-  // Check file size
   if (file.size > LOGO_VALIDATION.maxSizeBytes) {
     throw new AppError(
       StatusCodes.BAD_REQUEST,
@@ -33,7 +24,6 @@ const validateLogoFile = (file: Express.Multer.File | undefined) => {
     );
   }
 
-  // Check MIME type
   if (!LOGO_VALIDATION.allowedMimeTypes.has(file.mimetype)) {
     throw new AppError(
       StatusCodes.BAD_REQUEST,
@@ -42,14 +32,9 @@ const validateLogoFile = (file: Express.Multer.File | undefined) => {
   }
 };
 
-/**
- * Validate image dimensions
- * @param filePath - Path to the image file
- * @throws AppError if dimensions are too small
- */
-const validateImageDimensions = async (filePath: string) => {
+const validateImageDimensions = async (buffer: Buffer) => {
   try {
-    const metadata = await sharp(filePath).metadata();
+    const metadata = await sharp(buffer).metadata();
 
     if (
       !metadata.width ||
@@ -71,14 +56,4 @@ const validateImageDimensions = async (filePath: string) => {
   }
 };
 
-/**
- * Extract logo filename from file path (relative path)
- * @param fullPath - Full file path from multer
- */
-const getLogoRelativePath = (fullPath: string): string => {
-  // Given multer stores files in /uploads/images/, return images/filename.webp
-  const relativePath = fullPath.replace(/\\/g, "/").split("uploads/")[1];
-  return relativePath || fullPath;
-};
-
-export { validateLogoFile, validateImageDimensions, getLogoRelativePath };
+export { validateLogoFile, validateImageDimensions };

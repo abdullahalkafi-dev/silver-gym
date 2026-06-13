@@ -5,7 +5,8 @@ import { TBusinessProfile } from "./businessProfile.interface";
 import { BusinessProfileRepository } from "./businessProfile.repository";
 import { BranchRepository } from "../branch/branch.repository";
 import unlinkFile from "../../shared/unlinkFile";
-import { getLogoRelativePath, validateImageDimensions, validateLogoFile } from "./businessProfile.util";
+import { storage } from "../../shared/storage";
+import { validateImageDimensions, validateLogoFile } from "./businessProfile.util";
 
 
 type CreateBusinessProfilePayload = Omit<TBusinessProfile, "_id" | "createdAt" | "updatedAt">;
@@ -26,7 +27,7 @@ const createBusinessProfile = async (
   if (existingProfile) {
     // Cleanup uploaded file if profile already exists
     if (logoFile) {
-      await unlinkFile(getLogoRelativePath(logoFile.path));
+      await unlinkFile(storage.getObjectKey(logoFile.path));
     }
     throw new AppError(
       StatusCodes.CONFLICT,
@@ -38,12 +39,12 @@ const createBusinessProfile = async (
   try {
     validateLogoFile(logoFile);
     if (logoFile) {
-      await validateImageDimensions(logoFile.path);
+      await validateImageDimensions(logoFile.buffer);
     }
   } catch (error) {
     // Cleanup file on validation failure
     if (logoFile) {
-      await unlinkFile(getLogoRelativePath(logoFile.path));
+      await unlinkFile(storage.getObjectKey(logoFile.path));
     }
     throw error;
   }
@@ -52,7 +53,7 @@ const createBusinessProfile = async (
   const profileData: CreateBusinessProfilePayload = {
     userId,
     ...payload,
-    logo: logoFile ? getLogoRelativePath(logoFile.path) : null,
+    logo: logoFile ? storage.getObjectKey(logoFile.path) : null,
   };
 
   // Create business profile
@@ -61,7 +62,7 @@ const createBusinessProfile = async (
   if (!businessProfile) {
     // Cleanup file if profile creation fails
     if (logoFile) {
-      await unlinkFile(getLogoRelativePath(logoFile.path));
+      await unlinkFile(storage.getObjectKey(logoFile.path));
     }
     throw new AppError(
       StatusCodes.INTERNAL_SERVER_ERROR,
@@ -81,7 +82,7 @@ const createBusinessProfile = async (
     });
   } catch (error) {
     // If branch creation fails, log and throw
-    await unlinkFile(getLogoRelativePath(logoFile?.path || '')).catch(() => {});
+    await unlinkFile(storage.getObjectKey(logoFile?.path || '')).catch(() => {});
     throw new AppError(
       StatusCodes.INTERNAL_SERVER_ERROR,
       "Business profile created but default branch setup failed"
@@ -120,7 +121,7 @@ const updateBusinessProfile = async (
   if (!profile) {
     // Cleanup file if profile not found
     if (logoFile) {
-      await unlinkFile(getLogoRelativePath(logoFile.path));
+      await unlinkFile(storage.getObjectKey(logoFile.path));
     }
     throw new AppError(
       StatusCodes.NOT_FOUND,
@@ -132,12 +133,12 @@ const updateBusinessProfile = async (
   try {
     validateLogoFile(logoFile);
     if (logoFile) {
-      await validateImageDimensions(logoFile.path);
+      await validateImageDimensions(logoFile.buffer);
     }
   } catch (error) {
     // Cleanup file on validation failure
     if (logoFile) {
-      await unlinkFile(getLogoRelativePath(logoFile.path));
+      await unlinkFile(storage.getObjectKey(logoFile.path));
     }
     throw error;
   }
@@ -150,7 +151,7 @@ const updateBusinessProfile = async (
   // Prepare update data
   const updateData: Partial<CreateBusinessProfilePayload> = {
     ...payload,
-    ...(logoFile && { logo: getLogoRelativePath(logoFile.path) }),
+    ...(logoFile && { logo: storage.getObjectKey(logoFile.path) }),
   };
 
   const updatedProfile = await BusinessProfileRepository.updateById(
@@ -161,7 +162,7 @@ const updateBusinessProfile = async (
   if (!updatedProfile) {
     // Cleanup new file if update fails
     if (logoFile) {
-      await unlinkFile(getLogoRelativePath(logoFile.path));
+      await unlinkFile(storage.getObjectKey(logoFile.path));
     }
     throw new AppError(
       StatusCodes.INTERNAL_SERVER_ERROR,

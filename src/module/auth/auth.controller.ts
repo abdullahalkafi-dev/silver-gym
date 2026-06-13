@@ -121,10 +121,23 @@ const refreshAccessToken = catchAsync(async (req, res) => {
   });
 });
 
+const googleLogin = catchAsync(async (req, res) => {
+  console.log("[GoogleAuth] POST /auth/google hit");
+  const result = await AuthService.googleLogin(req.body);
+
+  sendResponse(res, {
+    statusCode: StatusCodes.OK,
+    success: true,
+    message: "Google login successful",
+    data: result,
+  });
+});
+
 export const AuthController = {
   register,
   login,
   staffLogin,
+  googleLogin,
   verifyAccount,
   resendOtp,
   forgotPassword,

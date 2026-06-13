@@ -66,12 +66,23 @@ export default {
     private_key: process.env.GOOGLE_PRIVATE_KEY,
     default_range: process.env.GOOGLE_SHEET_DEFAULT_RANGE,
   },
+  google_auth: {
+    client_id: requiredEnv("GOOGLE_CLIENT_ID", process.env.GOOGLE_CLIENT_ID),
+    client_secret: process.env.GOOGLE_CLIENT_SECRET,
+  },
   imports: {
     chunk_size: process.env.IMPORT_CHUNK_SIZE,
     max_preview_rows: process.env.IMPORT_MAX_PREVIEW_ROWS,
     max_failed_rows_data: process.env.IMPORT_MAX_FAILED_ROWS_DATA,
     max_rows_per_batch: process.env.IMPORT_MAX_ROWS_PER_BATCH,
   },
-
-
+  minio: {
+    endpoint: process.env.MINIO_ENDPOINT || "localhost",
+    port: Number(process.env.MINIO_PORT) || 9000,
+    access_key: requiredEnv("MINIO_ACCESS_KEY", process.env.MINIO_ACCESS_KEY),
+    secret_key: requiredEnv("MINIO_SECRET_KEY", process.env.MINIO_SECRET_KEY),
+    bucket: process.env.MINIO_BUCKET || "silvergym",
+    use_ssl: process.env.MINIO_USE_SSL === "true",
+    public_url: requiredEnv("MINIO_PUBLIC_URL", process.env.MINIO_PUBLIC_URL),
+  },
 };

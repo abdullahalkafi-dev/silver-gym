@@ -2,6 +2,7 @@ import { StatusCodes } from "http-status-codes";
 import { Types } from "mongoose";
 import AppError from "../../errors/AppError";
 import unlinkFile from "../../shared/unlinkFile";
+import { storage } from "../../shared/storage";
 import { UserRepository } from "./user.repository";
 
 type UpdateProfilePayload = {
@@ -9,10 +10,6 @@ type UpdateProfilePayload = {
 	lastName?: string;
 	phone?: string;
 	countryCode?: string;
-};
-
-const getUploadRelativePath = (absolutePath: string) => {
-	return absolutePath.replace(/.*uploads[\\/]/, "").replace(/\\/g, "/");
 };
 
 const getMyProfile = async (userId: Types.ObjectId) => {
@@ -34,7 +31,7 @@ const updateProfile = async (
 
 	if (!user) {
 		if (profileFile) {
-			await unlinkFile(getUploadRelativePath(profileFile.path));
+			await unlinkFile(storage.getObjectKey(profileFile.path));
 		}
 		throw new AppError(StatusCodes.NOT_FOUND, "User not found");
 	}
@@ -45,14 +42,14 @@ const updateProfile = async (
 
 	const updatePayload = {
 		...payload,
-		...(profileFile ? { profilePicture: getUploadRelativePath(profileFile.path) } : {}),
+		...(profileFile ? { profilePicture: storage.getObjectKey(profileFile.path) } : {}),
 	};
 
 	const updatedUser = await UserRepository.updateById(String(userId), updatePayload);
 
 	if (!updatedUser) {
 		if (profileFile) {
-			await unlinkFile(getUploadRelativePath(profileFile.path));
+			await unlinkFile(storage.getObjectKey(profileFile.path));
 		}
 		throw new AppError(StatusCodes.INTERNAL_SERVER_ERROR, "Failed to update profile");
 	}

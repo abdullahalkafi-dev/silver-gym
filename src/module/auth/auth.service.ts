@@ -1,6 +1,7 @@
 import bcrypt from "bcryptjs";
 import { StatusCodes } from "http-status-codes";
 import { Types } from "mongoose";
+import { OAuth2Client } from "google-auth-library";
 
 import config from "config";
 import AppError from "errors/AppError";
@@ -87,7 +88,7 @@ const register = async (payload: TUser) => {
   if (verifiedEmailOwner) {
     throw new AppError(
       StatusCodes.CONFLICT,
-      "A verified account already uses this email",
+      "An account with this email already exists. Please sign in with Google instead.",
     );
   }
 
@@ -179,7 +180,7 @@ const login = async (payload: TLoginPayload) => {
   if (!hashedPassword) {
     throw new AppError(
       StatusCodes.UNAUTHORIZED,
-      "Password login is not available for this account",
+      "This account was created with Google. Please use Google Sign-In.",
     );
   }
 
@@ -623,10 +624,160 @@ const refreshAccessToken = async (payload: TRefreshAccessTokenPayload) => {
   };
 };
 
+type TGoogleLoginPayload = {
+  credential: string;
+};
+
+const googleLogin = async (payload: TGoogleLoginPayload) => {
+  const clientId = config.google_auth.client_id;
+  console.log("[GoogleAuth] googleLogin called, credential length:", payload.credential?.length);
+  console.log("[GoogleAuth] clientId:", clientId ? clientId.substring(0, 20) + "..." : "MISSING");
+
+  const oAuth2Client = new OAuth2Client(clientId);
+
+  let ticket;
+  try {
+    ticket = await oAuth2Client.verifyIdToken({
+      idToken: payload.credential,
+      audience: clientId,
+    });
+    console.log("[GoogleAuth] Token verified successfully");
+  } catch (err: any) {
+    console.error("[GoogleAuth] Token verification failed:", err?.message || err);
+    throw new AppError(StatusCodes.UNAUTHORIZED, "Invalid Google token");
+  }
+
+  const payload_google = ticket.getPayload();
+
+  if (!payload_google) {
+    console.error("[GoogleAuth] Token payload is empty");
+    throw new AppError(StatusCodes.UNAUTHORIZED, "Invalid Google token");
+  }
+
+  const {
+    sub: googleId,
+    email,
+    given_name: firstName,
+    family_name: lastName,
+    picture,
+  } = payload_google;
+
+  console.log("[GoogleAuth] Google payload:", { email, googleId, firstName, lastName });
+
+  if (!email || !googleId) {
+    throw new AppError(
+      StatusCodes.BAD_REQUEST,
+      "Google account must have an email",
+    );
+  }
+
+  const normalizedEmail = email.toLowerCase();
+
+  // Find existing user by email or googleId
+  let user = await UserRepository.findOne({
+    $or: [{ email: normalizedEmail }, { googleId }],
+  });
+
+  if (user) {
+    console.log("[GoogleAuth] Existing user found:", String(user._id));
+
+    if (user.status !== "active") {
+      throw new AppError(
+        StatusCodes.UNAUTHORIZED,
+        "Your account does not exist or is not active",
+      );
+    }
+
+    // Update googleId and profilePicture if missing
+    const updates: Partial<TUser> = {};
+    if (!user.googleId) updates.googleId = googleId;
+    if (picture && user.profilePicture !== picture) updates.profilePicture = picture;
+
+    if (Object.keys(updates).length > 0) {
+      await UserRepository.updateById(String(user._id), updates);
+    }
+
+    // Generate tokens
+    const tokenPayload = buildTokenPayload(user);
+
+    const accessToken = createJwtToken(
+      tokenPayload,
+      config.jwt.jwt_secret as string,
+      config.jwt.jwt_expire_in || "7d",
+    );
+
+    const refreshToken = createJwtToken(
+      tokenPayload,
+      (config.jwt.jwt_refresh_secret || config.jwt.jwt_secret) as string,
+      config.jwt.jwt_refresh_expire_in || "30d",
+    );
+
+    const [_, businessProfile] = await Promise.all([
+      UserRepository.updateById(String(user._id), { lastLogin: new Date() }),
+      BusinessProfileRepository.findOne({ userId: user._id }),
+    ]);
+
+    const userObject = user.toObject() as ReturnType<typeof user.toObject> & {
+      password?: string;
+    };
+    const { password: _password, ...sanitizedUser } = userObject;
+
+    console.log("[GoogleAuth] Login success for existing user:", normalizedEmail);
+    return {
+      accessToken,
+      refreshToken,
+      user: sanitizedUser,
+      businessProfile: businessProfile ? { id: businessProfile._id } : null,
+    };
+  }
+
+  // Create new user
+  console.log("[GoogleAuth] Creating new user:", normalizedEmail);
+  const newUser = await UserRepository.create({
+    firstName: firstName || "Google",
+    lastName: lastName || "User",
+    email: normalizedEmail,
+    loginProvider: LoginProvider.GOOGLE,
+    googleId,
+    profilePicture: picture,
+    isEmailVerified: true,
+    isPhoneVerified: false,
+  } as TUser);
+
+  // Generate tokens
+  const tokenPayload = buildTokenPayload(newUser);
+
+  const accessToken = createJwtToken(
+    tokenPayload,
+    config.jwt.jwt_secret as string,
+    config.jwt.jwt_expire_in || "7d",
+  );
+
+  const refreshToken = createJwtToken(
+    tokenPayload,
+    (config.jwt.jwt_refresh_secret || config.jwt.jwt_secret) as string,
+    config.jwt.jwt_refresh_expire_in || "30d",
+  );
+
+  const userObject = newUser.toObject() as ReturnType<typeof newUser.toObject> & {
+    password?: string;
+  };
+  const { password: _password, ...sanitizedUser } = userObject;
+
+  console.log("[GoogleAuth] New user created:", normalizedEmail);
+  return {
+    accessToken,
+    refreshToken,
+    user: sanitizedUser,
+    businessProfile: null,
+  };
+};
+
 export const AuthService = {
   register,
   login,
   staffLogin,
+  googleLogin,
   verifyAccount,
   resendOtp,
   forgotPassword,

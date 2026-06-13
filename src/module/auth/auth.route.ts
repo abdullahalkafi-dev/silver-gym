@@ -128,4 +128,16 @@ router.post(
   AuthController.refreshAccessToken,
 );
 
+/**
+ * @route   POST /api/v1/auth/google
+ * @desc    Login or register with Google OAuth credential
+ * @access  Public
+ */
+router.post(
+  "/google",
+  authLimiter,
+  validateRequest(AuthDto.googleLogin),
+  AuthController.googleLogin,
+);
+
 export const AuthRoutes = router;
