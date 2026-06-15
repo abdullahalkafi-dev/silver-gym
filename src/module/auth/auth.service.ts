@@ -656,7 +656,7 @@ const googleLogin = async (payload: TGoogleLoginPayload) => {
     const userInfoResponse = await fetch(
       `https://www.googleapis.com/oauth2/v3/userinfo?access_token=${tokens.access_token}`
     );
-    userInfo = await userInfoResponse.json();
+    userInfo = await userInfoResponse.json() as typeof userInfo;
   } catch (err: any) {
     console.error("[GoogleAuth] Failed to fetch user info:", err?.message || err);
     throw new AppError(StatusCodes.UNAUTHORIZED, "Failed to fetch Google user info");
