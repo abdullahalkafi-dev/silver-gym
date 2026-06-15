@@ -651,7 +651,7 @@ const googleLogin = async (payload: TGoogleLoginPayload) => {
     throw new AppError(StatusCodes.UNAUTHORIZED, "Failed to get Google access token");
   }
 
-  let userInfo;
+  let userInfo: { sub?: string; email?: string; given_name?: string; family_name?: string; picture?: string };
   try {
     const userInfoResponse = await fetch(
       `https://www.googleapis.com/oauth2/v3/userinfo?access_token=${tokens.access_token}`
