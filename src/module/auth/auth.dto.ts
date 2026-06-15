@@ -300,7 +300,7 @@ const refreshAccessTokenDto = z.object({
 const googleLoginDto = z.object({
   body: z
     .object({
-      credential: z.string().min(1, "Google credential is required"),
+      code: z.string().min(1, "Google authorization code is required"),
     })
     .strict(),
 });

@@ -625,33 +625,41 @@ const refreshAccessToken = async (payload: TRefreshAccessTokenPayload) => {
 };
 
 type TGoogleLoginPayload = {
-  credential: string;
+  code: string;
 };
 
 const googleLogin = async (payload: TGoogleLoginPayload) => {
   const clientId = config.google_auth.client_id;
-  console.log("[GoogleAuth] googleLogin called, credential length:", payload.credential?.length);
-  console.log("[GoogleAuth] clientId:", clientId ? clientId.substring(0, 20) + "..." : "MISSING");
+  const clientSecret = config.google_auth.client_secret;
 
-  const oAuth2Client = new OAuth2Client(clientId);
-
-  let ticket;
-  try {
-    ticket = await oAuth2Client.verifyIdToken({
-      idToken: payload.credential,
-      audience: clientId,
-    });
-    console.log("[GoogleAuth] Token verified successfully");
-  } catch (err: any) {
-    console.error("[GoogleAuth] Token verification failed:", err?.message || err);
-    throw new AppError(StatusCodes.UNAUTHORIZED, "Invalid Google token");
+  if (!clientSecret) {
+    throw new AppError(StatusCodes.INTERNAL_SERVER_ERROR, "Google client secret is not configured");
   }
 
-  const payload_google = ticket.getPayload();
+  const oAuth2Client = new OAuth2Client(clientId, clientSecret, "postmessage");
 
-  if (!payload_google) {
-    console.error("[GoogleAuth] Token payload is empty");
-    throw new AppError(StatusCodes.UNAUTHORIZED, "Invalid Google token");
+  let tokens;
+  try {
+    const tokenResponse = await oAuth2Client.getToken(payload.code);
+    tokens = tokenResponse.tokens;
+  } catch (err: any) {
+    console.error("[GoogleAuth] Token exchange failed:", err?.message || err);
+    throw new AppError(StatusCodes.UNAUTHORIZED, "Invalid Google authorization code");
+  }
+
+  if (!tokens.access_token) {
+    throw new AppError(StatusCodes.UNAUTHORIZED, "Failed to get Google access token");
+  }
+
+  let userInfo;
+  try {
+    const userInfoResponse = await fetch(
+      `https://www.googleapis.com/oauth2/v3/userinfo?access_token=${tokens.access_token}`
+    );
+    userInfo = await userInfoResponse.json();
+  } catch (err: any) {
+    console.error("[GoogleAuth] Failed to fetch user info:", err?.message || err);
+    throw new AppError(StatusCodes.UNAUTHORIZED, "Failed to fetch Google user info");
   }
 
   const {
@@ -660,9 +668,7 @@ const googleLogin = async (payload: TGoogleLoginPayload) => {
     given_name: firstName,
     family_name: lastName,
     picture,
-  } = payload_google;
-
-  console.log("[GoogleAuth] Google payload:", { email, googleId, firstName, lastName });
+  } = userInfo;
 
   if (!email || !googleId) {
     throw new AppError(
@@ -679,8 +685,6 @@ const googleLogin = async (payload: TGoogleLoginPayload) => {
   });
 
   if (user) {
-    console.log("[GoogleAuth] Existing user found:", String(user._id));
-
     if (user.status !== "active") {
       throw new AppError(
         StatusCodes.UNAUTHORIZED,
@@ -720,10 +724,9 @@ const googleLogin = async (payload: TGoogleLoginPayload) => {
     const userObject = user.toObject() as ReturnType<typeof user.toObject> & {
       password?: string;
     };
-    const { password: _password, ...sanitizedUser } = userObject;
+  const { password: _password, ...sanitizedUser } = userObject;
 
-    console.log("[GoogleAuth] Login success for existing user:", normalizedEmail);
-    return {
+  return {
       accessToken,
       refreshToken,
       user: sanitizedUser,
@@ -732,7 +735,6 @@ const googleLogin = async (payload: TGoogleLoginPayload) => {
   }
 
   // Create new user
-  console.log("[GoogleAuth] Creating new user:", normalizedEmail);
   const newUser = await UserRepository.create({
     firstName: firstName || "Google",
     lastName: lastName || "User",
@@ -764,7 +766,6 @@ const googleLogin = async (payload: TGoogleLoginPayload) => {
   };
   const { password: _password, ...sanitizedUser } = userObject;
 
-  console.log("[GoogleAuth] New user created:", normalizedEmail);
   return {
     accessToken,
     refreshToken,

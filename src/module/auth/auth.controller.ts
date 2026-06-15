@@ -122,7 +122,6 @@ const refreshAccessToken = catchAsync(async (req, res) => {
 });
 
 const googleLogin = catchAsync(async (req, res) => {
-  console.log("[GoogleAuth] POST /auth/google hit");
   const result = await AuthService.googleLogin(req.body);
 
   sendResponse(res, {
