@@ -1432,7 +1432,7 @@ const getAllPayments = async (
   if (query.startDate || query.endDate) {
     const paymentDateFilter: Record<string, Date> = {};
     if (query.startDate) paymentDateFilter.$gte = new Date(query.startDate);
-    if (query.endDate) paymentDateFilter.$lte = new Date(query.endDate);
+    if (query.endDate) paymentDateFilter.$lte = new Date(query.endDate + "T23:59:59.999Z");
     normalizedQuery.paymentDate = paymentDateFilter;
     delete normalizedQuery.startDate;
     delete normalizedQuery.endDate;

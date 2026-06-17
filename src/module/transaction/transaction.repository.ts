@@ -73,7 +73,7 @@ export const TransactionRepository = {
       dateFilter.$gte = new Date(filters.startDate);
     }
     if (filters.endDate) {
-      dateFilter.$lte = new Date(filters.endDate);
+      dateFilter.$lte = new Date(filters.endDate + "T23:59:59.999Z");
     }
 
     const paymentMethodFilter = filters.paymentMethod
@@ -288,7 +288,7 @@ export const TransactionRepository = {
       dateFilter.$gte = new Date(filters.startDate);
     }
     if (filters.endDate) {
-      dateFilter.$lte = new Date(filters.endDate);
+      dateFilter.$lte = new Date(filters.endDate + "T23:59:59.999Z");
     }
 
     const paymentMethodFilter = filters.paymentMethod
