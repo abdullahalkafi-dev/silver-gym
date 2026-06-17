@@ -15,6 +15,7 @@ import { storage } from "../../shared/storage";
 import { RoleService } from "../role/role.service";
 import { RoleRepository } from "../role/role.repository";
 import { TStaff } from "../staff/staff.interface";
+import cacheService from "../../redis-client/cacheService";
 import { logger } from "logger/logger";
 
 type CreateBranchPayload = Omit<TBranch, "_id" | "createdAt" | "updatedAt">;
@@ -648,6 +649,8 @@ const setBranchStartingBalance = async (
       "Failed to set branch starting balance",
     );
   }
+
+  await cacheService.invalidateByPattern(`analytics:${branchId}:*`);
 
   return {
     branchId: updatedBranch._id,
