@@ -47,6 +47,12 @@ const create = catchAsync(async (req: Request, res: Response) => {
 const getAll = catchAsync(async (req: Request, res: Response) => {
   const branchId = req.params.branchId as string;
 
+  // Prevent browser/proxy caching — member billing data changes frequently
+  // and stale caches cause incorrect due displays.
+  res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate");
+  res.setHeader("Pragma", "no-cache");
+  res.setHeader("Expires", "0");
+
   const result = await MemberService.getMembers(
     branchId,
     resolveActor(req),

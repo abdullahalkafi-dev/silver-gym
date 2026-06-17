@@ -326,6 +326,23 @@ export const reconcileMemberBillingLedger = (
 ): TMemberBillingLedger => {
   let nextItems = readMemberBillingLedger(member).items;
 
+  // Clean up stale monthly dues for periods already covered by the member's
+  // current nextPaymentDate.  Without this, a monthly_due entry created when
+  // the member had an earlier nextPaymentDate would linger forever even after
+  // the member paid forward and nextPaymentDate advanced past it.
+  if (billing.openingNextPaymentDate) {
+    const nextPayment = new Date(billing.openingNextPaymentDate);
+    nextItems = nextItems.filter((item) => {
+      if (item.type !== "monthly_due" && item.type !== "monthly_cycle_due") {
+        return true;
+      }
+      if (item.periodEnd && new Date(item.periodEnd) <= nextPayment) {
+        return false;
+      }
+      return true;
+    });
+  }
+
   if (nextItems.length === 0 && billing.openingDueAmount > 0) {
     // Legacy fallback: if member has no ledger yet but has a due amount,
     // represent it as a carry_forward so the reconciliation math still works.
