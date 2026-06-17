@@ -714,6 +714,18 @@ const createMember = async (
           "A member with this phone number already exists in this branch.",
         );
       }
+      if (field.includes("barcode")) {
+        throw new AppError(
+          StatusCodes.CONFLICT,
+          "A member with this barcode already exists in this branch.",
+        );
+      }
+      if (field.includes("systemMemberId")) {
+        throw new AppError(
+          StatusCodes.CONFLICT,
+          "Member ID conflict. Please try again.",
+        );
+      }
     }
     throw error;
   }

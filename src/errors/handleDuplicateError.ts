@@ -6,16 +6,28 @@ import { TErrorSources, TGenericErrorResponse } from "../types/error";
 
 
 const handleDuplicateError = (err: any): TGenericErrorResponse => {
-  // Extract value within double quotes using regex
-  const match = err.message.match(/"([^"]*)"/);
+  const indexMatch = err.message?.match(/index:\s*(\S+)/);
+  const indexName = indexMatch?.[1] || "unknown";
 
-  // The extracted value will be in the first capturing group
-  const extractedMessage = match?.[1] || "Value";
+  const match = err.message?.match(/"([^"]*)"/);
+  const extractedMessage = match?.[1];
+
+  let detail = extractedMessage ? `${extractedMessage} is already exists` : "Value already exists";
+
+  if (indexName.includes("contact")) {
+    detail = "A member with this phone number already exists in this branch";
+  } else if (indexName.includes("barcode")) {
+    detail = "A member with this barcode already exists in this branch";
+  } else if (indexName.includes("systemMemberId")) {
+    detail = "Member ID conflict — please try again";
+  } else if (indexName.includes("email")) {
+    detail = "A member with this email already exists in this branch";
+  }
 
   const errorSources: TErrorSources = [
     {
-      path: "",
-      message: `${extractedMessage} is already exists`,
+      path: indexName.replace(/^branchId_1_/, "").replace(/_1$/, ""),
+      message: detail,
     },
   ];
 
