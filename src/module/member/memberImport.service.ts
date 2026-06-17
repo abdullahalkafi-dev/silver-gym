@@ -1,4 +1,3 @@
-import fs from "fs";
 import path from "path";
 import * as XLSX from "xlsx";
 import { google } from "googleapis";
@@ -627,37 +626,6 @@ const normalizePhoneValue = (value: unknown): string | undefined => {
   }
 
   return str || undefined;
-};
-
-const parseXLSXFile = (filePath: string): TRawImportRow[] => {
-  const workbook = XLSX.readFile(filePath);
-  const sheetName = workbook.SheetNames[0];
-  if (!sheetName) return [];
-
-  const sheet = workbook.Sheets[sheetName];
-  if (!sheet) return [];
-
-  // raw: false lets the xlsx library format cells (dates become strings, etc.)
-  const jsonData = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: "", raw: false });
-  if (jsonData.length === 0) return [];
-
-  return jsonData
-    .map((row) => {
-      const normalized: TRawImportRow = {};
-      for (const [key, value] of Object.entries(row)) {
-        const normalizedKey = normalizeKey(String(key));
-        const finalKey = normalizedKey || `column_${Object.keys(normalized).length + 1}`;
-
-        // Fix phone columns: Excel may drop leading zero
-        if (PHONE_COLUMN_NAMES.has(finalKey)) {
-          normalized[finalKey] = normalizePhoneValue(value);
-        } else {
-          normalized[finalKey] = value;
-        }
-      }
-      return normalized;
-    })
-    .filter((row) => Object.values(row).some((value) => toStringValue(value) !== undefined));
 };
 
 const isXLSXFile = (filename: string): boolean => {
@@ -1680,20 +1648,49 @@ const startCSVImport = async (
     );
   }
 
-  // Parse CSV/XLSX file content
+  // Parse CSV/XLSX file content from the in-memory buffer
+  // (fileUploadHandler uses multer.memoryStorage() and uploads to MinIO,
+  //  so csvFile.buffer has the content — csvFile.path is a MinIO object key, not a local path)
   let csvRows: TRawImportRow[];
   try {
     if (isXLSXFile(csvFile.originalname)) {
-      csvRows = parseXLSXFile(csvFile.path);
+      const workbook = XLSX.read(csvFile.buffer, { type: "buffer" });
+      const sheetName = workbook.SheetNames[0];
+      if (!sheetName) {
+        csvRows = [];
+      } else {
+        const sheet = workbook.Sheets[sheetName];
+        if (!sheet) {
+          csvRows = [];
+        } else {
+          const jsonData = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: "", raw: false });
+          if (jsonData.length === 0) {
+            csvRows = [];
+          } else {
+            csvRows = jsonData
+              .map((row) => {
+                const normalized: TRawImportRow = {};
+                for (const [key, value] of Object.entries(row)) {
+                  const normalizedKey = normalizeKey(String(key));
+                  const finalKey = normalizedKey || `column_${Object.keys(normalized).length + 1}`;
+                  if (PHONE_COLUMN_NAMES.has(finalKey)) {
+                    normalized[finalKey] = normalizePhoneValue(value);
+                  } else {
+                    normalized[finalKey] = value;
+                  }
+                }
+                return normalized;
+              })
+              .filter((row) => Object.values(row).some((value) => toStringValue(value) !== undefined));
+          }
+        }
+      }
     } else {
-      const csvContent = await fs.promises.readFile(csvFile.path, "utf-8");
+      const csvContent = csvFile.buffer.toString("utf-8");
       csvRows = parseCSVContent(csvContent);
     }
   } catch (error) {
     throw new AppError(StatusCodes.BAD_REQUEST, "Failed to parse file. Please check the file format.");
-  } finally {
-    // Clean up uploaded file from disk regardless of parse outcome
-    try { fs.unlinkSync(csvFile.path); } catch { /* ignore */ }
   }
 
   if (csvRows.length === 0) {
