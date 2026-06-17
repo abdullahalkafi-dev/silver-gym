@@ -780,7 +780,7 @@ const getOverviewSummary = async (
           String(row.paymentType || "Other").charAt(0).toUpperCase() +
           String(row.paymentType || "Other").slice(1),
         payment: String(row.paymentMethod || "Cash"),
-        amount: Number(row.billAmount || row.paidTotal || 0),
+        amount: Number(row.paidTotal || 0),
         type: "income" as const,
         description: String(row.memberName || ""),
       },

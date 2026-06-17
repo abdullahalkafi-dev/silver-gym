@@ -218,7 +218,7 @@ export const TransactionRepository = {
         paymentMethod:
           PAYMENT_METHOD_LABELS[String(row.paymentMethod || "")] ||
           String(row.paymentMethod || "Other"),
-        amount: Number(row.billAmount || row.paidTotal || 0),
+        amount: Number(row.paidTotal || 0),
       });
     });
 
@@ -320,7 +320,7 @@ export const TransactionRepository = {
                   ...paymentMethodFilter,
                 },
               },
-              { $group: { _id: null, total: { $sum: "$billAmount" } } },
+              { $group: { _id: null, total: { $sum: "$paidTotal" } } },
             ])
           : Promise.resolve([{ total: 0 }]),
         shouldQueryExpense
@@ -433,7 +433,7 @@ export const TransactionRepository = {
         paymentMethod:
           PAYMENT_METHOD_LABELS[String(row.paymentMethod || "")] ||
           String(row.paymentMethod || "Other"),
-        amount: Number(row.billAmount || row.paidTotal || 0),
+        amount: Number(row.paidTotal || 0),
       });
     });
 

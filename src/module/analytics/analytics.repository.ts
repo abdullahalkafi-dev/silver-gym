@@ -150,7 +150,7 @@ export const AnalyticsRepository = {
         {
           $group: {
             _id: { month: { $month: { $add: ["$paymentDate", BD_OFFSET_MS] } } },
-            income: { $sum: { $ifNull: ["$billAmount", 0] } },
+            income: { $sum: { $ifNull: ["$paidTotal", 0] } },
           },
         },
       ]),
@@ -185,7 +185,7 @@ export const AnalyticsRepository = {
         {
           $group: {
             _id: { day: { $dayOfMonth: { $add: ["$paymentDate", BD_OFFSET_MS] } } },
-            income: { $sum: { $ifNull: ["$billAmount", 0] } },
+            income: { $sum: { $ifNull: ["$paidTotal", 0] } },
           },
         },
       ]),
@@ -217,7 +217,7 @@ export const AnalyticsRepository = {
             paymentDate: { $gte: start, $lt: end },
           },
         },
-        { $group: { _id: null, total: { $sum: { $ifNull: ["$billAmount", 0] } } } },
+        { $group: { _id: null, total: { $sum: { $ifNull: ["$paidTotal", 0] } } } },
       ]),
       Expense.aggregate([
         {
@@ -500,7 +500,7 @@ export const AnalyticsRepository = {
               year: { $year: { $add: ["$paymentDate", BD_OFFSET_MS] } },
               month: { $month: { $add: ["$paymentDate", BD_OFFSET_MS] } },
             },
-            income: { $sum: { $ifNull: ["$billAmount", 0] } },
+            income: { $sum: { $ifNull: ["$paidTotal", 0] } },
           },
         },
       ]),
@@ -540,7 +540,7 @@ export const AnalyticsRepository = {
       {
         $group: {
           _id: { month: { $month: { $add: ["$paymentDate", BD_OFFSET_MS] } } },
-          value: { $sum: { $ifNull: ["$billAmount", 0] } },
+          value: { $sum: { $ifNull: ["$paidTotal", 0] } },
         },
       },
     ]);
@@ -637,7 +637,7 @@ export const AnalyticsRepository = {
         {
           $group: {
             _id: null,
-            total: { $sum: { $ifNull: ["$billAmount", 0] } },
+            total: { $sum: { $ifNull: ["$paidTotal", 0] } },
             count: { $sum: 1 },
           },
         },
@@ -673,7 +673,7 @@ export const AnalyticsRepository = {
             status: { $in: validIncomeStatuses },
           },
         },
-        { $group: { _id: null, total: { $sum: { $ifNull: ["$billAmount", 0] } } } },
+        { $group: { _id: null, total: { $sum: { $ifNull: ["$paidTotal", 0] } } } },
       ]),
       Expense.aggregate([
         {
