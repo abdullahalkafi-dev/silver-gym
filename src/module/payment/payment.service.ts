@@ -36,7 +36,6 @@ import {
   computePaymentSettlement,
   isSameCalendarDay,
   normalizeMoney,
-  startOfCalendarMonth,
   startOfNextCalendarMonth,
   toMemberBalanceSnapshot,
 } from "./payment.balance";
@@ -633,8 +632,7 @@ const resolveCollectBillMember = async (
 
 const resolveNextPaymentDateAfterDueSettlement = (
   selectedDueItems: TResolvedCollectBillDueSelection[],
-  now: Date,
-): Date => {
+): Date | undefined => {
   const monthlyItems = selectedDueItems.filter(
     (item) => item.ledgerItemType === "monthly_due" || item.ledgerItemType === "monthly_cycle_due",
   );
@@ -654,7 +652,7 @@ const resolveNextPaymentDateAfterDueSettlement = (
     }
   }
 
-  return startOfCalendarMonth(now);
+  return undefined;
 };
 
 const resolveCollectBillCycleDetails = async (
@@ -1264,9 +1262,10 @@ const collectBill = async (
     openingDueAmount - selectedDueAmount + settlement.dueAmount,
   );
   const finalBalanceSnapshot = toMemberBalanceSnapshot(finalDueAmount);
+  const resolvedSettlementDate = resolveNextPaymentDateAfterDueSettlement(selectedDueItems);
   const finalNextPaymentDate =
     payload.collectionMode === "due_only"
-      ? resolveNextPaymentDateAfterDueSettlement(selectedDueItems, paymentDate)
+      ? resolvedSettlementDate ?? member.nextPaymentDate ?? startOfNextCalendarMonth(paymentDate)
       : cycleDetails.nextPaymentDate ?? billing.updatedNextPaymentDate ?? member.nextPaymentDate;
   const updatedDueLedger = updateCollectBillDueLedger({
     dueLedger,
