@@ -935,6 +935,7 @@ const syncMemberBalanceDelta = async (
     cacheService.deleteCache(`members:${branchId}:${memberId}`),
     cacheService.deleteCache(getBillingReconcileCacheKey(branchId)),
     cacheService.invalidateByPattern(`members:${branchId}:list:*`),
+    cacheService.invalidateByPattern(`analytics:${branchId}:*`),
   ]);
 };
 

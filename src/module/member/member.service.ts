@@ -702,7 +702,10 @@ const createMember = async (
 
   try {
     const result = await createMemberAndPayment(memberData, paymentData);
-    await cacheService.invalidateByPattern(`members:${branchId}:list:*`);
+    await Promise.all([
+      cacheService.invalidateByPattern(`members:${branchId}:list:*`),
+      cacheService.invalidateByPattern(`analytics:${branchId}:*`),
+    ]);
     return result;
   } catch (error) {
     const dbError = error as { code?: number; keyValue?: Record<string, unknown> };
