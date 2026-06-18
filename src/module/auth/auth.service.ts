@@ -9,6 +9,7 @@ import { createJwtToken, verifyJwtToken } from "jwt";
 import {  OTPType } from "module/otp/otp.interface";
 import { OTPService } from "module/otp/otp.service";
 import { TRole } from "module/role/role.interface";
+import { BranchRepository } from "module/branch/branch.repository";
 import { StaffRepository } from "module/staff/staff.repository";
 import { LoginProvider, TUser } from "module/user/user.interface";
 import { UserRepository } from "module/user/user.repository";
@@ -304,7 +305,14 @@ const staffLogin = async (payload: TStaffLoginPayload) => {
     config.jwt.jwt_refresh_expire_in || "30d",
   );
 
-  await StaffRepository.updateById(String(staff._id), { lastLogin: new Date() });
+  const [_, staffBranch] = await Promise.all([
+    StaffRepository.updateById(String(staff._id), { lastLogin: new Date() }),
+    BranchRepository.findOne({ _id: staff.branchId }),
+  ]);
+
+  const businessProfile = staffBranch
+    ? await BusinessProfileRepository.findOne({ _id: staffBranch.businessId })
+    : null;
 
   const staffObject = staff.toObject() as ReturnType<typeof staff.toObject> & {
     password?: string;
@@ -317,6 +325,7 @@ const staffLogin = async (payload: TStaffLoginPayload) => {
     refreshToken,
     staff: sanitizedStaff,
     permissions: tokenPayload.permissions,
+    businessProfile: businessProfile ? { id: businessProfile._id } : null,
   };
 };
 
