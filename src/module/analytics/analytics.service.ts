@@ -905,13 +905,11 @@ const getTodaySummary = async (
   if (cached) return cached;
 
   const branch = await BranchRepository.findById(branchId);
-  const startingBalance = branch?.startingBalance ?? null;
+  const startingBalance = branch?.startingBalance ?? 0;
 
   const [todayTotals, allTimeTotals] = await Promise.all([
     AnalyticsRepository.getTodayIncomeExpenseSummary(branchId),
-    startingBalance !== null
-      ? AnalyticsRepository.getAllTimeIncomeExpenseTotals(branchId)
-      : Promise.resolve([[], []] as [Array<{ total: number; count: number }>, Array<{ total: number; count: number }>]),
+    AnalyticsRepository.getAllTimeIncomeExpenseTotals(branchId),
   ]);
 
   const todayIncome = todayTotals[0]?.[0]?.total ?? 0;
@@ -921,34 +919,21 @@ const getTodaySummary = async (
 
   const todayNet = todayIncome - todayExpense;
 
-  if (startingBalance !== null) {
-    const allTimeIncome = allTimeTotals[0]?.[0]?.total ?? 0;
-    const allTimeExpense = allTimeTotals[1]?.[0]?.total ?? 0;
-    const branchRunningBalance = Number((startingBalance + allTimeIncome - allTimeExpense).toFixed(2));
-    const openingBalance = Number((branchRunningBalance - todayNet).toFixed(2));
+  const allTimeIncome = allTimeTotals[0]?.[0]?.total ?? 0;
+  const allTimeExpense = allTimeTotals[1]?.[0]?.total ?? 0;
+  const branchRunningBalance = Number((startingBalance + allTimeIncome - allTimeExpense).toFixed(2));
+  const openingBalance = Number((branchRunningBalance - todayNet).toFixed(2));
 
-    const result: TTodaySummary = {
-      todayIncome: Number(todayIncome.toFixed(2)),
-      todayExpense: Number(todayExpense.toFixed(2)),
-      todayIncomeCount,
-      todayExpenseCount,
-      openingBalance,
-    };
-
-    await cacheService.setCache(cacheKey, result, ANALYTICS_TODAY_CACHE_TTL);
-    return result;
-  }
-
-  const fallbackResult: TTodaySummary = {
+  const result: TTodaySummary = {
     todayIncome: Number(todayIncome.toFixed(2)),
     todayExpense: Number(todayExpense.toFixed(2)),
     todayIncomeCount,
     todayExpenseCount,
-    openingBalance: 0,
+    openingBalance,
   };
 
-  await cacheService.setCache(cacheKey, fallbackResult, ANALYTICS_TODAY_CACHE_TTL);
-  return fallbackResult;
+  await cacheService.setCache(cacheKey, result, ANALYTICS_TODAY_CACHE_TTL);
+  return result;
 };
 
 export const AnalyticsService = {
