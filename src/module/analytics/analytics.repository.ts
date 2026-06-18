@@ -251,6 +251,25 @@ export const AnalyticsRepository = {
     ]);
   },
 
+  getIncomeBreakdown(branchId: string, start: Date, end: Date) {
+    return Payment.aggregate([
+      {
+        $match: {
+          branchId: toBranchObjectId(branchId),
+          status: { $in: validIncomeStatuses },
+          paymentDate: { $gte: start, $lt: end },
+        },
+      },
+      {
+        $group: {
+          _id: { $ifNull: ["$paymentType", "Other"] },
+          value: { $sum: { $ifNull: ["$paidTotal", 0] } },
+        },
+      },
+      { $sort: { value: -1 } },
+    ]);
+  },
+
   getPackageAnalytics(branchId: string, year: number) {
     const start = new Date(Date.UTC(year, 0, 1) - BD_OFFSET_MS);
     const end = new Date(Date.UTC(year + 1, 0, 1) - BD_OFFSET_MS);

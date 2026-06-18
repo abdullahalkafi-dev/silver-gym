@@ -75,6 +75,15 @@ const categoryPalette = [
   "#B7B976",
 ];
 
+const incomePalette = [
+  "#4CAF50",
+  "#2196F3",
+  "#00BCD4",
+  "#9C27B0",
+  "#FF9800",
+  "#795548",
+];
+
 const ANALYTICS_CACHE_TTL = 120; // 2 minutes
 const ANALYTICS_TODAY_CACHE_TTL = 60; // 1 minute for today's summary
 
@@ -660,6 +669,7 @@ const getOverviewSummary = async (
     yearlyProgressRows,
     financialData,
     expensePieRows,
+    incomePieRows,
     transactionRows,
     availableYears,
     dailyProgressRows,
@@ -671,6 +681,7 @@ const getOverviewSummary = async (
     AnalyticsRepository.getOverviewProgressYearly(branchId, selectedYear),
     AnalyticsRepository.getFinancialDataByMonth(branchId, selectedYear),
     AnalyticsRepository.getExpenseBreakdown(branchId, monthRange.start, monthRange.end),
+    AnalyticsRepository.getIncomeBreakdown(branchId, monthRange.start, monthRange.end),
     AnalyticsRepository.getOverviewRecentTransactions(branchId, transactionLimit),
     AnalyticsRepository.getAvailableYears(branchId),
     AnalyticsRepository.getFinancialDataByDay(branchId, monthRange.start, monthRange.end).then((value) => value[0]),
@@ -743,6 +754,19 @@ const getOverviewSummary = async (
       name: row._id || "Others",
       value: row.value || 0,
       color: categoryPalette[index % categoryPalette.length] || "#67C090",
+    }),
+  );
+
+  const incomePieTotal = incomePieRows.reduce(
+    (sum: number, row: { value: number }) => sum + (row.value || 0),
+    0,
+  );
+
+  const incomePieData = incomePieRows.map(
+    (row: { _id: string; value: number }, index: number) => ({
+      name: row._id ? row._id.charAt(0).toUpperCase() + row._id.slice(1) : "Other",
+      value: row.value || 0,
+      color: incomePalette[index % incomePalette.length] || "#4CAF50",
     }),
   );
 
@@ -879,6 +903,11 @@ const getOverviewSummary = async (
       centerValue: Number((pieTotal / 1000).toFixed(0)),
       description: "Your expenses share for the selected month",
       data: pieData,
+    },
+    incomePie: {
+      centerValue: Number((incomePieTotal / 1000).toFixed(0)),
+      description: "Your income share for the selected month",
+      data: incomePieData,
     },
     line: {
       percentage: Number(expensePercent.toFixed(1)),

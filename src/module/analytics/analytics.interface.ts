@@ -196,6 +196,11 @@ export type TOverviewSummary = {
     description: string;
     data: TOverviewPiePoint[];
   };
+  incomePie: {
+    centerValue: number;
+    description: string;
+    data: TOverviewPiePoint[];
+  };
   line: {
     percentage: number;
     data: TOverviewLinePoint[];
