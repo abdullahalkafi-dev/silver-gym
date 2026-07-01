@@ -105,8 +105,11 @@ async function runMigration() {
       const sorted = [...unpaidMonthlyItems].sort((a, b) =>
         (a.periodStart || "").localeCompare(b.periodStart || "")
       );
-      const earliestPeriodStart = new Date(sorted[0].periodStart ?? sorted[0].createdAt);
-      correctNextPaymentDate = earliestPeriodStart;
+      const firstItem = sorted[0];
+      if (firstItem) {
+        const earliestPeriodStart = new Date(firstItem.periodStart || firstItem.createdAt);
+        correctNextPaymentDate = earliestPeriodStart;
+      }
     } else if (storedNextPaymentDate) {
       // No monthly due items — keep current nextPaymentDate
       correctNextPaymentDate = new Date(storedNextPaymentDate);
