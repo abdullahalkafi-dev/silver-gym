@@ -14,10 +14,8 @@
 
 import mongoose from "mongoose";
 import ConnectDB from "../src/db";
-import config from "../src/config";
 import { Member } from "../src/module/member/member.model";
-import { readMemberBillingLedger, sumMemberBillingLedger, BILLING_LEDGER_METADATA_KEY } from "../src/module/member/member.billingLedger";
-import { addMonthsPreservingDay, startOfCalendarMonth } from "../src/module/payment/payment.balance";
+import { readMemberBillingLedger, BILLING_LEDGER_METADATA_KEY } from "../src/module/member/member.billingLedger";
 
 const APPLY = process.argv.includes("--apply");
 
@@ -48,7 +46,6 @@ async function runMigration() {
   console.log("Connected to MongoDB\n");
 
   const changes: MigrationChange[] = [];
-  const today = startOfCalendarMonth(new Date());
   let processedCount = 0;
   let skippedCount = 0;
 
@@ -108,7 +105,7 @@ async function runMigration() {
       const sorted = [...unpaidMonthlyItems].sort((a, b) =>
         (a.periodStart || "").localeCompare(b.periodStart || "")
       );
-      const earliestPeriodStart = new Date(sorted[0].periodStart!);
+      const earliestPeriodStart = new Date(sorted[0].periodStart ?? sorted[0].createdAt);
       correctNextPaymentDate = earliestPeriodStart;
     } else if (storedNextPaymentDate) {
       // No monthly due items — keep current nextPaymentDate
@@ -241,7 +238,7 @@ async function runMigration() {
             items: cleanedItems,
             updatedAt: new Date().toISOString(),
           };
-          const currentMetadata = (memberDoc as Record<string, unknown>).metadata;
+          const currentMetadata = (memberDoc as unknown as Record<string, unknown>).metadata;
           const metadataObj =
             typeof currentMetadata === "object" && currentMetadata !== null
               ? { ...(currentMetadata as Record<string, unknown>) }
