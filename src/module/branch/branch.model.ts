@@ -97,6 +97,16 @@ const branchSchema = new Schema<TBranch>(
       min: 1,
       default: DEFAULT_BRANCH_AUTO_DEACTIVATE_AFTER_UNPAID_MONTHS,
     },
+    lastAutoDeactivationRunDate: {
+      type: String,
+      trim: true,
+      default: null,
+    },
+    lastDueAccrualRunDate: {
+      type: String,
+      trim: true,
+      default: null,
+    },
     startingBalance: {
       type: Number,
       default: null,

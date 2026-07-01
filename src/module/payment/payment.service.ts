@@ -648,7 +648,7 @@ const resolveNextPaymentDateAfterDueSettlement = (
       }
     }
     if (latestPeriodEnd) {
-      return startOfNextCalendarMonth(latestPeriodEnd);
+      return latestPeriodEnd;
     }
   }
 

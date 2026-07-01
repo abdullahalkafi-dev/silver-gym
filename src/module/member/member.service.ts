@@ -40,6 +40,7 @@ import {
   mergeMemberBillingLedgerMetadata,
   reconcileMemberBillingLedger,
   resolvePrimaryDueType,
+  sumMemberBillingLedger,
 } from "./member.billingLedger";
 import { TMember } from "./member.interface";
 import { MemberRepository } from "./member.repository";
@@ -225,7 +226,7 @@ const reconcileMemberRecord = async (
   const updatedMember = await MemberRepository.updateById(
     String(memberPlain._id),
     {
-      ...buildMemberBillingUpdate(billing),
+      currentDueAmount: sumMemberBillingLedger(dueLedger.items),
       metadata: mergeMemberBillingLedgerMetadata(memberPlain.metadata, dueLedger),
     },
   );
@@ -293,7 +294,7 @@ const reconcileBranchMemberBilling = async (
         await MemberRepository.updateById(
           String(member._id),
           {
-            ...buildMemberBillingUpdate(billing),
+            currentDueAmount: sumMemberBillingLedger(dueLedger.items),
             metadata: mergeMemberBillingLedgerMetadata(
               (member as TMember).metadata,
               dueLedger,

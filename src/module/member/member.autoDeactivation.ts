@@ -10,13 +10,13 @@ import {
 import { BranchRepository } from "../branch/branch.repository";
 import { SchedulerLockService } from "../scheduler/schedulerLock.service";
 import {
-  buildMemberBillingUpdate,
   mergeMemberBillingProfileMetadata,
   reconcileMemberBillingState,
 } from "./member.billing";
 import {
   mergeMemberBillingLedgerMetadata,
   reconcileMemberBillingLedger,
+  sumMemberBillingLedger,
 } from "./member.billingLedger";
 import { TMember } from "./member.interface";
 import { MemberRepository } from "./member.repository";
@@ -92,7 +92,7 @@ export const buildAutoDeactivationUpdate = (
     ...evaluation,
     updatePayload: {
       isActive: false,
-      ...buildMemberBillingUpdate(evaluation.billing),
+      currentDueAmount: sumMemberBillingLedger(dueLedger.items),
       metadata: mergeMemberBillingLedgerMetadata(
         mergeMemberBillingProfileMetadata(member.metadata, {
           accrualStoppedAt: now.toISOString(),

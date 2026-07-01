@@ -369,9 +369,10 @@ export const reconcileMemberBillingLedger = (
     nextItems = monthlyItems;
   }
 
+  const ledgerTotal = sumMemberBillingLedger(nextItems);
   return alignMemberBillingLedgerToDueAmount(
     nextItems,
-    billing.currentDueAmount,
+    ledgerTotal,
     now,
   );
 };

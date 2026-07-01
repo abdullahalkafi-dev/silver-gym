@@ -154,9 +154,10 @@ export const buildMemberBillingUpdate = (
     TReconciledMemberBilling,
     "currentDueAmount" | "updatedNextPaymentDate"
   >,
+  options?: { persistNextPaymentDate?: boolean },
 ) => ({
   currentDueAmount: billing.currentDueAmount,
-  ...(billing.updatedNextPaymentDate
+  ...(options?.persistNextPaymentDate !== false && billing.updatedNextPaymentDate
     ? { nextPaymentDate: billing.updatedNextPaymentDate }
     : {}),
 });

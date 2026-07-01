@@ -69,6 +69,7 @@ export interface TBranch {
 	lockerFeeAmount?: number;
 	autoDeactivateAfterUnpaidMonths?: number;
 	lastAutoDeactivationRunDate?: string | null;
+	lastDueAccrualRunDate?: string | null;
 	startingBalance?: number | null;
 	startingBalanceSetAt?: Date | null;
 	smsSettings?: TBranchSMSSettings;

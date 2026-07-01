@@ -6,6 +6,7 @@ import config from "./config";
 import { errorLogger, logger } from "./logger/logger";
 import ConnectDB from "./db";
 import { MemberAutoDeactivationService } from "./module/member/member.autoDeactivation";
+import { MemberDueAccrualService } from "./module/member/member.dueAccrual";
 import { MemberImportService } from "./module/member/memberImport.service";
 import { SmsService } from "./module/sms/sms.service";
 
@@ -36,7 +37,10 @@ async function main() {
     // 6. Start member auto-deactivation sweep
     MemberAutoDeactivationService.startScheduler();
 
-    // 7. Start server
+    // 7. Start due accrual sweep (creates monthly dues when months pass)
+    MemberDueAccrualService.startScheduler();
+
+    // 8. Start server
     const port = Number(config.port) || 5000;
 
     server.listen(port, "0.0.0.0", () => {
