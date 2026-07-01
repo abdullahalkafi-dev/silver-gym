@@ -85,23 +85,28 @@ async function runMigration() {
     );
 
     // Compute correct currentDueAmount:
-    // - If there are monthly_due items, use their sum (carry_forward is likely a duplicate)
-    // - If only carry_forward items, use the full ledger sum (legitimate legacy debt)
-    let correctCurrentDueAmount: number;
-    if (unpaidMonthlyItems.length > 0) {
-      correctCurrentDueAmount = normalizeMoney(
-        unpaidMonthlyItems.reduce((sum, item) => sum + item.remainingAmount, 0)
-      );
-    } else {
-      correctCurrentDueAmount = normalizeMoney(
-        ledger.items.reduce((sum, item) => sum + item.remainingAmount, 0)
-      );
-    }
+    // Sum ALL unpaid ledger items (admission_due + monthly_due + carry_forward)
+    // But exclude carry_forward if it duplicates a monthly_due amount (bug artifact)
+    const monthlyAmounts = new Set(
+      unpaidMonthlyItems.map((item) => item.remainingAmount)
+    );
+    let correctCurrentDueAmount = normalizeMoney(
+      ledger.items
+        .filter((item) => {
+          if (item.remainingAmount <= 0) return false;
+          // Exclude carry_forward if it duplicates a monthly_due amount
+          if (item.type === "carry_forward" && monthlyAmounts.has(item.remainingAmount)) {
+            return false;
+          }
+          return true;
+        })
+        .reduce((sum, item) => sum + item.remainingAmount, 0)
+    );
 
     let correctNextPaymentDate: Date | null = null;
 
     if (unpaidMonthlyItems.length > 0) {
-      // Sort by periodStart to find earliest
+      // Sort by periodStart to find earliest unpaid monthly due
       const sorted = [...unpaidMonthlyItems].sort((a, b) =>
         (a.periodStart || "").localeCompare(b.periodStart || "")
       );
@@ -110,8 +115,13 @@ async function runMigration() {
         const earliestPeriodStart = new Date(firstItem.periodStart || firstItem.createdAt);
         correctNextPaymentDate = earliestPeriodStart;
       }
+    } else if (ledger.items.length > 0) {
+      // No monthly_due items — set to current month start
+      // This handles imported members with only admission_due items
+      const now = new Date();
+      correctNextPaymentDate = new Date(now.getFullYear(), now.getMonth(), 1);
     } else if (storedNextPaymentDate) {
-      // No monthly due items — keep current nextPaymentDate
+      // No ledger items at all — keep current nextPaymentDate
       correctNextPaymentDate = new Date(storedNextPaymentDate);
     }
 
