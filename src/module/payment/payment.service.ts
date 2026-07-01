@@ -1142,6 +1142,7 @@ const collectBill = async (
     branchId,
     actor,
     sanitizedPayload.memberId,
+    { persistChanges: sanitizedPayload.collectionMode !== "due_only" },
   );
 
   const cycleDetails = await resolveCollectBillCycleDetails(
