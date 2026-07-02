@@ -977,7 +977,10 @@ const updateMember = async (
       packageDoc.duration,
       packageDoc.durationType,
     );
-    updatePayload.nextPaymentDate = updatePayload.membershipEndDate;
+    // Don't regress nextPaymentDate — only advance it
+    if (!member.nextPaymentDate || (updatePayload.membershipEndDate && updatePayload.membershipEndDate >= member.nextPaymentDate)) {
+      updatePayload.nextPaymentDate = updatePayload.membershipEndDate;
+    }
     nextMetadata = mergeMemberBillingProfileMetadata(nextMetadata, {
       cycleType: "package",
     });
@@ -1045,7 +1048,11 @@ const updateMember = async (
 
     updatePayload.membershipStartDate = membershipStartDate;
     updatePayload.paidMonths = paidMonths;
-    updatePayload.nextPaymentDate = addMonths(membershipStartDate, paidMonths);
+    // Don't regress nextPaymentDate — only advance it
+    const computedNextPay = addMonths(membershipStartDate, paidMonths);
+    if (!member.nextPaymentDate || (computedNextPay && computedNextPay >= member.nextPaymentDate)) {
+      updatePayload.nextPaymentDate = computedNextPay;
+    }
     // If the member had a custom rate, preserve/update it on the stored field
     if (member.isCustomMonthlyFee || payload.isCustomMonthlyFee) {
       updatePayload.isCustomMonthlyFee = true;

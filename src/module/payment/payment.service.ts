@@ -1287,10 +1287,20 @@ const collectBill = async (
   );
   const finalBalanceSnapshot = toMemberBalanceSnapshot(finalDueAmount);
   const resolvedSettlementDate = resolveNextPaymentDateAfterDueSettlement(selectedDueItems);
-  const finalNextPaymentDate =
+  let finalNextPaymentDate =
     payload.collectionMode === "due_only"
       ? resolvedSettlementDate ?? member.nextPaymentDate ?? startOfNextCalendarMonth(paymentDate)
       : cycleDetails.nextPaymentDate ?? billing.updatedNextPaymentDate ?? member.nextPaymentDate;
+
+  // Never regress nextPaymentDate — only advance it
+  if (member.nextPaymentDate && finalNextPaymentDate) {
+    const currentNext = new Date(member.nextPaymentDate);
+    const proposedNext = new Date(finalNextPaymentDate);
+    if (proposedNext <= currentNext) {
+      finalNextPaymentDate = member.nextPaymentDate;
+    }
+  }
+
   const updatedDueLedger = updateCollectBillDueLedger({
     dueLedger,
     resolvedInvoiceLines,

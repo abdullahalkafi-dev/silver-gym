@@ -238,10 +238,8 @@ export const alignMemberBillingLedgerToDueAmount = (
   const difference = normalizeMoney(normalizeMoney(targetDueAmount) - ledgerTotal);
 
   if (difference > 0) {
-    nextItems = normalizeLedgerItems([
-      ...nextItems,
-      createCarryForwardLedgerItem(difference, now),
-    ]);
+    // Don't create carry_forward artifacts — ledger is the source of truth
+    // The due accrual cron will create monthly_due items as needed
   } else if (difference < 0) {
     nextItems = reduceLedgerItems(nextItems, Math.abs(difference));
   }
