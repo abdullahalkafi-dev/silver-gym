@@ -59,6 +59,10 @@ export const startOfNextCalendarMonth = (date: Date): Date => {
   return dhakaStartOfNextMonth(date);
 };
 
+export const endOfCalendarMonth = (date: Date): Date => {
+  return new Date(dhakaStartOfNextMonth(date).getTime() - 1);
+};
+
 export const isSameCalendarDay = (left: Date, right: Date): boolean => {
   return startOfCalendarDay(left).getTime() === startOfCalendarDay(right).getTime();
 };
