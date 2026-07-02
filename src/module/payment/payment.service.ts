@@ -498,6 +498,11 @@ const updateCollectBillDueLedger = ({
 }) => {
   const nextItems = dueLedger.items.map((item) => ({ ...item }));
 
+  // Find cycle line to get period range
+  const cycleLine = resolvedInvoiceLines.find((line) => line.kind === "cycle");
+  const cyclePeriodStart = cycleLine?.periodStart ? new Date(cycleLine.periodStart).getTime() : null;
+  const cyclePeriodEnd = cycleLine?.periodEnd ? new Date(cycleLine.periodEnd).getTime() : null;
+
   resolvedInvoiceLines.forEach((line) => {
     if (line.kind === "selected_due" && line.ledgerItemId) {
       const ledgerItem = nextItems.find((item) => item.key === line.ledgerItemId);
@@ -529,6 +534,22 @@ const updateCollectBillDueLedger = ({
       );
     }
   });
+
+  // Clear monthly_due items whose period falls within the cycle range
+  // When the cycle covers a month, the existing monthly_due for that month is redundant
+  if (cyclePeriodStart !== null && cyclePeriodEnd !== null) {
+    for (const item of nextItems) {
+      if (
+        (item.type === "monthly_due" || item.type === "monthly_cycle_due") &&
+        item.periodStart
+      ) {
+        const itemPeriodStart = new Date(item.periodStart).getTime();
+        if (itemPeriodStart >= cyclePeriodStart && itemPeriodStart < cyclePeriodEnd) {
+          item.remainingAmount = 0;
+        }
+      }
+    }
+  }
 
   return alignMemberBillingLedgerToDueAmount(nextItems, finalDueAmount, paymentDate);
 };

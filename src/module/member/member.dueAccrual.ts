@@ -17,7 +17,7 @@ import {
 } from "./member.billingLedger";
 import { TMember } from "./member.interface";
 import { MemberRepository } from "./member.repository";
-import { addMonthsPreservingDay, startOfCalendarMonth } from "../payment/payment.balance";
+import { addMonthsPreservingDay, startOfNextCalendarMonth } from "../payment/payment.balance";
 
 type TDueAccrualBranch = Pick<
   TBranch,
@@ -58,7 +58,7 @@ export const runDueAccrualForBranch = async (
     return 0;
   }
 
-  const overdueCutoff = startOfCalendarMonth(now);
+  const overdueCutoff = startOfNextCalendarMonth(now);
 
   const members = await MemberRepository.findMany(
     {
