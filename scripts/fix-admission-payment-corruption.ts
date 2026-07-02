@@ -267,21 +267,8 @@ async function runFix() {
 
   console.log(`\nDone: ${successCount} fixed, ${errorCount} errors`);
 
-  // Create backup collection
-  console.log("\nCreating backup collection...");
-  try {
-    const db = mongoose.connection.db;
-    if (db) {
-      const backupCollection = `migration_backup_admission_fix_${Date.now()}`;
-      const memberIds = fixes.map((f) => new mongoose.Types.ObjectId(f.memberId));
-
-      // Backup the members before final state
-      // (already applied, but useful for audit trail)
-      console.log(`Backup note: Changes already applied. Original data in backup_before_admission_fix_20260702_0835.gz`);
-    }
-  } catch (err) {
-    console.log("Backup note:", err);
-  }
+  // Note: Original data is in backup_before_admission_fix_20260702_0835.gz
+  console.log("\nNote: Original data preserved in backup_before_admission_fix_20260702_0835.gz");
 
   await mongoose.disconnect();
 }
