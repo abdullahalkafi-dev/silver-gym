@@ -292,8 +292,10 @@ const assertCollectBillStartDate = (
   collectionMode: Exclude<TCollectBillMode, "due_only">,
   alternateStartDate?: Date,
 ) => {
+  // Allow starting BEFORE requiredStartDate (paying overdue months)
+  // OR exactly on alternateStartDate (short-term transition)
   if (
-    isSameCalendarDay(startDate, requiredStartDate) ||
+    startDate <= requiredStartDate ||
     (alternateStartDate && isSameCalendarDay(startDate, alternateStartDate))
   ) {
     return;
