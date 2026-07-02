@@ -88,7 +88,6 @@ async function runFix() {
 
       const memberId = String(member._id);
       const ledger = readMemberBillingLedger(member);
-      const originalItems = [...ledger.items];
 
       // Find carry_forward items to remove
       const carryForwardKeys = ledger.items
