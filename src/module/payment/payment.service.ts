@@ -20,6 +20,7 @@ import {
   hasMemberBillingLedgerChanged,
   mergeMemberBillingLedgerMetadata,
   reconcileMemberBillingLedger,
+  sumMemberBillingLedger,
   TMemberBillingLedger,
   TMemberBillingLedgerItem,
   TMemberBillingLedgerItemType,
@@ -36,6 +37,7 @@ import {
   computePaymentSettlement,
   isSameCalendarDay,
   normalizeMoney,
+  startOfCalendarMonth,
   startOfNextCalendarMonth,
   toMemberBalanceSnapshot,
 } from "./payment.balance";
@@ -536,15 +538,19 @@ const updateCollectBillDueLedger = ({
   });
 
   // Clear monthly_due items whose period falls within the cycle range
-  // When the cycle covers a month, the existing monthly_due for that month is redundant
+  // When the cycle covers a month, the existing monthly_due for that month is redundant.
+  // Compare at Dhaka calendar-month level to avoid timezone offset issues
+  // (ledger items use midnight UTC, payment cycles use 06:00 UTC).
   if (cyclePeriodStart !== null && cyclePeriodEnd !== null) {
+    const cycleDhakaStart = startOfCalendarMonth(new Date(cyclePeriodStart));
+    const cycleDhakaEnd = startOfCalendarMonth(new Date(cyclePeriodEnd));
     for (const item of nextItems) {
       if (
         (item.type === "monthly_due" || item.type === "monthly_cycle_due") &&
         item.periodStart
       ) {
-        const itemPeriodStart = new Date(item.periodStart).getTime();
-        if (itemPeriodStart >= cyclePeriodStart && itemPeriodStart < cyclePeriodEnd) {
+        const itemDhakaMonth = startOfCalendarMonth(new Date(item.periodStart));
+        if (itemDhakaMonth >= cycleDhakaStart && itemDhakaMonth < cycleDhakaEnd) {
           item.remainingAmount = 0;
         }
       }
@@ -1307,6 +1313,15 @@ const collectBill = async (
     finalDueAmount: finalBalanceSnapshot.currentDueAmount,
     paymentDate,
   });
+
+  // Recompute currentDueAmount from the actual ledger total after cleanup.
+  // This ensures auto-cleared monthly_due items are reflected in currentDueAmount.
+  // Without this, finalDueAmount would retain the pre-clear value when
+  // selectedDueItems is empty (frontend does not send them for monthly mode).
+  const reconciledDueAmount = normalizeMoney(
+    sumMemberBillingLedger(updatedDueLedger.items),
+  );
+
   const nextMemberMetadata =
     payload.collectionMode === "due_only"
       ? mergeMemberBillingLedgerMetadata(member.metadata, updatedDueLedger)
@@ -1327,7 +1342,7 @@ const collectBill = async (
 
   const memberUpdatePayload: Record<string, unknown> = {
     ...buildMemberBillingUpdate({
-      currentDueAmount: finalBalanceSnapshot.currentDueAmount,
+      currentDueAmount: reconciledDueAmount,
       updatedNextPaymentDate: finalNextPaymentDate,
     }),
     ...cycleDetails.memberUpdate,
