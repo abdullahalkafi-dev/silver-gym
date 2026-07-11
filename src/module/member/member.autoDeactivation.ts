@@ -8,6 +8,7 @@ import {
   TBranch,
 } from "../branch/branch.interface";
 import { BranchRepository } from "../branch/branch.repository";
+import { startOfCalendarMonth } from "../payment/payment.balance";
 import { SchedulerLockService } from "../scheduler/schedulerLock.service";
 import {
   mergeMemberBillingProfileMetadata,
@@ -135,7 +136,7 @@ export const runAutoDeactivationForBranch = async (
     return 0;
   }
 
-  const overdueCutoff = new Date(now.getFullYear(), now.getMonth(), 1);
+  const overdueCutoff = startOfCalendarMonth(now);
   const members = await MemberRepository.findMany(
     {
       branchId: new Types.ObjectId(branchId),

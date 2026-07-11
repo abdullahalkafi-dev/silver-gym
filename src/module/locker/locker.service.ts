@@ -50,6 +50,10 @@ const getNextBillingDate = (months: number): Date => {
   return target;
 };
 
+const getNextBillingDateFrom = (startDate: Date, months: number): Date => {
+  return new Date(startDate.getFullYear(), startDate.getMonth() + months, 1);
+};
+
 const invalidateLockerCache = async (branchId: string) => {
   await Promise.all([
     cacheService.invalidateByPattern(`lockers:${branchId}*`),
@@ -401,7 +405,7 @@ const collectLockerPayment = async (
   const paymentAmount = payload.paymentAmount ?? systemPrice;
 
   const periodStart = locker.nextBillingDate || new Date();
-  const nextBillingDate = getNextBillingDate(payload.months);
+  const nextBillingDate = getNextBillingDateFrom(periodStart, payload.months);
 
   const isEarlyCollection = locker.nextBillingDate != null && locker.nextBillingDate > new Date();
 
