@@ -405,20 +405,21 @@ const collectLockerPayment = async (
 
   const isEarlyCollection = locker.nextBillingDate != null && locker.nextBillingDate > new Date();
 
+  const subTotal = Math.round(paymentAmount * payload.months * 100) / 100;
+  const totalDue = Math.round(Math.max(0, subTotal - payload.discount) * 100) / 100;
+
+  if (payload.discount > subTotal) {
+    throw new AppError(StatusCodes.BAD_REQUEST, "Discount cannot exceed subtotal");
+  }
+  if (payload.paidAmount < totalDue) {
+    throw new AppError(StatusCodes.BAD_REQUEST, "Paid amount cannot be less than total due. Locker does not support partial payment.");
+  }
+
   const session = await mongoose.startSession();
   session.startTransaction();
 
   try {
     const invoiceNo = await generateLockerInvoiceNo(session);
-    const subTotal = Math.round(paymentAmount * payload.months * 100) / 100;
-    const totalDue = Math.round(Math.max(0, subTotal - payload.discount) * 100) / 100;
-
-    if (payload.discount > subTotal) {
-      throw new AppError(StatusCodes.BAD_REQUEST, "Discount cannot exceed subtotal");
-    }
-    if (payload.paidAmount < totalDue) {
-      throw new AppError(StatusCodes.BAD_REQUEST, "Paid amount cannot be less than total due. Locker does not support partial payment.");
-    }
 
     const paidTotal = totalDue;
     const exchange = Math.round(Math.max(0, payload.paidAmount - totalDue) * 100) / 100;
