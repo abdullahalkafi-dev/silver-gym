@@ -301,8 +301,8 @@ const assignMember = async (
     const invoiceNo = await generateLockerInvoiceNo(session);
     const subTotal = payload.paymentAmount * payload.months;
     const totalDue = Math.max(0, subTotal - payload.discount);
-    const paidTotal = subTotal;
-    const exchange = paidTotal - totalDue > 0 ? paidTotal - totalDue : 0;
+    const paidTotal = totalDue;
+    const exchange = 0;
 
     const paymentData = {
       branchId: new Types.ObjectId(branchId),
@@ -316,7 +316,7 @@ const assignMember = async (
       subTotal,
       discount: payload.discount,
       billAmount: totalDue,
-      dueAmount: totalDue - paidTotal > 0 ? totalDue - paidTotal : 0,
+      dueAmount: 0,
       paidTotal,
       exchange,
       paymentMethod: payload.paymentMethod as any,
@@ -400,8 +400,8 @@ const collectLockerPayment = async (
     const invoiceNo = await generateLockerInvoiceNo(session);
     const subTotal = paymentAmount * payload.months;
     const totalDue = Math.max(0, subTotal - payload.discount);
-    const paidTotal = subTotal;
-    const exchange = paidTotal - totalDue > 0 ? paidTotal - totalDue : 0;
+    const paidTotal = totalDue;
+    const exchange = 0;
 
     const paymentData = {
       branchId: new Types.ObjectId(branchId),
@@ -415,7 +415,7 @@ const collectLockerPayment = async (
       subTotal,
       discount: payload.discount,
       billAmount: totalDue,
-      dueAmount: totalDue - paidTotal > 0 ? totalDue - paidTotal : 0,
+      dueAmount: 0,
       paidTotal,
       exchange,
       paymentMethod: payload.paymentMethod as any,
