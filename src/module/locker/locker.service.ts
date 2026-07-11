@@ -241,6 +241,7 @@ const assignMember = async (
     paymentAmount: number;
     paymentMethod: PaymentMethod;
     discount: number;
+    paidAmount: number;
     note?: string;
   },
 ) => {
@@ -299,10 +300,18 @@ const assignMember = async (
     );
 
     const invoiceNo = await generateLockerInvoiceNo(session);
-    const subTotal = payload.paymentAmount * payload.months;
-    const totalDue = Math.max(0, subTotal - payload.discount);
+    const subTotal = Math.round(payload.paymentAmount * payload.months * 100) / 100;
+    const totalDue = Math.round(Math.max(0, subTotal - payload.discount) * 100) / 100;
+
+    if (payload.discount > subTotal) {
+      throw new AppError(StatusCodes.BAD_REQUEST, "Discount cannot exceed subtotal");
+    }
+    if (payload.paidAmount < totalDue) {
+      throw new AppError(StatusCodes.BAD_REQUEST, "Paid amount cannot be less than total due. Locker does not support partial payment.");
+    }
+
     const paidTotal = totalDue;
-    const exchange = 0;
+    const exchange = Math.round(Math.max(0, payload.paidAmount - totalDue) * 100) / 100;
 
     const paymentData = {
       branchId: new Types.ObjectId(branchId),
@@ -322,7 +331,7 @@ const assignMember = async (
       paymentMethod: payload.paymentMethod as any,
       paymentDate: now,
       nextPaymentDate: nextBillingDate,
-      status: paidTotal >= totalDue ? PaymentStatus.PAID : PaymentStatus.PARTIAL,
+      status: PaymentStatus.PAID,
       source: "locker",
       metadata: {
         lockerId: lockerId,
@@ -362,6 +371,7 @@ const collectLockerPayment = async (
     paymentAmount?: number;
     paymentMethod: PaymentMethod;
     discount: number;
+    paidAmount: number;
     note?: string;
   },
 ) => {
@@ -388,20 +398,34 @@ const collectLockerPayment = async (
 
   const systemPrice = resolveLockerPrice(locker, branch.lockerFeeAmount || 0);
   const paymentAmount = payload.paymentAmount ?? systemPrice;
-  const isCustom = paymentAmount !== (branch.lockerFeeAmount || 0);
 
   const periodStart = locker.nextBillingDate || new Date();
   const nextBillingDate = getNextBillingDate(payload.months);
+
+  if (locker.nextBillingDate && locker.nextBillingDate > new Date()) {
+    throw new AppError(
+      StatusCodes.BAD_REQUEST,
+      `Locker billing is not due yet. Next billing date: ${locker.nextBillingDate.toISOString().split("T")[0]}`,
+    );
+  }
 
   const session = await mongoose.startSession();
   session.startTransaction();
 
   try {
     const invoiceNo = await generateLockerInvoiceNo(session);
-    const subTotal = paymentAmount * payload.months;
-    const totalDue = Math.max(0, subTotal - payload.discount);
+    const subTotal = Math.round(paymentAmount * payload.months * 100) / 100;
+    const totalDue = Math.round(Math.max(0, subTotal - payload.discount) * 100) / 100;
+
+    if (payload.discount > subTotal) {
+      throw new AppError(StatusCodes.BAD_REQUEST, "Discount cannot exceed subtotal");
+    }
+    if (payload.paidAmount < totalDue) {
+      throw new AppError(StatusCodes.BAD_REQUEST, "Paid amount cannot be less than total due. Locker does not support partial payment.");
+    }
+
     const paidTotal = totalDue;
-    const exchange = 0;
+    const exchange = Math.round(Math.max(0, payload.paidAmount - totalDue) * 100) / 100;
 
     const paymentData = {
       branchId: new Types.ObjectId(branchId),
@@ -421,12 +445,12 @@ const collectLockerPayment = async (
       paymentMethod: payload.paymentMethod as any,
       paymentDate: new Date(),
       nextPaymentDate: nextBillingDate,
-      status: paidTotal >= totalDue ? PaymentStatus.PAID : PaymentStatus.PARTIAL,
+      status: PaymentStatus.PAID,
       source: "locker",
       metadata: {
         lockerId: lockerId,
         lockerNumber: locker.lockerNumber,
-        isCustomPrice: isCustom,
+        isCustomPrice: locker.isCustomPrice,
         months: payload.months,
         note: payload.note,
       },
@@ -436,8 +460,6 @@ const collectLockerPayment = async (
 
     const lockerUpdate: Partial<TLocker> = {
       nextBillingDate,
-      isCustomPrice: isCustom,
-      customPrice: isCustom ? paymentAmount : 0,
     };
 
     const updatedLocker = await LockerRepository.updateById(
@@ -448,7 +470,10 @@ const collectLockerPayment = async (
 
     await session.commitTransaction();
 
-    await invalidateLockerCache(branchId);
+    await Promise.all([
+      invalidateLockerCache(branchId),
+      cacheService.deleteCache(`members:${branchId}:${String(locker.assignedMemberId)}`),
+    ]);
 
     return { locker: updatedLocker, payment };
   } catch (error) {
@@ -480,6 +505,19 @@ const unassignMember = async (
     );
   }
 
+  const pendingPayments = await PaymentRepository.findMany({
+    branchId: new Types.ObjectId(branchId),
+    memberId: locker.assignedMemberId,
+    paymentType: PaymentType.LOCKER,
+    status: { $ne: PaymentStatus.PAID },
+  });
+  if (pendingPayments.length > 0) {
+    throw new AppError(
+      StatusCodes.BAD_REQUEST,
+      "Cannot unassign member with pending locker payments. Collect or settle all payments first.",
+    );
+  }
+
   const updated = await LockerRepository.updateById(lockerId, {
     status: LockerStatus.AVAILABLE,
     assignedMemberId: undefined,
@@ -487,8 +525,6 @@ const unassignMember = async (
     assignedMemberCode: undefined,
     assignedAt: undefined,
     nextBillingDate: undefined,
-    isCustomPrice: false,
-    customPrice: 0,
   });
 
   await invalidateLockerCache(String(locker.branchId));

@@ -40,6 +40,7 @@ const assignMember = z.object({
       .enum(Object.values(PaymentMethod) as [string, ...string[]])
       .default("cash"),
     discount: z.number().min(0).default(0),
+    paidAmount: z.number().min(0, "Paid amount is required"),
     note: z.string().optional(),
   }),
 });
@@ -52,6 +53,7 @@ const collectPayment = z.object({
       .enum(Object.values(PaymentMethod) as [string, ...string[]])
       .default("cash"),
     discount: z.number().min(0).default(0),
+    paidAmount: z.number().min(0, "Paid amount is required"),
     note: z.string().optional(),
   }),
 });

@@ -792,12 +792,15 @@ const getOverviewSummary = async (
     const rawDate = row.paymentDate || row.createdAt;
     const dateValue = rawDate ? new Date(String(rawDate)) : new Date();
 
+    const meta = row.metadata as Record<string, unknown> | undefined;
     merged.push({
       dateValue,
       transaction: {
         id: `#${String(row.invoiceNo)}`,
         date: formatBDDateTime(dateValue),
-        categoryName: String(row.memberName || row.paymentType || "Payment"),
+        categoryName: row.paymentType === "locker" && meta?.lockerNumber
+          ? `Locker #${meta.lockerNumber}${row.memberName ? ` - ${row.memberName}` : ""}`
+          : String(row.memberName || row.paymentType || "Payment"),
         memberId: row.memberId ? String(row.memberId) : null,
         memberCustomId: row.memberCustomId ? String(row.memberCustomId) : null,
         category:
