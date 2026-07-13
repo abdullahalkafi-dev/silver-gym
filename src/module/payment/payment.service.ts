@@ -37,6 +37,7 @@ import {
   computePaymentSettlement,
   isSameCalendarDay,
   normalizeMoney,
+  startOfCalendarDay,
   startOfCalendarMonth,
   startOfNextCalendarMonth,
   toMemberBalanceSnapshot,
