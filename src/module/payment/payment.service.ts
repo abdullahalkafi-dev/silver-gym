@@ -296,8 +296,12 @@ const assertCollectBillStartDate = (
 ) => {
   // Allow starting BEFORE requiredStartDate (paying overdue months)
   // OR exactly on alternateStartDate (short-term transition)
+  // Compare at calendar-day level to avoid false rejections from
+  // toCalendarDateISO (sets noon BD = 06:00 UTC) vs nextPaymentDate (midnight UTC)
+  const startDay = startOfCalendarDay(startDate);
+  const requiredDay = startOfCalendarDay(requiredStartDate);
   if (
-    startDate <= requiredStartDate ||
+    startDay <= requiredDay ||
     (alternateStartDate && isSameCalendarDay(startDate, alternateStartDate))
   ) {
     return;
