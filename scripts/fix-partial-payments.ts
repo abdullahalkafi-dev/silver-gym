@@ -138,12 +138,6 @@ async function run() {
 
   console.log(`Found ${brokenPayments.length} broken payment(s).\n`);
 
-  if (brokenPayments.length === 0) {
-    console.log("Nothing to fix.");
-    await mongoose.disconnect();
-    return;
-  }
-
   // Track affected member IDs
   const affectedMemberIds = new Set<string>();
   let paymentsFixed = 0;
