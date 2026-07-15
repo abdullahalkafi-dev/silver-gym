@@ -521,26 +521,6 @@ const updateCollectBillDueLedger = ({
           ledgerItem.remainingAmount - line.resolvedAmount,
         );
       }
-
-      return;
-    }
-
-    if (line.kind === "cycle" && line.unresolvedAmount > 0) {
-      nextItems.push(
-        createMemberBillingLedgerItem({
-          type:
-            line.lineType === "package_cycle"
-              ? "package_due"
-              : "monthly_cycle_due",
-          label: line.label,
-          amount: line.unresolvedAmount,
-          now: paymentDate,
-          dueDate: paymentDate,
-          periodStart: line.periodStart,
-          periodEnd: line.periodEnd,
-          packageId: line.packageId,
-        }),
-      );
     }
   });
 
@@ -563,6 +543,28 @@ const updateCollectBillDueLedger = ({
       }
     }
   }
+
+  // Push unresolved cycle amounts AFTER the cleanup loop so they aren't
+  // immediately zeroed out by the cycle-period clearing above.
+  resolvedInvoiceLines.forEach((line) => {
+    if (line.kind === "cycle" && line.unresolvedAmount > 0) {
+      nextItems.push(
+        createMemberBillingLedgerItem({
+          type:
+            line.lineType === "package_cycle"
+              ? "package_due"
+              : "monthly_cycle_due",
+          label: line.label,
+          amount: line.unresolvedAmount,
+          now: paymentDate,
+          dueDate: paymentDate,
+          periodStart: line.periodStart,
+          periodEnd: line.periodEnd,
+          packageId: line.packageId,
+        }),
+      );
+    }
+  });
 
   return alignMemberBillingLedgerToDueAmount(nextItems, finalDueAmount, paymentDate);
 };
