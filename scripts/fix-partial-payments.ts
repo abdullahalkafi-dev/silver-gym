@@ -357,6 +357,79 @@ async function run() {
   console.log(`  Payments fixed: ${paymentsFixed}`);
   console.log(`  Members rebuilt: ${membersFixed}`);
 
+  // Step 3: Find ALL members with ledger items that have null periodStart
+  // These were created by a previous migration that stored ISODate objects
+  // instead of strings. readMemberBillingLedger expects strings.
+  console.log(`\nScanning for ledger items with null periodStart...\n`);
+
+  let periodStartFixed = 0;
+
+  const membersWithNullPeriod = await membersCol.find({
+    "metadata.billingDueLedger.items": {
+      $elemMatch: {
+        type: { $in: ["monthly_cycle_due", "package_due"] },
+        periodStart: null,
+      },
+    },
+  }).toArray();
+
+  console.log(`Found ${membersWithNullPeriod.length} member(s) with null periodStart items.\n`);
+
+  for (const member of membersWithNullPeriod) {
+    const m = member as unknown as MemberDoc;
+    const ledger = (m.metadata?.[BILLING_LEDGER_KEY] as Ledger) || { version: 1, items: [], updatedAt: "" };
+    const items = [...ledger.items.map((item) => ({ ...item }))];
+    let changed = false;
+
+    // Find all payments for this member with cycle invoice lines
+    const memberPayments = await paymentsCol.find({
+      memberId: m._id,
+      "metadata.entryKind": "collect_bill",
+      "metadata.invoiceLineItems.kind": "cycle",
+    }).toArray();
+
+    for (const item of items) {
+      if ((item.type !== "monthly_cycle_due" && item.type !== "package_due") || item.periodStart) continue;
+
+      // Try to find matching payment by originalAmount
+      for (const mp of memberPayments) {
+        const mpd = mp as unknown as PaymentDoc;
+        const invoiceLines = (mpd.metadata?.invoiceLineItems || []) as InvoiceLineItem[];
+        for (const line of invoiceLines) {
+          if (line.kind !== "cycle") continue;
+          const lineUnresolved = normalizeMoney(line.unresolvedAmount ?? 0);
+          if (normalizeMoney(item.originalAmount) === lineUnresolved && line.periodStart) {
+            const ps = toIsoString(line.periodStart);
+            const pe = toIsoString(line.periodEnd);
+            console.log(`  ${m.fullName || m._id}: fixing ${item.key} periodStart: null → ${ps}`);
+            if (APPLY) {
+              item.periodStart = ps;
+              item.periodEnd = pe;
+            }
+            changed = true;
+            break;
+          }
+        }
+        if (changed) break;
+      }
+    }
+
+    if (changed && APPLY) {
+      const updatedLedger: Ledger = {
+        version: 1,
+        items: items,
+        updatedAt: new Date().toISOString(),
+      };
+      await membersCol.updateOne(
+        { _id: m._id },
+        { $set: { [`metadata.${BILLING_LEDGER_KEY}`]: updatedLedger } },
+      );
+      periodStartFixed++;
+    }
+  }
+
+  console.log(`\nPeriodStart fixes: ${periodStartFixed} member(s)`);
+
   if (!APPLY) {
     console.log(`\n=== DRY RUN COMPLETE — no changes were written ===`);
     console.log(`Run with --apply to write changes.`);
