@@ -7,6 +7,7 @@ export enum PaymentType {
 	REGISTRATION = "registration",
 	LOCKER = "locker",
 	OTHER = "other",
+	DUE_SETTLEMENT = "due_settlement",
 }
 
 export enum PaymentStatus {

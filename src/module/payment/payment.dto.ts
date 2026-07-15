@@ -212,10 +212,33 @@ const collectBillDto = z.object({
     }),
 });
 
+const settleDueDto = z.object({
+  data: z
+    .object({
+      parentPaymentId: z.string().trim().min(1, "parentPaymentId is required"),
+      paidTotal: z.number().positive("Paid amount must be greater than 0"),
+      paymentMethod: z.enum(Object.values(PaymentMethod) as [string, ...string[]]),
+      paymentDate: z.coerce.date().optional(),
+      note: z.string().trim().max(500).optional(),
+    })
+    .strict(),
+});
+
+const memberDuesDto = z.object({
+  params: z
+    .object({
+      branchId: z.string().min(1, "branchId is required"),
+      memberId: z.string().min(1, "memberId is required"),
+    })
+    .strict(),
+});
+
 export const PaymentDto = {
   create: createPaymentDto,
   update: updatePaymentDto,
   query: queryPaymentDto,
   collectBillContext: collectBillContextDto,
   collectBill: collectBillDto,
+  settleDue: settleDueDto,
+  memberDues: memberDuesDto,
 };

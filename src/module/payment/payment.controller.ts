@@ -6,6 +6,7 @@ import AppError from "../../errors/AppError";
 import catchAsync from "../../shared/catchAsync";
 import sendResponse from "../../shared/sendResponse";
 import { PaymentService } from "./payment.service";
+import { DueSettlementService } from "./payment.dueSettlement";
 
 const resolveActor = (req: Request) => {
   if (req.user?._id) {
@@ -169,6 +170,42 @@ const refund = catchAsync(async (req: Request, res: Response) => {
   });
 });
 
+const getMemberDuePayments = catchAsync(async (req: Request, res: Response) => {
+  const branchId = req.params.branchId as string;
+  const memberId = req.params.memberId as string;
+
+  const result = await DueSettlementService.getMemberDuePayments(
+    branchId,
+    memberId,
+    resolveActor(req),
+  );
+
+  sendResponse(res, {
+    statusCode: StatusCodes.OK,
+    success: true,
+    message: "Member due payments retrieved successfully",
+    data: result,
+  });
+});
+
+const settleDue = catchAsync(async (req: Request, res: Response) => {
+  const branchId = req.params.branchId as string;
+  const payload = req.body.data || req.body;
+
+  const result = await DueSettlementService.settleDuePayment(
+    branchId,
+    resolveActor(req),
+    payload,
+  );
+
+  sendResponse(res, {
+    statusCode: StatusCodes.CREATED,
+    success: true,
+    message: "Due settled successfully",
+    data: result,
+  });
+});
+
 export const PaymentController = {
   create,
   getAll,
@@ -178,4 +215,6 @@ export const PaymentController = {
   update,
   cancel,
   refund,
+  getMemberDuePayments,
+  settleDue,
 };

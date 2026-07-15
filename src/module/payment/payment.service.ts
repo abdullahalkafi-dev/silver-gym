@@ -49,7 +49,9 @@ import {
   TPayment,
 } from "./payment.interface";
 import { InvoiceCounterService } from "./invoiceCounter.service";
+import { Payment } from "./payment.model";
 import { PaymentRepository } from "./payment.repository";
+import { reverseSettlement } from "./payment.dueSettlement";
 
 type TAccessActor = {
   userId?: Types.ObjectId;
@@ -1572,6 +1574,11 @@ const updatePayment = async (
   if (!existingPayment) {
     throw new AppError(StatusCodes.NOT_FOUND, "Payment not found");
   }
+
+  if (existingPayment.metadata?.entryKind === "due_settlement") {
+    throw new AppError(StatusCodes.BAD_REQUEST, "Cannot modify a due settlement payment. Cancel it instead.");
+  }
+
   const oldNetEffect = getPaymentNetEffect(existingPayment);
 
   // Recalculate due amount and status if financial fields are updated
@@ -1637,28 +1644,41 @@ const cancelPayment = async (
 ) => {
   await resolveBranchAccess(branchId, actor);
 
-  const existingPayment = await PaymentRepository.findOne({
-    _id: new Types.ObjectId(paymentId),
-    branchId: new Types.ObjectId(branchId),
-  });
+  // Atomic check-and-update to prevent TOCTOU race on concurrent cancellations
+  const cancelledPayment = await Payment.findOneAndUpdate(
+    {
+      _id: new Types.ObjectId(paymentId),
+      branchId: new Types.ObjectId(branchId),
+      status: { $ne: PaymentStatus.CANCELLED },
+    },
+    { $set: { status: PaymentStatus.CANCELLED } },
+    { returnDocument: "after", runValidators: true },
+  );
 
-  if (!existingPayment) {
-    throw new AppError(StatusCodes.NOT_FOUND, "Payment not found");
-  }
-
-  if (existingPayment.status === PaymentStatus.CANCELLED) {
+  if (!cancelledPayment) {
+    // Either not found or already cancelled
+    const existing = await PaymentRepository.findOne({
+      _id: new Types.ObjectId(paymentId),
+      branchId: new Types.ObjectId(branchId),
+    });
+    if (!existing) {
+      throw new AppError(StatusCodes.NOT_FOUND, "Payment not found");
+    }
     throw new AppError(StatusCodes.BAD_REQUEST, "Payment is already cancelled");
   }
 
-  const cancelledPayment = await PaymentRepository.updateById(paymentId, {
-    status: PaymentStatus.CANCELLED,
-  });
+  // Use dueAmount directly — getPaymentNetEffect returns 0 for cancelled status,
+  // but dueAmount is unchanged by the $set:{status:CANCELLED} update.
+  // The atomic filter {status:{$ne:CANCELLED}} guarantees the doc was not cancelled before.
+  const cancelledDueAmount = normalizeMoney(cancelledPayment.dueAmount ?? 0);
 
-  if (existingPayment.memberId) {
+  if (cancelledPayment.metadata?.entryKind === "due_settlement") {
+    await reverseSettlement(branchId, cancelledPayment);
+  } else if (cancelledPayment.memberId && cancelledDueAmount > 0) {
     await syncMemberBalanceDelta(
       branchId,
-      existingPayment.memberId.toString(),
-      normalizeMoney(-getPaymentNetEffect(existingPayment)),
+      cancelledPayment.memberId.toString(),
+      -cancelledDueAmount,
     );
   }
 
@@ -1693,7 +1713,10 @@ const refundPayment = async (
     status: PaymentStatus.REFUNDED,
   });
 
-  if (existingPayment.memberId) {
+  if (existingPayment.metadata?.entryKind === "due_settlement") {
+    // Reverse the settlement: restore parent payment's dueAmount and member balance
+    await reverseSettlement(branchId, existingPayment);
+  } else if (existingPayment.memberId) {
     await syncMemberBalanceDelta(
       branchId,
       existingPayment.memberId.toString(),

@@ -30,6 +30,7 @@ const PAYMENT_TYPE_LABELS: Record<string, string> = {
   registration: "Registration",
   locker: "Locker",
   other: "Other",
+  due_settlement: "Due Settlement",
 };
 
 const PAYMENT_METHOD_LABELS: Record<string, string> = {

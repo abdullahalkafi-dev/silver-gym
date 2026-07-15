@@ -35,6 +35,31 @@ router.get(
 );
 
 /**
+ * @route   GET /api/v1/payments/:branchId/member-dues/:memberId
+ * @desc    Get all payment dues for a member (non-admission)
+ * @access  Private (Owner or Staff)
+ */
+router.get(
+  "/:branchId/member-dues/:memberId",
+  authStaff({ allowOwner: true }),
+  validateRequest(PaymentDto.memberDues),
+  PaymentController.getMemberDuePayments,
+);
+
+/**
+ * @route   POST /api/v1/payments/:branchId/settle-due
+ * @desc    Settle due against a specific payment
+ * @access  Private (Owner or Staff)
+ */
+router.post(
+  "/:branchId/settle-due",
+  authLimiter,
+  authStaff({ allowOwner: true }),
+  validateRequest(PaymentDto.settleDue),
+  PaymentController.settleDue,
+);
+
+/**
  * @route   GET /api/v1/payments/:branchId/collect-bill/:memberId
  * @desc    Get collect bill context for a member
  * @access  Private (Owner or Staff)
