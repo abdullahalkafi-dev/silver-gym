@@ -1275,21 +1275,6 @@ const collectBill = async (
   });
   const resolutionSummary = summarizeCollectBillResolution(resolvedInvoiceLines);
 
-  const hasUnresolvedCycleAmount = resolvedInvoiceLines.some(
-    (line) => line.kind === "cycle" && line.unresolvedAmount > 0.01,
-  );
-
-  if (hasUnresolvedCycleAmount) {
-    const modeLabel =
-      cycleDetails.collectionMode === "package"
-        ? "Package"
-        : "Monthly renewal";
-    throw new AppError(
-      StatusCodes.BAD_REQUEST,
-      `${modeLabel} charge of ${normalizeMoney(cycleDetails.cycleCharge)} BDT must be fully paid. Please increase the paid amount to cover the full charge.`,
-    );
-  }
-
   const effectiveDuePaymentAmount = normalizeMoney(
     resolvedInvoiceLines
       .filter((line) => line.kind === "selected_due")
