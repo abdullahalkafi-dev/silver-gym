@@ -78,6 +78,13 @@ interface MemberDoc {
   metadata?: Record<string, unknown>;
 }
 
+function toIsoString(value: unknown): string | undefined {
+  if (!value) return undefined;
+  if (typeof value === "string") return value;
+  if (value instanceof Date) return value.toISOString();
+  return String(value);
+}
+
 function computePaymentStatus(
   dueAmount: number,
   paidTotal: number,
@@ -219,23 +226,13 @@ async function run() {
           for (const line of invoiceLines) {
             if (line.kind !== "cycle") continue;
             const lineUnresolved = normalizeMoney(line.unresolvedAmount ?? 0);
-            const lineAmount = normalizeMoney(line.amount ?? 0);
-            const linePaid = normalizeMoney(lineAmount - lineUnresolved);
             // Match by originalAmount or remainingAmount
             if (
               normalizeMoney(item.originalAmount) === lineUnresolved &&
               line.periodStart
             ) {
-              const ps = typeof line.periodStart === "string"
-                ? line.periodStart
-                : line.periodStart instanceof Date
-                  ? line.periodStart.toISOString()
-                  : String(line.periodStart);
-              const pe = typeof line.periodEnd === "string"
-                ? line.periodEnd
-                : line.periodEnd instanceof Date
-                  ? line.periodEnd.toISOString()
-                  : line.periodEnd ? String(line.periodEnd) : undefined;
+              const ps = toIsoString(line.periodStart);
+              const pe = toIsoString(line.periodEnd);
 
               console.log(
                 `  ${member.fullName}: fixing periodStart on ${item.key}: null → ${ps}`,
@@ -274,16 +271,8 @@ async function run() {
         if (unresolved <= 0) continue;
 
         // Check if a ledger item already exists for this cycle period
-        const periodStart = typeof line.periodStart === "string"
-          ? line.periodStart
-          : line.periodStart instanceof Date
-            ? line.periodStart.toISOString()
-            : line.periodStart ? String(line.periodStart) : undefined;
-        const periodEnd = typeof line.periodEnd === "string"
-          ? line.periodEnd
-          : line.periodEnd instanceof Date
-            ? line.periodEnd.toISOString()
-            : line.periodEnd ? String(line.periodEnd) : undefined;
+        const periodStart = toIsoString(line.periodStart);
+        const periodEnd = toIsoString(line.periodEnd);
         const existingItem = ledgerItems.find(
           (item) =>
             (item.type === "monthly_cycle_due" || item.type === "package_due") &&
@@ -311,9 +300,7 @@ async function run() {
             label: line.label || "Unresolved cycle charge",
             originalAmount: unresolved,
             remainingAmount: unresolved,
-            dueDate: mpd.metadata?.paymentDate
-              ? new Date(mpd.metadata.paymentDate as string).toISOString()
-              : new Date().toISOString(),
+            dueDate: toIsoString(mpd.metadata?.paymentDate) || new Date().toISOString(),
             periodStart: periodStart,
             periodEnd: periodEnd,
             packageId: line.packageId,
