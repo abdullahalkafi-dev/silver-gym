@@ -39,7 +39,7 @@ type TSettleDuePayload = {
 type TSettleDueResult = {
   settlementPayment: TPayment;
   updatedParentPayment: TPayment;
-  updatedMember: TMember & { _id?: unknown };
+  member: TMember & { _id?: unknown };
   billing: {
     currentDueAmount: number;
     nextPaymentDate?: Date;
@@ -624,7 +624,7 @@ const settleDuePaymentCore = async (
   return {
     settlementPayment,
     updatedParentPayment: updatedParent,
-    updatedMember,
+    member: updatedMember,
     billing: {
       currentDueAmount: updatedMember.currentDueAmount ?? 0,
       nextPaymentDate: updatedMember.nextPaymentDate,

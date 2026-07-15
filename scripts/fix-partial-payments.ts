@@ -200,6 +200,57 @@ async function run() {
 
     const ledgerItems = [...ledger.items.map((item) => ({ ...item }))];
 
+    // Step 2a: Fix existing ledger items with null periodStart/periodEnd
+    // These were created by a migration that stored ISODate objects instead of strings.
+    // readMemberBillingLedger expects strings, so ISODate becomes undefined/null.
+    for (const item of ledgerItems) {
+      if (
+        (item.type === "monthly_cycle_due" || item.type === "package_due") &&
+        !item.periodStart
+      ) {
+        // Find the matching payment's invoiceLineItem by matching remainingAmount
+        for (const mp of await paymentsCol.find({
+          memberId: memberId,
+          "metadata.entryKind": "collect_bill",
+          "metadata.invoiceLineItems.kind": "cycle",
+        }).toArray()) {
+          const mpd = mp as unknown as PaymentDoc;
+          const invoiceLines = (mpd.metadata?.invoiceLineItems || []) as InvoiceLineItem[];
+          for (const line of invoiceLines) {
+            if (line.kind !== "cycle") continue;
+            const lineUnresolved = normalizeMoney(line.unresolvedAmount ?? 0);
+            const lineAmount = normalizeMoney(line.amount ?? 0);
+            const linePaid = normalizeMoney(lineAmount - lineUnresolved);
+            // Match by originalAmount or remainingAmount
+            if (
+              normalizeMoney(item.originalAmount) === lineUnresolved &&
+              line.periodStart
+            ) {
+              const ps = typeof line.periodStart === "string"
+                ? line.periodStart
+                : line.periodStart instanceof Date
+                  ? line.periodStart.toISOString()
+                  : String(line.periodStart);
+              const pe = typeof line.periodEnd === "string"
+                ? line.periodEnd
+                : line.periodEnd instanceof Date
+                  ? line.periodEnd.toISOString()
+                  : line.periodEnd ? String(line.periodEnd) : undefined;
+
+              console.log(
+                `  ${member.fullName}: fixing periodStart on ${item.key}: null → ${ps}`,
+              );
+              if (APPLY) {
+                item.periodStart = ps;
+                item.periodEnd = pe;
+              }
+              break;
+            }
+          }
+        }
+      }
+    }
+
     // Find all payments for this member that have unresolved amounts
     const memberPayments = await paymentsCol
       .find({
@@ -223,8 +274,16 @@ async function run() {
         if (unresolved <= 0) continue;
 
         // Check if a ledger item already exists for this cycle period
-        const periodStart = line.periodStart;
-        const periodEnd = line.periodEnd;
+        const periodStart = typeof line.periodStart === "string"
+          ? line.periodStart
+          : line.periodStart instanceof Date
+            ? line.periodStart.toISOString()
+            : line.periodStart ? String(line.periodStart) : undefined;
+        const periodEnd = typeof line.periodEnd === "string"
+          ? line.periodEnd
+          : line.periodEnd instanceof Date
+            ? line.periodEnd.toISOString()
+            : line.periodEnd ? String(line.periodEnd) : undefined;
         const existingItem = ledgerItems.find(
           (item) =>
             (item.type === "monthly_cycle_due" || item.type === "package_due") &&
