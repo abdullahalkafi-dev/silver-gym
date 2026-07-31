@@ -203,11 +203,14 @@ const canEditDueSMSTemplate = async (actor: TBranchAccessActor) => {
   return Boolean(role?.roleName?.trim().toLowerCase().includes("admin"));
 };
 
-const buildBranchSMSSettingsSnapshot = (branch: TBranch & { _id?: Types.ObjectId }) => ({
-  branchId: branch._id,
-  branchName: branch.branchName,
-  smsSettings: normalizeBranchSMSSettings(branch.smsSettings),
-});
+const buildBranchSMSSettingsSnapshot = (branch: TBranch & { _id?: Types.ObjectId }) => {
+  const plainBranch = typeof (branch as any).toObject === "function" ? (branch as any).toObject() : branch;
+  return {
+    branchId: plainBranch._id,
+    branchName: plainBranch.branchName,
+    smsSettings: normalizeBranchSMSSettings(plainBranch.smsSettings),
+  };
+};
 
 const buildBranchAutoDeactivationSettingsSnapshot = (
   branch: TBranch & { _id?: Types.ObjectId },

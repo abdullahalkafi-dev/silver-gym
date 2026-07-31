@@ -65,15 +65,22 @@ export const getDefaultBranchSMSSettings = (): TBranchSMSSettings => ({
 
 export const normalizeBranchSMSSettings = (
 	settings?: Partial<TBranchSMSSettings> | null,
-): TBranchSMSSettings => ({
-	...getDefaultBranchSMSSettings(),
-	...(settings ?? {}),
-	defaultDeliveryMode: "masking",
-	maskingSender:
-		typeof settings?.maskingSender === "string"
-			? settings.maskingSender.trim() || null
-			: settings?.maskingSender ?? null,
-});
+): TBranchSMSSettings => {
+	const rawSettings =
+		settings && typeof (settings as any).toObject === "function"
+			? (settings as any).toObject()
+			: settings;
+
+	return {
+		...getDefaultBranchSMSSettings(),
+		...(rawSettings ?? {}),
+		defaultDeliveryMode: "masking",
+		maskingSender:
+			typeof rawSettings?.maskingSender === "string"
+				? rawSettings.maskingSender.trim() || null
+				: rawSettings?.maskingSender ?? null,
+	};
+};
 
 export interface TBranch {
 	businessId: Types.ObjectId;
