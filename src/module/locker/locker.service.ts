@@ -272,7 +272,9 @@ const assignMember = async (
     throw new AppError(StatusCodes.NOT_FOUND, "Member not found in this branch");
   }
 
-  const isCustom = payload.paymentAmount !== (branch.lockerFeeAmount || 0);
+  const isCustom = locker.isCustomPrice
+    ? true
+    : payload.paymentAmount !== (branch.lockerFeeAmount || 0);
 
   const now = new Date();
   const nextBillingDate = getNextBillingDate(payload.months);

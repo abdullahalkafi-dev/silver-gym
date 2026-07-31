@@ -206,8 +206,27 @@ const settleDue = catchAsync(async (req: Request, res: Response) => {
   });
 });
 
+const createCustomIncome = catchAsync(async (req: Request, res: Response) => {
+  const branchId = req.params.branchId as string;
+  const payload = req.body.data || req.body;
+
+  const result = await PaymentService.createCustomIncome(
+    branchId,
+    payload,
+    resolveActor(req),
+  );
+
+  sendResponse(res, {
+    statusCode: StatusCodes.CREATED,
+    success: true,
+    message: "Custom income created successfully",
+    data: result,
+  });
+});
+
 export const PaymentController = {
   create,
+  createCustomIncome,
   getAll,
   getById,
   getCollectBillContext,

@@ -31,6 +31,7 @@ const PAYMENT_TYPE_LABELS: Record<string, string> = {
   locker: "Locker",
   other: "Other",
   due_settlement: "Due Settlement",
+  custom: "Custom Income",
 };
 
 const PAYMENT_METHOD_LABELS: Record<string, string> = {
@@ -204,15 +205,21 @@ export const TransactionRepository = {
       let description = memberName || paymentType || "Payment";
       if (paymentType === "locker" && lockerNumber) {
         description = `Locker #${lockerNumber}${memberName ? ` - ${memberName}` : ""}`;
+      } else if (paymentType === "custom") {
+        description = String(metadata?.note || metadata?.categoryTitle || "Custom Income");
       }
+
+      const category =
+        paymentType === "custom" && metadata?.categoryTitle
+          ? String(metadata.categoryTitle)
+          : PAYMENT_TYPE_LABELS[paymentType] || paymentType || "Other";
 
       merged.push({
         dateValue,
         id,
         invoiceNo: String(row.invoiceNo),
         type: "income",
-        category:
-          PAYMENT_TYPE_LABELS[paymentType] || paymentType || "Other",
+        category,
         description,
         memberId: row.memberId ? String(row.memberId) : null,
         memberCustomId: null,
@@ -419,15 +426,21 @@ export const TransactionRepository = {
       let description = memberName || paymentType || "Payment";
       if (paymentType === "locker" && lockerNumber) {
         description = `Locker #${lockerNumber}${memberName ? ` - ${memberName}` : ""}`;
+      } else if (paymentType === "custom") {
+        description = String(metadata?.note || metadata?.categoryTitle || "Custom Income");
       }
+
+      const category =
+        paymentType === "custom" && metadata?.categoryTitle
+          ? String(metadata.categoryTitle)
+          : PAYMENT_TYPE_LABELS[paymentType] || paymentType || "Other";
 
       merged.push({
         dateValue,
         id,
         invoiceNo: String(row.invoiceNo),
         type: "income",
-        category:
-          PAYMENT_TYPE_LABELS[paymentType] || paymentType || "Other",
+        category,
         description,
         memberId: row.memberId ? String(row.memberId) : null,
         memberCustomId: null,

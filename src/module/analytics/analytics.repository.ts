@@ -262,7 +262,17 @@ export const AnalyticsRepository = {
       },
       {
         $group: {
-          _id: { $ifNull: ["$paymentType", "Other"] },
+          _id: {
+            $switch: {
+              branches: [
+                {
+                  case: { $eq: ["$paymentType", "custom"] },
+                  then: { $ifNull: ["$metadata.categoryTitle", "Custom Income"] },
+                },
+              ],
+              default: { $ifNull: ["$paymentType", "Other"] },
+            },
+          },
           value: { $sum: { $ifNull: ["$paidTotal", 0] } },
         },
       },
@@ -614,6 +624,7 @@ export const AnalyticsRepository = {
             paymentMethod: 1,
             paidTotal: 1,
             billAmount: 1,
+            metadata: 1,
           },
         },
       ]),

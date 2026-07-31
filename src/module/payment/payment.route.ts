@@ -85,6 +85,20 @@ router.post(
 );
 
 /**
+ * @route   POST /api/v1/payments/:branchId/custom-income
+ * @desc    Create a custom non-member income entry
+ * @access  Private (Owner or Staff)
+ */
+router.post(
+  "/:branchId/custom-income",
+  authLimiter,
+  authStaff({ allowOwner: true }),
+  requirePermission("canManagePayments"),
+  validateRequest(PaymentDto.createCustomIncome),
+  PaymentController.createCustomIncome,
+);
+
+/**
  * @route   GET /api/v1/payments/:branchId/:paymentId
  * @desc    Get a single payment by ID
  * @access  Private (Owner or Staff)

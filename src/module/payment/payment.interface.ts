@@ -8,6 +8,7 @@ export enum PaymentType {
 	LOCKER = "locker",
 	OTHER = "other",
 	DUE_SETTLEMENT = "due_settlement",
+	CUSTOM = "custom",
 }
 
 export enum PaymentStatus {

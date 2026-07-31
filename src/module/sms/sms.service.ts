@@ -3,6 +3,7 @@ import { StatusCodes } from "http-status-codes";
 import { Types } from "mongoose";
 import config from "../../config";
 import AppError from "../../errors/AppError";
+import cacheService from "../../redis-client/cacheService";
 import { logger } from "../../logger/logger";
 import { normalizeBangladeshPhone } from "../../utils/bangladeshPhone";
 import {
@@ -677,6 +678,7 @@ const sendSms = async (
     providerResponse.recipientStatuses,
   );
   await SmsRepository.createMany(historyRows);
+  await cacheService.deleteCache("sms:fastsmsbd:balance").catch(() => {});
 
   return {
     requestId,

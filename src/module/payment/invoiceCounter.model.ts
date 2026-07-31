@@ -1,6 +1,6 @@
 import { Schema, model } from "mongoose";
 
-export type TInvoiceCounterType = "PAYMENT" | "EXPENSE" | "LOCKER";
+export type TInvoiceCounterType = "PAYMENT" | "EXPENSE" | "LOCKER" | "INCOME";
 
 interface TInvoiceCounter {
   type: TInvoiceCounterType;
@@ -12,7 +12,7 @@ const invoiceCounterSchema = new Schema<TInvoiceCounter>(
     type: {
       type: String,
       required: true,
-      enum: ["PAYMENT", "EXPENSE", "LOCKER"],
+      enum: ["PAYMENT", "EXPENSE", "LOCKER", "INCOME"],
     },
     lastSequence: {
       type: Number,

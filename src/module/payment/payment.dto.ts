@@ -118,6 +118,7 @@ const queryPaymentDto = z.object({
       memberId: z.string().trim().optional(),
       packageId: z.string().trim().optional(),
       paymentType: z.enum(Object.values(PaymentType) as [string, ...string[]]).optional(),
+      categoryId: z.string().trim().optional(),
       paymentMethod: z.enum(Object.values(PaymentMethod) as [string, ...string[]]).optional(),
       status: z.enum(Object.values(PaymentStatus) as [string, ...string[]]).optional(),
       startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Date must be YYYY-MM-DD").optional(),
@@ -233,6 +234,23 @@ const memberDuesDto = z.object({
     .strict(),
 });
 
+const createCustomIncomeDto = z.object({
+  body: z
+    .object({
+      categoryId: z.string().trim().min(1, "Category ID is required"),
+      categoryTitle: z.string().trim().min(1, "Category title is required"),
+      amount: z.number().positive("Amount must be greater than 0"),
+      paymentMethod: z.enum(Object.values(PaymentMethod) as [string, ...string[]]),
+      paymentDate: z.coerce.date().refine((date) => {
+        const bdNow = new Date(Date.now() + 6 * 60 * 60 * 1000);
+        const bdDate = new Date(date.getTime() + 6 * 60 * 60 * 1000);
+        return bdDate.toISOString().slice(0, 10) <= bdNow.toISOString().slice(0, 10);
+      }, "Entry date cannot be in the future"),
+      note: z.string().trim().max(1000).optional(),
+    })
+    .strict(),
+});
+
 export const PaymentDto = {
   create: createPaymentDto,
   update: updatePaymentDto,
@@ -241,4 +259,5 @@ export const PaymentDto = {
   collectBill: collectBillDto,
   settleDue: settleDueDto,
   memberDues: memberDuesDto,
+  createCustomIncome: createCustomIncomeDto,
 };

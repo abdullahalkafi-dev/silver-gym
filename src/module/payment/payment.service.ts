@@ -6,6 +6,7 @@ import AppError from "../../errors/AppError";
 import { logger } from "../../logger/logger";
 import cacheService from "../../redis-client/cacheService";
 import { BranchRepository } from "../branch/branch.repository";
+import { IncomeCategoryRepository } from "../incomeCategory/incomeCategory.repository";
 import { BusinessProfileRepository } from "../businessProfile/businessProfile.repository";
 import {
   buildMemberBillingUpdate,
@@ -44,6 +45,7 @@ import {
 } from "./payment.balance";
 import { resolveShortTermMonthlyTransition } from "./payment.shortTermTransition";
 import {
+  PaymentMethod,
   PaymentStatus,
   PaymentType,
   TPayment,
@@ -76,6 +78,7 @@ type TQueryPayment = {
   memberId?: string;
   packageId?: string;
   paymentType?: string;
+  categoryId?: string;
   paymentMethod?: string;
   status?: string;
   startDate?: string;
@@ -589,11 +592,11 @@ const resolveCollectBillMember = async (
 
   const currentPackageDurationType = member.currentPackageId
     ? (
-        await PackageRepository.findOne({
-          _id: member.currentPackageId,
-          branchId: new Types.ObjectId(branchId),
-        })
-      )?.durationType
+      await PackageRepository.findOne({
+        _id: member.currentPackageId,
+        branchId: new Types.ObjectId(branchId),
+      })
+    )?.durationType
     : undefined;
 
   const shortTermTransition = resolveShortTermMonthlyTransition({
@@ -1152,18 +1155,18 @@ const getCollectBillContext = async (
       requiredStartDate,
       isActive: member.isActive !== false,
       ...(shortTermTransition.canTransitionToMonthly &&
-      shortTermTransition.monthlyAnchorDate
+        shortTermTransition.monthlyAnchorDate
         ? {
-            monthlyStartDate: shortTermTransition.monthlyAnchorDate,
-            transitionToMonthly: {
-              packageExpiryDate: shortTermTransition.expiryDate,
-              suggestedDiscountAmount:
-                shortTermTransition.suggestedDiscountAmount ?? 0,
-              coveredDaysInAnchorMonth:
-                shortTermTransition.coveredDaysInAnchorMonth ?? 0,
-              daysInAnchorMonth: shortTermTransition.daysInAnchorMonth ?? 0,
-            },
-          }
+          monthlyStartDate: shortTermTransition.monthlyAnchorDate,
+          transitionToMonthly: {
+            packageExpiryDate: shortTermTransition.expiryDate,
+            suggestedDiscountAmount:
+              shortTermTransition.suggestedDiscountAmount ?? 0,
+            coveredDaysInAnchorMonth:
+              shortTermTransition.coveredDaysInAnchorMonth ?? 0,
+            daysInAnchorMonth: shortTermTransition.daysInAnchorMonth ?? 0,
+          },
+        }
         : {}),
       dueBreakdown,
     },
@@ -1327,19 +1330,19 @@ const collectBill = async (
     payload.collectionMode === "due_only"
       ? mergeMemberBillingLedgerMetadata(member.metadata, updatedDueLedger)
       : mergeMemberBillingLedgerMetadata(
-          mergeMemberBillingProfileMetadata(member.metadata, {
-            cycleType: payload.collectionMode === "monthly" ? "monthly" : "package",
-            accrualStoppedAt: undefined,
-            ...(payload.collectionMode === "monthly" &&
+        mergeMemberBillingProfileMetadata(member.metadata, {
+          cycleType: payload.collectionMode === "monthly" ? "monthly" : "package",
+          accrualStoppedAt: undefined,
+          ...(payload.collectionMode === "monthly" &&
             cycleDetails.recurringMonthlyFeeAmount != null
-              ? {
-                  recurringMonthlyFeeAmount:
-                    cycleDetails.recurringMonthlyFeeAmount,
-                }
-              : {}),
-          }),
-          updatedDueLedger,
-        );
+            ? {
+              recurringMonthlyFeeAmount:
+                cycleDetails.recurringMonthlyFeeAmount,
+            }
+            : {}),
+        }),
+        updatedDueLedger,
+      );
 
   const memberUpdatePayload: Record<string, unknown> = {
     ...buildMemberBillingUpdate({
@@ -1491,6 +1494,11 @@ const getAllPayments = async (
   // Exclude ALL opening import balance records — these are bookkeeping entries
   // created during member import and should never appear in the income list
   normalizedQuery["metadata.entryKind"] = { $ne: "opening_import_balance" };
+
+  if (query.categoryId) {
+    normalizedQuery["metadata.categoryId"] = query.categoryId;
+    delete normalizedQuery.categoryId;
+  }
 
   const paymentQuery = new QueryBuilder(
     PaymentRepository.findMany({ branchId: new Types.ObjectId(branchId) }),
@@ -1721,8 +1729,82 @@ const refundPayment = async (
   return refundedPayment;
 };
 
+type TCreateCustomIncomePayload = {
+  categoryId: string;
+  categoryTitle: string;
+  amount: number;
+  paymentMethod: PaymentMethod;
+  paymentDate: Date;
+  note?: string;
+};
+
+const createCustomIncome = async (
+  branchId: string,
+  payload: TCreateCustomIncomePayload,
+  actor: { userId?: Types.ObjectId; staff?: TStaff & { _id?: Types.ObjectId } },
+) => {
+  await resolveBranchAccess(branchId, actor);
+
+  if (Types.ObjectId.isValid(payload.categoryId)) {
+    const categoryDoc = await IncomeCategoryRepository.findOne({
+      _id: new Types.ObjectId(payload.categoryId),
+      branchId: new Types.ObjectId(branchId),
+      isActive: true,
+    });
+    if (!categoryDoc) {
+      throw new AppError(
+        StatusCodes.NOT_FOUND,
+        "Income category not found or is inactive",
+      );
+    }
+  }
+
+  const bdNow = new Date(Date.now() + 6 * 60 * 60 * 1000);
+  const bdTarget = new Date(payload.paymentDate.getTime() + 6 * 60 * 60 * 1000);
+  if (bdTarget.toISOString().slice(0, 10) > bdNow.toISOString().slice(0, 10)) {
+    throw new AppError(
+      StatusCodes.BAD_REQUEST,
+      "Custom income entry date cannot be in the future",
+    );
+  }
+
+  const sequence = await InvoiceCounterService.getNextInvoiceSequence("INCOME");
+  const invoiceNo = `INC-${String(sequence).padStart(12, "0")}`;
+
+  const paymentData: Partial<TPayment> = {
+    branchId: new Types.ObjectId(branchId),
+    invoiceNo,
+    paymentType: PaymentType.CUSTOM,
+    paymentDate: payload.paymentDate,
+    paidTotal: payload.amount,
+    billAmount: payload.amount,
+    subTotal: payload.amount,
+    discount: 0,
+    dueAmount: 0,
+    paymentMethod: payload.paymentMethod,
+    status: PaymentStatus.PAID,
+    source: "custom_income",
+    metadata: {
+      categoryId: payload.categoryId,
+      categoryTitle: payload.categoryTitle,
+      note: payload.note,
+    },
+  };
+
+  const payment = await PaymentRepository.create(paymentData as TPayment);
+
+  await Promise.all([
+    cacheService.invalidateByPattern(`payments:${branchId}:*`).catch(() => { }),
+    cacheService.invalidateByPattern(`analytics:${branchId}:*`).catch(() => { }),
+    cacheService.invalidateByPattern(`transactions:${branchId}*`).catch(() => { }),
+  ]);
+
+  return payment;
+};
+
 export const PaymentService = {
   createPayment,
+  createCustomIncome,
   getCollectBillContext,
   collectBill,
   getAllPayments,

@@ -14,10 +14,15 @@ import { AnalyticsRoutes } from "../module/analytics/analytics.route";
 import { SmsRoutes } from "../module/sms/sms.route";
 import { TransactionRoutes } from "../module/transaction/transaction.route";
 import { LockerRoutes } from "../module/locker/locker.route";
+import { IncomeCategoryRoutes } from "../module/incomeCategory/incomeCategory.route";
 
 const router: Router = express.Router();
 
 const apiRoutes = [
+  {
+    path: "/income-categories",
+    route: IncomeCategoryRoutes,
+  },
   {
     path: "/auth",
     route: AuthRoutes,
