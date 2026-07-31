@@ -91,6 +91,16 @@ const getBalance = async (): Promise<TSmsBalanceSnapshot> => {
     return cached;
   }
 
+  if (config.sms.dry_run !== false && (!config.sms.api_key || !config.sms.sender_id)) {
+    const mockBalance: TSmsBalanceSnapshot = {
+      nonMaskingBalance: 0,
+      maskingBalance: 9999,
+      fetchedAt: new Date().toISOString(),
+      dryRun: true,
+    };
+    return mockBalance;
+  }
+
   const { apiKey, apiBaseUrl } = getRequiredConfig();
 
   const url = `${apiBaseUrl}/getbalancev3?apikey=${apiKey}`;
