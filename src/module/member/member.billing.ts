@@ -220,7 +220,10 @@ export const reconcileMemberBillingState = (
 export const calculateMonthlyCycleEndDate = (
   startDate: Date,
   paidMonths: number,
-): Date => addMonthsPreservingDay(startDate, paidMonths);
+): Date => {
+  const baseMonth = startOfCalendarMonth(startDate);
+  return addMonthsPreservingDay(baseMonth, paidMonths);
+};
 
 export const resolveReactivatedNextPaymentDate = (
   nextPaymentDate: Date | string | undefined,

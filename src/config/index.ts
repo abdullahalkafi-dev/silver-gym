@@ -46,9 +46,9 @@ export default {
   },
   sms: {
     api_base_url:
-      process.env.SMS_WINTEL_API_BASE_URL || "https://smsapi.wintextbd.com/api",
-    wintel_user_id: process.env.SMS_WINTEL_USER_ID,
-    wintel_password: process.env.SMS_WINTEL_PASSWORD,
+      process.env.SMS_FASTSMSBD_API_BASE_URL || "https://smsapi.fastsmsbd.com",
+    api_key: process.env.SMS_FASTSMSBD_API_KEY,
+    sender_id: process.env.SMS_FASTSMSBD_SENDER_ID,
     dry_run: process.env.SMS_DRY_RUN !== "false",
     balance_cache_ttl_seconds: process.env.SMS_BALANCE_CACHE_TTL_SECONDS,
   },

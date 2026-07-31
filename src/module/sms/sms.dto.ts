@@ -1,9 +1,5 @@
 import { z } from "zod";
 
-const ENGLISH_SMS_TEXT_PATTERN = /^[\x20-\x7E\r\n]*$/;
-
-const isEnglishSmsText = (value: string) => ENGLISH_SMS_TEXT_PATTERN.test(value);
-
 const routeParamsSchema = z
   .object({
     businessId: z.string().trim().min(1, "businessId is required"),
@@ -36,10 +32,6 @@ const previewSendDataSchema = z
       .trim()
       .min(1, "Template cannot be empty")
       .max(480, "Template must be 480 characters or fewer")
-      .refine(
-        (value) => isEnglishSmsText(value),
-        "SMS text must use English characters only",
-      )
       .optional(),
     templateCategory: templateCategorySchema.optional(),
     deliveryMode: deliveryModeSchema.optional(),
@@ -64,14 +56,6 @@ const previewSendDataSchema = z
         code: "custom",
         path: ["template"],
         message: "Write a custom message before continuing",
-      });
-    }
-
-    if (templateCategory === "due" && data.template && data.template.length > 160) {
-      ctx.addIssue({
-        code: "custom",
-        path: ["template"],
-        message: "Due reminder text must stay within 160 English characters",
       });
     }
   });

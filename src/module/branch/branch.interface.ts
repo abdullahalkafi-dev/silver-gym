@@ -5,8 +5,11 @@ export interface TBranchSMSSettings {
 	autoSendEnabled: boolean;
 	reminderDayOfMonth: number;
 	template: string;
+	templateBangla: string;
 	occasionTemplate: string;
+	occasionTemplateBangla: string;
 	promotionTemplate: string;
+	promotionTemplateBangla: string;
 	defaultDeliveryMode: TSmsDeliveryMode;
 	maskingSender?: string | null;
 	updatedAt?: Date | null;
@@ -29,18 +32,30 @@ export const normalizeBranchAutoDeactivateAfterUnpaidMonths = (
 export const DEFAULT_BRANCH_SMS_TEMPLATE =
 	"Dear {memberName}, your {dueMonth} monthly due is pending at {branchName}. Please pay as soon as possible. Thank you. Contact: 01815635091";
 
+export const DEFAULT_BRANCH_SMS_TEMPLATE_BANGLA =
+	"প্রিয় {memberName}, {branchName} এ {dueMonth} মাসিক বকেয়া বাকি আছে। দয়া করে যত দ্রুত সম্ভব পরিশোধ করুন। ধন্যবাদ। যোগাযোগ: 01815635091";
+
 export const DEFAULT_BRANCH_SMS_OCCASION_TEMPLATE =
 	"Dear {memberName}, greetings from {branchName}. Thank you for being with us.";
 
+export const DEFAULT_BRANCH_SMS_OCCASION_TEMPLATE_BANGLA =
+	"প্রিয় {memberName}, {branchName} থেকে আপনাকে শুভেচ্ছা জানাচ্ছি। আমাদের পাশে থাকার জন্য ধন্যবাদ।";
+
 export const DEFAULT_BRANCH_SMS_PROMOTION_TEMPLATE =
 	"Dear {memberName}, {branchName} has a new offer for you. Contact us for details.";
+
+export const DEFAULT_BRANCH_SMS_PROMOTION_TEMPLATE_BANGLA =
+	"প্রিয় {memberName}, {branchName} আপনার জন্য একটি নতুন অফার রেখেছে। বিস্তারিত জানতে আমাদের সাথে যোগাযোগ করুন।";
 
 export const getDefaultBranchSMSSettings = (): TBranchSMSSettings => ({
 	autoSendEnabled: false,
 	reminderDayOfMonth: 5,
 	template: DEFAULT_BRANCH_SMS_TEMPLATE,
+	templateBangla: DEFAULT_BRANCH_SMS_TEMPLATE_BANGLA,
 	occasionTemplate: DEFAULT_BRANCH_SMS_OCCASION_TEMPLATE,
+	occasionTemplateBangla: DEFAULT_BRANCH_SMS_OCCASION_TEMPLATE_BANGLA,
 	promotionTemplate: DEFAULT_BRANCH_SMS_PROMOTION_TEMPLATE,
+	promotionTemplateBangla: DEFAULT_BRANCH_SMS_PROMOTION_TEMPLATE_BANGLA,
 	defaultDeliveryMode: "masking",
 	maskingSender: null,
 	updatedAt: null,

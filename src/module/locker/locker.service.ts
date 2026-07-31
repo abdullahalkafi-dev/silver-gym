@@ -251,13 +251,12 @@ const assignMember = async (
 ) => {
   const branch = await resolveBranchAccess(branchId, actor);
 
-  const [locker, member, existingAssignment] = await Promise.all([
+  const [locker, member] = await Promise.all([
     LockerRepository.findById(lockerId),
     MemberRepository.findOne({
       _id: new Types.ObjectId(payload.memberId),
       branchId: new Types.ObjectId(branchId),
     }),
-    LockerRepository.findByBranchAndMember(branchId, payload.memberId),
   ]);
 
   if (!locker) {
@@ -271,12 +270,6 @@ const assignMember = async (
   }
   if (!member) {
     throw new AppError(StatusCodes.NOT_FOUND, "Member not found in this branch");
-  }
-  if (existingAssignment) {
-    throw new AppError(
-      StatusCodes.CONFLICT,
-      `Member is already assigned to Locker #${existingAssignment.lockerNumber}`,
-    );
   }
 
   const isCustom = payload.paymentAmount !== (branch.lockerFeeAmount || 0);
@@ -511,6 +504,7 @@ const unassignMember = async (
     branchId: new Types.ObjectId(branchId),
     memberId: locker.assignedMemberId,
     paymentType: PaymentType.LOCKER,
+    "metadata.lockerId": lockerId,
     status: { $ne: PaymentStatus.PAID },
     periodEnd: { $gt: now },
   });

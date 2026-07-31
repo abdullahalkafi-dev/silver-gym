@@ -33,6 +33,16 @@ test("multi-month join keeps the next bill at the first unpaid month", () => {
   assertLocalDate(endDate, 2026, 6, 1);
 });
 
+test("mid-month join anchors cycle end to first of next month", () => {
+  const endDate = calculateMonthlyCycleEndDate(new Date(2026, 5, 20), 1);
+  assertLocalDate(endDate, 2026, 6, 1); // July 1
+});
+
+test("multi-month mid-month join anchors correctly to 1st of target month", () => {
+  const endDate = calculateMonthlyCycleEndDate(new Date(2026, 5, 20), 3);
+  assertLocalDate(endDate, 2026, 8, 1); // Sept 1
+});
+
 test("missed months generate one monthly due item per unpaid month", () => {
   const member = {
     currentDueAmount: 0,

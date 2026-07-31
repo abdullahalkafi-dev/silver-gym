@@ -13,6 +13,13 @@ const englishSmsField = (label: string, max: number) =>
       `${label} must use English characters only`,
     );
 
+const smsField = (label: string, max: number) =>
+  z
+    .string()
+    .trim()
+    .min(1, `${label} is required`)
+    .max(max, `${label} must be ${max} characters or fewer`);
+
 const updateBranchSMSSettingsSchema = z.object({
   data: z
     .object({
@@ -24,8 +31,11 @@ const updateBranchSMSSettingsSchema = z.object({
         .max(31, "Reminder day cannot exceed 31")
         .optional(),
       template: englishSmsField("SMS template", 160).optional(),
+      templateBangla: smsField("Bangla SMS template", 300).optional(),
       occasionTemplate: englishSmsField("Occasion template", 480).optional(),
+      occasionTemplateBangla: smsField("Bangla occasion template", 300).optional(),
       promotionTemplate: englishSmsField("Promotion template", 480).optional(),
+      promotionTemplateBangla: smsField("Bangla promotion template", 300).optional(),
       defaultDeliveryMode: z.literal("masking").optional(),
       maskingSender: z
         .union([

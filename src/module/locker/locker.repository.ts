@@ -82,7 +82,7 @@ const getMaxLockerNumber = async (branchId: string) => {
 };
 
 const findByBranchAndMember = async (branchId: string, memberId: string) => {
-  return Locker.findOne({
+  return Locker.find({
     branchId: new Types.ObjectId(branchId),
     assignedMemberId: new Types.ObjectId(memberId),
     isDeleted: false,

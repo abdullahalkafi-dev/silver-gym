@@ -115,8 +115,8 @@ const smsHistorySchema = new Schema<TSmsHistory>(
     },
     provider: {
       type: String,
-      enum: ["wintel"],
-      default: "wintel",
+      enum: ["fastsmsbd"],
+      default: "fastsmsbd",
       required: true,
     },
     availableBalance: {

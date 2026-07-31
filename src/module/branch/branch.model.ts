@@ -23,15 +23,30 @@ const branchSmsSettingsSchema = new Schema(
       trim: true,
       default: getDefaultBranchSMSSettings().template,
     },
+    templateBangla: {
+      type: String,
+      trim: true,
+      default: getDefaultBranchSMSSettings().templateBangla,
+    },
     occasionTemplate: {
       type: String,
       trim: true,
       default: getDefaultBranchSMSSettings().occasionTemplate,
     },
+    occasionTemplateBangla: {
+      type: String,
+      trim: true,
+      default: getDefaultBranchSMSSettings().occasionTemplateBangla,
+    },
     promotionTemplate: {
       type: String,
       trim: true,
       default: getDefaultBranchSMSSettings().promotionTemplate,
+    },
+    promotionTemplateBangla: {
+      type: String,
+      trim: true,
+      default: getDefaultBranchSMSSettings().promotionTemplateBangla,
     },
     defaultDeliveryMode: {
       type: String,

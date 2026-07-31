@@ -103,6 +103,9 @@ let schedulerHandle: NodeJS.Timeout | null = null;
 
 const DEFAULT_INTERVAL_MS = 15 * 60 * 1000;
 const SINGLE_SMS_CHARACTER_LIMIT = 160;
+const UNICODE_SMS_CHARACTER_LIMIT = 70;
+const UNICODE_SMS_MULTI_PART_CHARS = 67;
+const ENGLISH_SMS_MULTI_PART_CHARS = 153;
 const ENGLISH_SMS_TEXT_PATTERN = /^[\x20-\x7E\r\n]*$/;
 
 const countMessageCharacters = (message: string) => Array.from(message).length;
@@ -132,21 +135,21 @@ const formatDueMonthLabel = (targetDate: Date, overdueMonths: number) => {
   return `${formatEnglishMonth(startMonth, true)}-${formatEnglishMonth(endMonth, true)}`;
 };
 
-const estimateTextSmsUnits = (message: string) => {
-  const length = countMessageCharacters(message);
-
-  if (length <= SINGLE_SMS_CHARACTER_LIMIT) {
-    return 1;
-  }
-
-  return Math.ceil(length / 153);
-};
-
 const detectSmsMessageType = (message: string): TSmsMessageType => {
   return isEnglishSmsText(message) ? "text" : "unicode";
 };
 
-const estimateSmsUnits = (message: string) => estimateTextSmsUnits(message);
+const estimateSmsUnits = (message: string): number => {
+  const isUnicode = !isEnglishSmsText(message);
+  const firstPartLimit = isUnicode ? UNICODE_SMS_CHARACTER_LIMIT : SINGLE_SMS_CHARACTER_LIMIT;
+  const multiPartChars = isUnicode ? UNICODE_SMS_MULTI_PART_CHARS : ENGLISH_SMS_MULTI_PART_CHARS;
+
+  if (message.length <= firstPartLimit) {
+    return 1;
+  }
+
+  return Math.ceil(message.length / multiPartChars);
+};
 
 const resolveBalanceBucket = (): TSmsBalanceBucket => "masking";
 
@@ -159,14 +162,14 @@ const resolveTemplateByCategory = (
 ) => {
   switch (templateCategory) {
     case "occasion":
-      return templateSource.occasionTemplate;
+      return templateSource.occasionTemplateBangla || templateSource.occasionTemplate;
     case "promotion":
-      return templateSource.promotionTemplate;
+      return templateSource.promotionTemplateBangla || templateSource.promotionTemplate;
     case "custom":
       return "";
     case "due":
     default:
-      return templateSource.template;
+      return templateSource.templateBangla || templateSource.template;
   }
 };
 
@@ -289,7 +292,7 @@ const toRecipientPreview = (
   targetDate: Date,
   template: string,
   audience: TSmsAudience,
-  templateCategory: TSmsTemplateCategory,
+  _templateCategory: TSmsTemplateCategory,
 ): TSmsRecipientPreview | null => {
   const billing = reconcileMemberBillingState(member, branch, targetDate);
 
@@ -318,25 +321,10 @@ const toRecipientPreview = (
     branchName: branch.branchName,
   });
   const messageType = detectSmsMessageType(renderedMessage);
-  const exceedsDueMessageLimit =
-    templateCategory === "due" &&
-    countMessageCharacters(renderedMessage) > SINGLE_SMS_CHARACTER_LIMIT;
-  const status =
-    !recipientPhone
-      ? "blocked"
-      : messageType !== "text"
-        ? "blocked"
-        : exceedsDueMessageLimit
-          ? "blocked"
-          : "ready";
-  const reason =
-    !recipientPhone
-      ? "Member does not have a valid Bangladesh mobile number"
-      : messageType !== "text"
-        ? "Only English text SMS is supported right now"
-        : exceedsDueMessageLimit
-          ? "Due reminder text must stay within 160 English characters"
-          : undefined;
+  const status = !recipientPhone ? "blocked" : "ready";
+  const reason = !recipientPhone
+    ? "Member does not have a valid Bangladesh mobile number"
+    : undefined;
 
   return {
     memberId: String(member._id || ""),
@@ -369,12 +357,18 @@ const summarizePreview = (
   const availableBalance = resolveAvailableBalance(balance);
   const remainingBalance = Math.max(availableBalance - requiredUnits, 0);
   const insufficientBalance = requiredUnits > availableBalance;
-  const textRecipients = readyRecipients.length;
-  const unicodeRecipients = 0;
-  const messageType: TSmsMessageTypeSummary = "text";
-  const messagesOverSingleSmsLimit = readyRecipients.filter(
-    (recipient) => countMessageCharacters(recipient.renderedMessage) > SINGLE_SMS_CHARACTER_LIMIT,
-  ).length;
+  const textRecipients = readyRecipients.filter((r) => r.messageType === "text").length;
+  const unicodeRecipients = readyRecipients.filter((r) => r.messageType === "unicode").length;
+  const messageType: TSmsMessageTypeSummary =
+    textRecipients > 0 && unicodeRecipients > 0
+      ? "mixed"
+      : unicodeRecipients > 0
+        ? "unicode"
+        : "text";
+  const messagesOverSingleSmsLimit = readyRecipients.filter((recipient) => {
+    const limit = recipient.messageType === "unicode" ? UNICODE_SMS_CHARACTER_LIMIT : SINGLE_SMS_CHARACTER_LIMIT;
+    return countMessageCharacters(recipient.renderedMessage) > limit;
+  }).length;
 
   return {
     totalRecipients: recipients.length,
@@ -427,22 +421,7 @@ const buildPreview = async (
     );
   }
 
-  if (!isEnglishSmsText(template)) {
-    throw new AppError(
-      StatusCodes.BAD_REQUEST,
-      "SMS text must use English characters only",
-    );
-  }
 
-  if (
-    templateCategory === "due" &&
-    countMessageCharacters(template) > SINGLE_SMS_CHARACTER_LIMIT
-  ) {
-    throw new AppError(
-      StatusCodes.BAD_REQUEST,
-      "Due reminder text must stay within 160 English characters",
-    );
-  }
 
   const members = await resolveMembersForAudience(branchId, audience, payload.memberIds);
   const resolvedRecipients = members
@@ -489,11 +468,21 @@ const buildHistoryRows = (
   providerReference: string | undefined,
   forceStatus?: "blocked" | "simulated" | "sent" | "failed",
   forceReason?: string,
+  recipientStatuses?: Record<string, { status: "sent" | "failed"; reason?: string }>,
 ): TSmsHistory[] => {
   return preview.recipients.map((recipient) => {
     const isBlockedRecipient = recipient.status === "blocked";
-    const status = forceStatus || (isBlockedRecipient ? "blocked" : config.sms.dry_run !== false ? "simulated" : "sent");
-    const reason = forceReason || recipient.reason;
+    const providerResult = recipient.recipientPhone && recipientStatuses
+      ? recipientStatuses[recipient.recipientPhone]
+      : undefined;
+    const status =
+      forceStatus ||
+      (isBlockedRecipient
+        ? "blocked"
+        : config.sms.dry_run !== false
+          ? "simulated"
+          : providerResult?.status || "sent");
+    const reason = forceReason || providerResult?.reason || recipient.reason;
 
     return {
       requestId,
@@ -519,7 +508,7 @@ const buildHistoryRows = (
       requestedByUserId: actor?.userId ?? null,
       requestedByStaffId: actor?.staff?._id ?? null,
       targetDate: preview.targetDate,
-      provider: "wintel",
+      provider: "fastsmsbd",
       availableBalance: preview.summary.availableBalance,
       remainingBalance: preview.summary.insufficientBalance
         ? preview.summary.availableBalance
@@ -657,16 +646,24 @@ const sendSms = async (
     (recipient) => recipient.status === "ready" && recipient.recipientPhone,
   );
 
-  const providerResponse = await SmsProvider.sendManyToMany(
-    readyRecipients.map((recipient) => ({
-      mobileNo: recipient.recipientPhone as string,
-      smsText: recipient.renderedMessage,
-      ismasking: "true",
-      masking: preview.maskingSender || "",
-      messagetype: "1",
-    })),
-    requestId,
-  );
+  const providerResponse =
+    readyRecipients.length === 1
+      ? await SmsProvider.sendBulk(
+          readyRecipients.map((recipient) => ({
+            mobileNo: recipient.recipientPhone as string,
+            smsText: recipient.renderedMessage,
+            isUnicode: recipient.messageType === "unicode",
+          })),
+          requestId,
+        )
+      : await SmsProvider.sendDynamic(
+          readyRecipients.map((recipient) => ({
+            mobileNo: recipient.recipientPhone as string,
+            smsText: recipient.renderedMessage,
+            isUnicode: recipient.messageType === "unicode",
+          })),
+          requestId,
+        );
 
   const historyRows = buildHistoryRows(
     requestId,
@@ -675,6 +672,9 @@ const sendSms = async (
     sendMode,
     actor,
     providerResponse.providerReference,
+    undefined,
+    undefined,
+    providerResponse.recipientStatuses,
   );
   await SmsRepository.createMany(historyRows);
 
@@ -769,55 +769,50 @@ const listMemberHistory = async (
 ) => {
   await resolveBranchAccess(businessId, branchId, actor);
 
-  return listHistory(businessId, branchId, actor, {
-    ...query,
-    searchTerm: query.searchTerm,
-  }).then(async (_result) => {
-    const filter: Record<string, unknown> = {
-      branchId: new Types.ObjectId(branchId),
-      memberId: new Types.ObjectId(memberId),
-    };
+  const filter: Record<string, unknown> = {
+    branchId: new Types.ObjectId(branchId),
+    memberId: new Types.ObjectId(memberId),
+  };
 
-    if (query.status) {
-      filter.status = query.status;
-    }
+  if (query.status) {
+    filter.status = query.status;
+  }
 
-    if (query.sendMode) {
-      filter.sendMode = query.sendMode;
-    }
+  if (query.sendMode) {
+    filter.sendMode = query.sendMode;
+  }
 
-    if (query.searchTerm?.trim()) {
-      const searchRegex = new RegExp(query.searchTerm.trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
-      filter.$or = [
-        { memberName: searchRegex },
-        { recipientPhone: searchRegex },
-        { renderedMessage: searchRegex },
-        { requestId: searchRegex },
-      ];
-    }
+  if (query.searchTerm?.trim()) {
+    const searchRegex = new RegExp(query.searchTerm.trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
+    filter.$or = [
+      { memberName: searchRegex },
+      { recipientPhone: searchRegex },
+      { renderedMessage: searchRegex },
+      { requestId: searchRegex },
+    ];
+  }
 
-    const page = Math.max(Number(query.page) || 1, 1);
-    const limit = Math.max(Number(query.limit) || 20, 1);
-    const skip = (page - 1) * limit;
+  const page = Math.max(Number(query.page) || 1, 1);
+  const limit = Math.max(Number(query.limit) || 20, 1);
+  const skip = (page - 1) * limit;
 
-    const [items, total] = await Promise.all([
-      SmsRepository.findMany(filter, {
-        sort: { createdAt: -1 },
-        skip,
-        limit,
-      }).lean(),
-      SmsRepository.count(filter),
-    ]);
+  const [items, total] = await Promise.all([
+    SmsRepository.findMany(filter, {
+      sort: { createdAt: -1 },
+      skip,
+      limit,
+    }).lean(),
+    SmsRepository.count(filter),
+  ]);
 
-    return {
-      meta: {
-        page,
-        limit,
-        total,
-      },
-      data: items,
-    };
-  });
+  return {
+    meta: {
+      page,
+      limit,
+      total,
+    },
+    data: items,
+  };
 };
 
 const getBalance = async (
@@ -852,6 +847,7 @@ const runAutoRemindersForBranch = async (branchId: string) => {
   }
 
   try {
+    const autoTemplate = resolveTemplateByCategory("due", smsSettings);
     const result = await sendSms(
       String(branch.businessId),
       String(branch._id),
@@ -859,7 +855,7 @@ const runAutoRemindersForBranch = async (branchId: string) => {
       {
         audience: "due",
         targetDate: new Date(),
-        template: smsSettings.template,
+        template: autoTemplate,
       },
       "auto",
     );

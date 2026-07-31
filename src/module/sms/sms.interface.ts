@@ -34,7 +34,7 @@ export interface TSmsHistory {
   requestedByUserId?: Types.ObjectId | null;
   requestedByStaffId?: Types.ObjectId | null;
   targetDate?: Date;
-  provider: "wintel";
+  provider: "fastsmsbd";
   availableBalance?: number | null;
   remainingBalance?: number | null;
   providerReference?: string;

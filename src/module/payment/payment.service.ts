@@ -1067,6 +1067,13 @@ const createPayment = async (
 
   const discount = payload.discount || 0;
   const subTotal = payload.subTotal ?? 0;
+
+  if (discount > subTotal) {
+    throw new AppError(
+      StatusCodes.BAD_REQUEST,
+      "Discount cannot exceed subtotal",
+    );
+  }
   const paidTotal = payload.paidTotal ?? 0;
   const settlement = computePaymentSettlement({
     subTotal,

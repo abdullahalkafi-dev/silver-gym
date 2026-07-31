@@ -5,45 +5,51 @@ import config from "../../config";
 import { logger } from "../../logger/logger";
 import { TSmsBalanceSnapshot } from "./sms.interface";
 
-type TWintelBalanceResponse = {
-  statusCode?: string;
-  status?: string;
-  nonmasking_sms_balance?: string;
-  "nonmasking_sms_balance "?: string;
-  masking_sms_balance?: string;
-  "masking_sms_balance "?: string;
-  message?: string;
+type TFastsmsbdBalanceResponse = {
+  response?: string;
 };
 
-type TWintelSendResponse = {
-  statusCode?: string;
-  status?: string;
-  message?: string;
+type TFastsmsbdSingleResponse = {
+  response?: Array<{
+    status?: number;
+    id?: number;
+    msisdn?: string;
+  }>;
 };
 
-const isSuccessfulWintelResponse = (response: {
-  statusCode?: string;
-  status?: string;
-}) => {
-  const normalizedCode = String(response.statusCode || "").trim();
-  const normalizedStatus = String(response.status || "").trim().toLowerCase();
-
-  return normalizedCode === "1000" || normalizedCode === "200" || normalizedStatus === "success";
+type TFastsmsbdDynamicResponse = {
+  response?: Array<{
+    status?: number;
+    cid?: number;
+    sid?: number;
+    msisdn?: string;
+  }>;
 };
 
-type TWintelManyToManyRequest = {
-  mobileNo: string;
-  smsText: string;
-  ismasking: "true";
-  masking: string;
-  messagetype: "1";
+const FASTSMSBD_STATUS_CODES: Record<number, string> = {
+  0: "Success",
+  101: "Invalid Message Length",
+  102: "Sender Not Valid",
+  103: "Authentication Failed",
+  104: "Invalid User",
+  105: "Invalid MSISDN",
+  106: "Invalid API Key",
+  107: "User Account Suspended",
+  108: "IP Address Not Allowed",
+  109: "API Access Not Allowed",
+  110: "Do Not Disturb (DND)",
+  111: "Spam Word Detected in Message",
+  1000: "Insufficient Balance",
+  2300: "Destination Route Issue",
+  2400: "Destination Route Not Permitted",
+  3300: "System Error",
 };
 
-const getRequiredProviderConfig = () => {
-  const userId = config.sms.wintel_user_id;
-  const password = config.sms.wintel_password;
+const getRequiredConfig = () => {
+  const apiKey = config.sms.api_key;
+  const senderId = config.sms.sender_id;
 
-  if (!userId || !password) {
+  if (!apiKey || !senderId) {
     throw new AppError(
       StatusCodes.SERVICE_UNAVAILABLE,
       "SMS provider credentials are not configured",
@@ -51,39 +57,17 @@ const getRequiredProviderConfig = () => {
   }
 
   return {
-    userId,
-    password,
-    apiBaseUrl: String(config.sms.api_base_url || "").replace(/\/$/, ""),
+    apiKey,
+    senderId,
+    apiBaseUrl: String(config.sms.api_base_url || "https://smsapi.fastsmsbd.com").replace(/\/$/, ""),
   };
 };
 
-const buildToken = () => {
-  const { userId, password } = getRequiredProviderConfig();
-  return Buffer.from(`${userId}:${password}`).toString("base64");
-};
-
-const postToWintel = async <TResponse>(
-  path: string,
-  payload: Record<string, unknown>,
-): Promise<TResponse> => {
-  const { apiBaseUrl } = getRequiredProviderConfig();
-
-  const response = await fetch(`${apiBaseUrl}${path}`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(payload),
-  });
-
-  if (!response.ok) {
-    throw new AppError(
-      StatusCodes.BAD_GATEWAY,
-      `SMS provider request failed with status ${response.status}`,
-    );
-  }
-
-  return (await response.json()) as TResponse;
+const buildQueryString = (params: Record<string, string>): string => {
+  return Object.entries(params)
+    .filter(([, value]) => value !== undefined && value !== null && value !== "")
+    .map(([key, value]) => `${key}=${encodeURIComponent(value)}`)
+    .join("&");
 };
 
 const parseNumericValue = (value: unknown): number | null => {
@@ -99,18 +83,7 @@ const parseNumericValue = (value: unknown): number | null => {
   return Number.isFinite(parsed) ? parsed : null;
 };
 
-const resolveBalanceValue = (
-  response: TWintelBalanceResponse,
-  matchers: string[],
-): number | null => {
-  const normalizedEntry = Object.entries(response).find(([key]) =>
-    matchers.includes(key.trim().toLowerCase()),
-  );
-
-  return normalizedEntry ? parseNumericValue(normalizedEntry[1]) : null;
-};
-
-const BALANCE_CACHE_KEY = "sms:wintel:balance";
+const BALANCE_CACHE_KEY = "sms:fastsmsbd:balance";
 
 const getBalance = async (): Promise<TSmsBalanceSnapshot> => {
   const cached = await cacheService.getCache<TSmsBalanceSnapshot>(BALANCE_CACHE_KEY);
@@ -118,24 +91,32 @@ const getBalance = async (): Promise<TSmsBalanceSnapshot> => {
     return cached;
   }
 
-  const response = await postToWintel<TWintelBalanceResponse>(
-    "/smsBalanceEnquiry",
-    {
-      Token: buildToken(),
-    },
-  );
+  const { apiKey, apiBaseUrl } = getRequiredConfig();
 
-  if (!isSuccessfulWintelResponse(response)) {
+  const url = `${apiBaseUrl}/getbalancev3?apikey=${apiKey}`;
+
+  const response = await fetch(url, { method: "GET" });
+
+  if (!response.ok) {
     throw new AppError(
       StatusCodes.BAD_GATEWAY,
-      response.message || "Failed to retrieve SMS balance",
+      `SMS balance request failed with status ${response.status}`,
+    );
+  }
+
+  const data = (await response.json()) as TFastsmsbdBalanceResponse;
+  const balanceValue = parseNumericValue(data.response);
+
+  if (balanceValue === null) {
+    throw new AppError(
+      StatusCodes.BAD_GATEWAY,
+      "Failed to parse SMS balance from provider",
     );
   }
 
   const balance: TSmsBalanceSnapshot = {
-    nonMaskingBalance:
-      resolveBalanceValue(response, ["nonmasking_sms_balance"]) ?? 0,
-    maskingBalance: resolveBalanceValue(response, ["masking_sms_balance"]),
+    nonMaskingBalance: 0,
+    maskingBalance: balanceValue,
     fetchedAt: new Date().toISOString(),
     dryRun: config.sms.dry_run !== false,
   };
@@ -145,12 +126,24 @@ const getBalance = async (): Promise<TSmsBalanceSnapshot> => {
   return balance;
 };
 
-const sendManyToMany = async (
-  requests: TWintelManyToManyRequest[],
+export type TFastsmsbdSendRequest = {
+  mobileNo: string;
+  smsText: string;
+  isUnicode: boolean;
+};
+
+export type TSmsSendResult = {
+  providerReference: string;
+  responseMessage: string;
+  recipientStatuses?: Record<string, { status: "sent" | "failed"; reason?: string }>;
+};
+
+const sendBulk = async (
+  requests: TFastsmsbdSendRequest[],
   requestId: string,
-): Promise<{ providerReference: string; responseMessage: string }> => {
+): Promise<TSmsSendResult> => {
   if (config.sms.dry_run !== false) {
-    logger.info("[SMS_DRY_RUN] Wintel many-to-many payload", {
+    logger.info("[SMS_DRY_RUN] Fastsmsbd bulk payload", {
       requestId,
       recipients: requests.length,
       requests,
@@ -158,29 +151,202 @@ const sendManyToMany = async (
 
     return {
       providerReference: `dry-run:${requestId}`,
-      responseMessage: "Dry-run only. No SMS was sent to Wintel.",
+      responseMessage: "Dry-run only. No SMS was sent to Fastsmsbd.",
     };
   }
 
-  const response = await postToWintel<TWintelSendResponse>("/bulkmText", {
-    token: buildToken(),
-    requests,
+  const { apiKey, senderId, apiBaseUrl } = getRequiredConfig();
+
+  const results: Array<{ status: number; msisdn: string; id?: number }> = [];
+  const recipientStatuses: Record<string, { status: "sent" | "failed"; reason?: string }> = {};
+  const hasUnicode = requests.some((r) => r.isUnicode);
+
+  if (requests.length === 1) {
+    const request = requests[0]!;
+    const params: Record<string, string> = {
+      apikey: apiKey,
+      sender: senderId,
+      msisdn: request.mobileNo,
+      smstext: request.smsText,
+    };
+
+    if (request.isUnicode) {
+      params.smsformat = "8";
+    }
+
+    const url = `${apiBaseUrl}/smsapiv3?${buildQueryString(params)}`;
+    const response = await fetch(url, { method: "GET" });
+
+    if (!response.ok) {
+      throw new AppError(
+        StatusCodes.BAD_GATEWAY,
+        `SMS provider request failed with status ${response.status}`,
+      );
+    }
+
+    const data = (await response.json()) as TFastsmsbdSingleResponse;
+
+    if (data.response) {
+      for (const item of data.response) {
+        const phone = item.msisdn || request.mobileNo;
+        results.push({
+          status: item.status ?? 1,
+          msisdn: phone,
+          id: item.id,
+        });
+
+        if (item.status !== 0) {
+          const errorMessage = FASTSMSBD_STATUS_CODES[item.status!] || `Unknown error: ${item.status}`;
+          recipientStatuses[phone] = { status: "failed", reason: errorMessage };
+          throw new AppError(
+            StatusCodes.BAD_GATEWAY,
+            `SMS send failed for ${phone}: ${errorMessage}`,
+          );
+        } else {
+          recipientStatuses[phone] = { status: "sent" };
+        }
+      }
+    }
+  } else {
+    const msisdns = requests.map((r) => r.mobileNo).join(",");
+    const firstMessage = requests[0]!;
+
+    const params: Record<string, string> = {
+      apikey: apiKey,
+      sender: senderId,
+      msisdn: msisdns,
+      smstext: firstMessage.smsText,
+    };
+
+    if (hasUnicode) {
+      params.smsformat = "8";
+    }
+
+    const url = `${apiBaseUrl}/smsapiv3?${buildQueryString(params)}`;
+    const response = await fetch(url, { method: "GET" });
+
+    if (!response.ok) {
+      throw new AppError(
+        StatusCodes.BAD_GATEWAY,
+        `SMS provider request failed with status ${response.status}`,
+      );
+    }
+
+    const data = (await response.json()) as TFastsmsbdSingleResponse;
+
+    if (data.response) {
+      for (const item of data.response) {
+        const phone = item.msisdn || "";
+        results.push({
+          status: item.status ?? 1,
+          msisdn: phone,
+          id: item.id,
+        });
+
+        if (item.status !== 0) {
+          const errorMessage = FASTSMSBD_STATUS_CODES[item.status!] || `Unknown error: ${item.status}`;
+          if (phone) {
+            recipientStatuses[phone] = { status: "failed", reason: errorMessage };
+          }
+          logger.warn("[SMS_PROVIDER] Individual send failed in batch", {
+            msisdn: item.msisdn,
+            status: item.status,
+            errorMessage,
+          });
+        } else if (phone) {
+          recipientStatuses[phone] = { status: "sent" };
+        }
+      }
+    }
+  }
+
+  const successCount = results.filter((r) => r.status === 0).length;
+  const failCount = results.filter((r) => r.status !== 0).length;
+
+  return {
+    providerReference: `fastsmsbd:${requestId}`,
+    responseMessage: `Sent ${successCount}/${results.length} messages successfully${failCount > 0 ? ` (${failCount} failed)` : ""}`,
+    recipientStatuses,
+  };
+};
+
+const sendDynamic = async (
+  messages: Array<{ mobileNo: string; smsText: string; isUnicode: boolean }>,
+  requestId: string,
+): Promise<TSmsSendResult> => {
+  if (config.sms.dry_run !== false) {
+    logger.info("[SMS_DRY_RUN] Fastsmsbd dynamic payload", {
+      requestId,
+      recipients: messages.length,
+    });
+
+    return {
+      providerReference: `dry-run:${requestId}`,
+      responseMessage: "Dry-run only. No SMS was sent to Fastsmsbd.",
+    };
+  }
+
+  const { apiKey, senderId, apiBaseUrl } = getRequiredConfig();
+
+  const payload = {
+    apikey: apiKey,
+    sender: senderId,
+    messages: messages.map((msg, index) => ({
+      id: index + 1,
+      msisdn: msg.mobileNo,
+      smstext: msg.smsText,
+    })),
+  };
+
+  const response = await fetch(`${apiBaseUrl}/smsapimany`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
   });
 
-  if (!isSuccessfulWintelResponse(response)) {
+  if (!response.ok) {
     throw new AppError(
       StatusCodes.BAD_GATEWAY,
-      response.message || "SMS provider rejected the send request",
+      `SMS provider request failed with status ${response.status}`,
     );
   }
 
+  const data = (await response.json()) as TFastsmsbdDynamicResponse;
+  const recipientStatuses: Record<string, { status: "sent" | "failed"; reason?: string }> = {};
+
+  if (data.response) {
+    for (const item of data.response) {
+      const phone = item.msisdn || "";
+      if (item.status !== 0) {
+        const errorMessage = FASTSMSBD_STATUS_CODES[item.status!] || `Unknown error: ${item.status}`;
+        if (phone) {
+          recipientStatuses[phone] = { status: "failed", reason: errorMessage };
+        }
+        logger.warn("[SMS_PROVIDER] Dynamic send individual result", {
+          cid: item.cid,
+          sid: item.sid,
+          msisdn: item.msisdn,
+          status: item.status,
+          errorMessage,
+        });
+      } else if (phone) {
+        recipientStatuses[phone] = { status: "sent" };
+      }
+    }
+  }
+
+  const successCount = data.response?.filter((r) => r.status === 0).length || 0;
+  const totalCount = data.response?.length || messages.length;
+
   return {
-    providerReference: `wintel:${requestId}`,
-    responseMessage: response.message || "Message has been sent successfully",
+    providerReference: `fastsmsbd:${requestId}`,
+    responseMessage: `Sent ${successCount}/${totalCount} messages successfully`,
+    recipientStatuses,
   };
 };
 
 export const SmsProvider = {
   getBalance,
-  sendManyToMany,
+  sendBulk,
+  sendDynamic,
 };

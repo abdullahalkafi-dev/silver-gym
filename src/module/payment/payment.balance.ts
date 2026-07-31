@@ -185,7 +185,7 @@ export const reconcileRecurringBillingBalance = ({
   // The loop adds one month at a time using addMonthsPreservingDay.
   // Normalize updatedNextPaymentDate to Dhaka start-of-day before comparing
   // to avoid timezone offset issues (e.g., 06:00 UTC vs 00:00 UTC).
-  while (startOfCalendarDay(updatedNextPaymentDate) <= accrualCutoff && loopGuard < 600) {
+  while (startOfCalendarDay(updatedNextPaymentDate) < accrualCutoff && loopGuard < 600) {
     overdueMonths += 1;
     updatedNextPaymentDate = addMonthsPreservingDay(updatedNextPaymentDate, 1);
     loopGuard += 1;
