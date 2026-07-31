@@ -656,6 +656,7 @@ const sendSms = async (
             isUnicode: recipient.messageType === "unicode",
           })),
           requestId,
+          preview.maskingSender || undefined,
         )
       : await SmsProvider.sendDynamic(
           readyRecipients.map((recipient) => ({
@@ -664,6 +665,7 @@ const sendSms = async (
             isUnicode: recipient.messageType === "unicode",
           })),
           requestId,
+          preview.maskingSender || undefined,
         );
 
   const historyRows = buildHistoryRows(

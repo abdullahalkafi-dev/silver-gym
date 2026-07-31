@@ -151,12 +151,14 @@ export type TSmsSendResult = {
 const sendBulk = async (
   requests: TFastsmsbdSendRequest[],
   requestId: string,
+  senderIdOverride?: string,
 ): Promise<TSmsSendResult> => {
   if (config.sms.dry_run !== false) {
     logger.info("[SMS_DRY_RUN] Fastsmsbd bulk payload", {
       requestId,
       recipients: requests.length,
       requests,
+      senderId: senderIdOverride,
     });
 
     return {
@@ -165,7 +167,8 @@ const sendBulk = async (
     };
   }
 
-  const { apiKey, senderId, apiBaseUrl } = getRequiredConfig();
+  const { apiKey, senderId: defaultSenderId, apiBaseUrl } = getRequiredConfig();
+  const senderId = senderIdOverride?.trim() || defaultSenderId;
 
   const results: Array<{ status: number; msisdn: string; id?: number }> = [];
   const recipientStatuses: Record<string, { status: "sent" | "failed"; reason?: string }> = {};
@@ -283,11 +286,13 @@ const sendBulk = async (
 const sendDynamic = async (
   messages: Array<{ mobileNo: string; smsText: string; isUnicode: boolean }>,
   requestId: string,
+  senderIdOverride?: string,
 ): Promise<TSmsSendResult> => {
   if (config.sms.dry_run !== false) {
     logger.info("[SMS_DRY_RUN] Fastsmsbd dynamic payload", {
       requestId,
       recipients: messages.length,
+      senderId: senderIdOverride,
     });
 
     return {
@@ -296,7 +301,8 @@ const sendDynamic = async (
     };
   }
 
-  const { apiKey, senderId, apiBaseUrl } = getRequiredConfig();
+  const { apiKey, senderId: defaultSenderId, apiBaseUrl } = getRequiredConfig();
+  const senderId = senderIdOverride?.trim() || defaultSenderId;
 
   const payload = {
     apikey: apiKey,
