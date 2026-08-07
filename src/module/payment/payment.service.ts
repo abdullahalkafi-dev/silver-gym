@@ -793,7 +793,6 @@ const resolveCollectBillCycleDetails = async (
         memberUpdate: {
           membershipStartDate: startDate,
           paidMonths,
-          nextPaymentDate: periodEnd,
           isActive: true,
           ...(useCustom
             ? { isCustomMonthlyFee: true, customMonthlyFeeAmount: monthlyFeeAmount }
@@ -894,7 +893,6 @@ const resolveCollectBillCycleDetails = async (
           currentPackageName: packageDoc.title,
           membershipStartDate: startDate,
           membershipEndDate: periodEnd,
-          nextPaymentDate: periodEnd,
           isActive: true,
         },
         memberUnset: {
