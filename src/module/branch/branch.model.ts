@@ -2,9 +2,21 @@ import { Schema, model } from "mongoose";
 
 import {
   DEFAULT_BRANCH_AUTO_DEACTIVATE_AFTER_UNPAID_MONTHS,
+  getDefaultBranchAccessControl,
   getDefaultBranchSMSSettings,
   TBranch,
 } from "./branch.interface";
+
+const branchAccessControlSchema = new Schema(
+  {
+    enabled: { type: Boolean, default: false },
+    graceDays: { type: Number, min: 0, max: 31, default: 5 },
+    debounceMinutes: { type: Number, min: 0, max: 60, default: 5 },
+    updatedAt: { type: Date, default: null },
+    updatedBy: { type: Schema.Types.ObjectId, default: null },
+  },
+  { _id: false }
+);
 
 const branchSmsSettingsSchema = new Schema(
   {
@@ -133,6 +145,10 @@ const branchSchema = new Schema<TBranch>(
     smsSettings: {
       type: branchSmsSettingsSchema,
       default: () => getDefaultBranchSMSSettings(),
+    },
+    accessControl: {
+      type: branchAccessControlSchema,
+      default: () => getDefaultBranchAccessControl(),
     },
     logo: {
       type: String,

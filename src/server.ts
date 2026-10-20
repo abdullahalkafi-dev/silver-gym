@@ -9,6 +9,7 @@ import { MemberAutoDeactivationService } from "./module/member/member.autoDeacti
 import { MemberDueAccrualService } from "./module/member/member.dueAccrual";
 import { MemberImportService } from "./module/member/memberImport.service";
 import { SmsService } from "./module/sms/sms.service";
+import { AccessScheduler } from "./module/access/access.scheduler";
 
 // ============ CREATE SERVER ============
 const server = http.createServer(app);
@@ -40,7 +41,10 @@ async function main() {
     // 7. Start due accrual sweep (creates monthly dues when months pass)
     MemberDueAccrualService.startScheduler();
 
-    // 8. Start server
+    // 8. Start attendance pull (reads door-device scans every minute)
+    AccessScheduler.startScheduler();
+
+    // 9. Start server
     const port = Number(config.port) || 5000;
 
     server.listen(port, "0.0.0.0", () => {

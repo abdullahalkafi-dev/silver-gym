@@ -17,6 +17,22 @@ export interface TBranchSMSSettings {
 	lastAutoReminderRunDate?: string | null;
 }
 
+export interface TBranchAccessControl {
+	enabled: boolean;
+	graceDays: number;
+	debounceMinutes: number;
+	updatedAt?: Date | null;
+	updatedBy?: Types.ObjectId | null;
+}
+
+export const getDefaultBranchAccessControl = (): TBranchAccessControl => ({
+	enabled: false,
+	graceDays: 5,
+	debounceMinutes: 5,
+	updatedAt: null,
+	updatedBy: null,
+});
+
 export const DEFAULT_BRANCH_AUTO_DEACTIVATE_AFTER_UNPAID_MONTHS = 6;
 
 export const normalizeBranchAutoDeactivateAfterUnpaidMonths = (
@@ -95,6 +111,7 @@ export interface TBranch {
 	startingBalance?: number | null;
 	startingBalanceSetAt?: Date | null;
 	smsSettings?: TBranchSMSSettings;
+	accessControl?: TBranchAccessControl;
 	logo?: string | null;
 	favicon?: string | null;
 	isDefault?: boolean;

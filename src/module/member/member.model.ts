@@ -164,6 +164,19 @@ const memberSchema = new Schema<TMember>(
     metadata: {
       type: Schema.Types.Mixed,
     },
+    accessOverride: {
+      type: new Schema(
+        {
+          mode: { type: String, enum: ["allow", "block"], default: null },
+          until: { type: Date, default: null },
+          reason: { type: String, trim: true },
+          setBy: { type: Schema.Types.ObjectId, default: null },
+          setAt: { type: Date, default: null },
+        },
+        { _id: false }
+      ),
+      default: undefined,
+    },
   },
   {
     timestamps: true,

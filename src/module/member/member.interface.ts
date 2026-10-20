@@ -48,6 +48,13 @@ export interface TMember {
 	source?: string;
 	importBatchId?: string;
 	metadata?: Record<string, unknown>;
+	accessOverride?: {
+		mode?: "allow" | "block" | null;
+		until?: Date | null;
+		reason?: string;
+		setBy?: Types.ObjectId | null;
+		setAt?: Date | null;
+	} | null;
 	createdAt?: Date;
 	updatedAt?: Date;
 }

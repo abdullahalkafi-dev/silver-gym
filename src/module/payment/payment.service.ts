@@ -5,6 +5,7 @@ import { QueryBuilder } from "../../Builder/QueryBuilder";
 import AppError from "../../errors/AppError";
 import { logger } from "../../logger/logger";
 import cacheService from "../../redis-client/cacheService";
+import { queueMemberDoorResync } from "../access/access.hooks";
 import { BranchRepository } from "../branch/branch.repository";
 import { IncomeCategoryRepository } from "../incomeCategory/incomeCategory.repository";
 import { BusinessProfileRepository } from "../businessProfile/businessProfile.repository";
@@ -250,6 +251,9 @@ const invalidateMemberBillingCaches = async (
       error: error instanceof Error ? error.message : String(error),
     });
   }
+
+  // A payment can lift (or add) a door block: re-check this member.
+  queueMemberDoorResync(branchId, memberId);
 };
 
 const addPackageDuration = (
@@ -974,6 +978,8 @@ const syncMemberBalanceDelta = async (
     cacheService.invalidateByPattern(`members:${branchId}:list:*`),
     cacheService.invalidateByPattern(`analytics:${branchId}:*`),
   ]);
+
+  queueMemberDoorResync(branchId, memberId);
 };
 
 const generateInvoiceNo = async (

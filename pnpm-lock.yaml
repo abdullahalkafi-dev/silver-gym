@@ -86,6 +86,9 @@ importers:
       xlsx:
         specifier: ^0.18.5
         version: 0.18.5
+      zkteco-js:
+        specifier: 1.7.2
+        version: 1.7.2
       zod:
         specifier: ^4.3.6
         version: 4.3.6
@@ -1753,6 +1756,9 @@ packages:
     resolution: {integrity: sha512-Ux4ygGWsu2c7isFWe8Yu1YluJmqVhxqK2cLXNQA5AcC3QfbGNpM7fu0Y8b/z16pXLnFxZYvWhd3fhBY9DLmC6Q==}
     engines: {node: '>=6'}
 
+  zkteco-js@1.7.2:
+    resolution: {integrity: sha512-oTLG7tjzgxvFbIhyrnPoJNKPNz6ZI2hAx37fM4h372b9HqH7tWGkHgdEuZw92BdwETa0rwIn/TowscbkCr604Q==}
+
   zod@4.3.6:
     resolution: {integrity: sha512-rftlrkhHZOcjDwkGlnUtZZkvaPHCsDATp4pGpuOOMDaTdDDXF91wuVDJoWoPsKX/3YPQ5fHuF3STjcYyKr+Qhg==}
 
@@ -3299,5 +3305,7 @@ snapshots:
   xtend@4.0.2: {}
 
   yn@3.1.1: {}
+
+  zkteco-js@1.7.2: {}
 
   zod@4.3.6: {}

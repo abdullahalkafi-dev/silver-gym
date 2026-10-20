@@ -4,6 +4,9 @@ import mongoose, { Types } from "mongoose";
 import { QueryBuilder } from "../../Builder/QueryBuilder";
 import AppError from "../../errors/AppError";
 import cacheService from "../../redis-client/cacheService";
+import { queueMemberDoorResync } from "../access/access.hooks";
+import { assertMemberIdAvailable } from "../access/access.memberId";
+import { normalizeMemberId } from "../access/access.policy";
 import unlinkFile from "../../shared/unlinkFile";
 import { storage } from "../../shared/storage";
 import { BranchRepository } from "../branch/branch.repository";
@@ -327,6 +330,22 @@ const reconcileBranchMemberBilling = async (
   );
 };
 
+const ensureMemberIdAvailable = async (
+  branchId: string,
+  memberId: string | undefined | null,
+  photoFile?: Express.Multer.File,
+  excludeMemberId?: string,
+) => {
+  try {
+    await assertMemberIdAvailable(branchId, memberId, excludeMemberId);
+  } catch (error) {
+    if (photoFile) {
+      await unlinkFile(storage.getObjectKey(photoFile.path));
+    }
+    throw error;
+  }
+};
+
 const resolveBranchAccess = async (
   branchId: string,
   actor: TAccessActor,
@@ -481,6 +500,7 @@ const createMember = async (
 ) => {
   const branch = await resolveBranchAccess(branchId, actor, photoFile);
   BranchService.ensureBranchFeesConfigured(branch, "member");
+  await ensureMemberIdAvailable(branchId, payload.memberId, photoFile);
 
   const membershipStartDate = payload.membershipStartDate
     ? new Date(payload.membershipStartDate)
@@ -909,6 +929,14 @@ const updateMember = async (
     throw new AppError(StatusCodes.NOT_FOUND, "Member not found");
   }
 
+  // ─── DUPLICATE MEMBER ID CHECK (leading zeros ignored) ────────────────────
+  if (
+    typeof payload.memberId === "string" &&
+    normalizeMemberId(payload.memberId) !== normalizeMemberId(member.memberId)
+  ) {
+    await ensureMemberIdAvailable(branchId, payload.memberId, photoFile, memberId);
+  }
+
   // ─── DUPLICATE CONTACT CHECK ──────────────────────────────────────────────
   if (
     typeof payload.contact === "string" &&
@@ -1162,6 +1190,8 @@ const updateMember = async (
     cacheService.invalidateByPattern(`members:${branchId}:list:*`),
   ]);
 
+  queueMemberDoorResync(branchId, memberId);
+
   return updatedMember;
 };
 
@@ -1204,6 +1234,8 @@ const deleteMember = async (branchId: string, memberId: string, actor: TAccessAc
     cacheService.deleteCache(`members:${branchId}:${memberId}`),
     cacheService.invalidateByPattern(`members:${branchId}:list:*`),
   ]);
+
+  queueMemberDoorResync(branchId, memberId);
 
   return deletedMember;
 };
@@ -1251,6 +1283,8 @@ const restoreMember = async (branchId: string, memberId: string, actor: TAccessA
     cacheService.deleteCache(`members:${branchId}:${memberId}`),
     cacheService.invalidateByPattern(`members:${branchId}:list:*`),
   ]);
+
+  queueMemberDoorResync(branchId, memberId);
 
   return restoredMember;
 };

@@ -15,6 +15,7 @@ import { SmsRoutes } from "../module/sms/sms.route";
 import { TransactionRoutes } from "../module/transaction/transaction.route";
 import { LockerRoutes } from "../module/locker/locker.route";
 import { IncomeCategoryRoutes } from "../module/incomeCategory/incomeCategory.route";
+import { AccessRoutes } from "../module/access/access.route";
 
 const router: Router = express.Router();
 
@@ -82,6 +83,10 @@ const apiRoutes = [
   {
     path: "/lockers",
     route: LockerRoutes,
+  },
+  {
+    path: "/access",
+    route: AccessRoutes,
   },
 ];
 
