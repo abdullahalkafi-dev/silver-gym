@@ -863,13 +863,17 @@ const getMembers = async (
   const data = await queryBuilder.modelQuery.lean();
   const meta = await queryBuilder.countTotal();
 
-  const enrichedData = data.map((member) => ({
-    ...member,
-    primaryDueType: resolvePrimaryDueType({
-      currentDueAmount: (member as Record<string, unknown>).currentDueAmount as number | undefined,
-      metadata: (member as Record<string, unknown>).metadata,
-    }),
-  }));
+  const enrichedData = data.map((member) => {
+    const record = member as unknown as Record<string, unknown>;
+
+    return {
+      ...record,
+      primaryDueType: resolvePrimaryDueType({
+        currentDueAmount: record.currentDueAmount as number | undefined,
+        metadata: record.metadata,
+      }),
+    };
+  });
 
   const result = { meta, data: enrichedData };
   await cacheService.setCache(cacheKey, result, 300);
