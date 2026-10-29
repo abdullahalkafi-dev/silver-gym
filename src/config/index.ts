@@ -17,6 +17,8 @@ export default {
   node_env: process.env.NODE_ENV,
   port: process.env.PORT,
   bcrypt_salt_rounds: Number(process.env.BCRYPT_SALT_ROUNDS) || 10,
+  /** Temporary, for data migration: lets two members of a branch share a member ID. */
+  allow_duplicate_member_id: process.env.ALLOW_DUPLICATE_MEMBER_ID === "true",
   admin_secret_key: requiredEnv("ADMIN_SECRET_KEY", process.env.ADMIN_SECRET_KEY),
   jwt: {
     jwt_secret: requiredEnv("JWT_SECRET", process.env.JWT_SECRET),

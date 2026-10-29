@@ -1,6 +1,7 @@
 import { StatusCodes } from "http-status-codes";
 import { Types } from "mongoose";
 
+import config from "../../config";
 import AppError from "../../errors/AppError";
 import { Member } from "../member/member.model";
 import { normalizeMemberId } from "./access.policy";
@@ -33,12 +34,19 @@ export const findMemberByAdminId = async (branchId: string, memberId: string) =>
  * The door device stores "7" while the app may store "007", so two members
  * whose ids only differ by leading zeros would be mixed up at the door.
  * Rejects an id that another member of the same branch already uses.
+ *
+ * Skipped while ALLOW_DUPLICATE_MEMBER_ID=true (temporary, during data migration).
+ * Members sharing an id are treated as "ambiguous" by door sync and attendance.
  */
 export const assertMemberIdAvailable = async (
   branchId: string,
   memberId: string | undefined | null,
   excludeMemberId?: string,
 ) => {
+  if (config.allow_duplicate_member_id) {
+    return;
+  }
+
   const key = normalizeMemberId(memberId);
   if (!key) {
     return;

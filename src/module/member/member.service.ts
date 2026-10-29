@@ -46,7 +46,9 @@ import {
   sumMemberBillingLedger,
 } from "./member.billingLedger";
 import { TMember } from "./member.interface";
+import { Member } from "./member.model";
 import { MemberRepository } from "./member.repository";
+import { buildMemberSearchMatch, buildMemberSearchRankStages } from "./member.searchRank";
 import { MemberCounterService } from "./memberCounter.service";
 
 type TCreatePaymentPayload = {
@@ -841,27 +843,34 @@ const getMembers = async (
     },
   );
 
-  if (query.searchTerm) {
-    const isObjectId = Types.ObjectId.isValid(query.searchTerm as string) &&
-      String(new Types.ObjectId(query.searchTerm as string)) === query.searchTerm;
-    if (isObjectId) {
-      queryBuilder.modelQuery = queryBuilder.modelQuery.find({
-        $or: [
-          { _id: new Types.ObjectId(query.searchTerm as string) },
-          ...["fullName", "email", "contact", "memberId", "barcode"].map((field) => ({
-            [field]: new RegExp((query.searchTerm as string).replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i"),
-          })),
-        ],
-      });
-    } else {
-      queryBuilder.search(["fullName", "email", "contact", "memberId", "barcode"]);
-    }
+  const searchTerm =
+    typeof query.searchTerm === "string" ? query.searchTerm.trim() : "";
+
+  let data: unknown[];
+  let meta: { page: number; limit: number; total: number; totalPage: number };
+
+  if (searchTerm) {
+    // Ranked search: member ID first, then phone, then name (see member.searchRank.ts).
+    const limit = Number(query.limit) || 100;
+    const page = Number(query.page) || 1;
+
+    queryBuilder.filter();
+    const filter = {
+      $and: [queryBuilder.modelQuery.cast(Member), buildMemberSearchMatch(searchTerm)],
+    };
+
+    data = await MemberRepository.aggregate([
+      { $match: filter },
+      ...buildMemberSearchRankStages(searchTerm, { skip: (page - 1) * limit, limit }),
+    ]);
+    const total = await MemberRepository.count(filter);
+    meta = { page, limit, total, totalPage: Math.ceil(total / limit) };
+  } else {
+    queryBuilder.filter().sort().paginate();
+
+    data = await queryBuilder.modelQuery.lean();
+    meta = await queryBuilder.countTotal();
   }
-
-  queryBuilder.filter().sort().paginate();
-
-  const data = await queryBuilder.modelQuery.lean();
-  const meta = await queryBuilder.countTotal();
 
   const enrichedData = data.map((member) => {
     const record = member as unknown as Record<string, unknown>;

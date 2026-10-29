@@ -1,6 +1,6 @@
 import { TMember } from "./member.interface";
 import { Member } from "./member.model";
-import { ClientSession } from "mongoose";
+import { ClientSession, PipelineStage } from "mongoose";
 
 type QueryOptions = {
   select?: Record<string, 0 | 1> | string;
@@ -62,6 +62,10 @@ export const MemberRepository = {
     }
 
     return query;
+  },
+
+  aggregate(pipeline: PipelineStage[]) {
+    return Member.aggregate(pipeline);
   },
 
   updateById(id: string, payload: object) {
