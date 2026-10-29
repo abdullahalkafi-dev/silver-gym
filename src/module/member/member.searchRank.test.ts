@@ -6,11 +6,11 @@ const test = require("node:test").test;
 import {
   MEMBER_SEARCH_RANK,
   buildMemberSearchMatch,
-  buildMemberSearchRankStages,
+  buildMemberOrderStages,
 } from "./member.searchRank";
 
 const rankBranches = (term: string) => {
-  const stages = buildMemberSearchRankStages(term, { skip: 0, limit: 20 }) as any[];
+  const stages = buildMemberOrderStages({ searchTerm: term, skip: 0, limit: 20 }) as any[];
   return stages[0].$addFields._searchRank.$switch.branches as {
     case: any;
     then: number;
@@ -51,4 +51,39 @@ test("regex characters in the search term are escaped", () => {
   const branches = rankBranches("a.b(");
   const contains = branches.find((b) => b.then === MEMBER_SEARCH_RANK.idContains)!;
   assert.equal(contains.case.$regexMatch.regex, "a\\.b\\(");
+});
+
+test("search without a sort orders by relevance first", () => {
+  const stages = buildMemberOrderStages({ searchTerm: "003", skip: 0, limit: 20 }) as any[];
+  const sort = stages.find((stage) => stage.$sort).$sort;
+  assert.deepEqual(Object.keys(sort).slice(0, 2), ["_searchRank", "_memberIdNumber"]);
+});
+
+test("member id sort overrides relevance and sorts numerically", () => {
+  const asc = buildMemberOrderStages({
+    searchTerm: "003",
+    memberIdSort: "asc",
+    skip: 0,
+    limit: 20,
+  }) as any[];
+  assert.equal(asc[0].$addFields._searchRank, undefined);
+  assert.equal(asc.find((stage) => stage.$sort).$sort._memberIdNumber, 1);
+  assert.equal(asc[0].$addFields._memberIdNumber.$convert.to, "long");
+
+  const desc = buildMemberOrderStages({ memberIdSort: "desc", skip: 0, limit: 20 }) as any[];
+  assert.equal(desc.find((stage) => stage.$sort).$sort._memberIdNumber, -1);
+});
+
+test("ids that are not numbers go last in both directions", () => {
+  const sentinel = (memberIdSort: "asc" | "desc") =>
+    (buildMemberOrderStages({ memberIdSort, skip: 0, limit: 1 }) as any[])[0].$addFields
+      ._memberIdNumber.$convert.onError;
+  assert.equal(sentinel("asc"), Number.MAX_SAFE_INTEGER);
+  assert.equal(sentinel("desc"), -1);
+});
+
+test("paging is passed through", () => {
+  const stages = buildMemberOrderStages({ memberIdSort: "asc", skip: 200, limit: 100 }) as any[];
+  assert.equal(stages.find((stage) => stage.$skip !== undefined).$skip, 200);
+  assert.equal(stages.find((stage) => stage.$limit !== undefined).$limit, 100);
 });

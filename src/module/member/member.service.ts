@@ -48,7 +48,11 @@ import {
 import { TMember } from "./member.interface";
 import { Member } from "./member.model";
 import { MemberRepository } from "./member.repository";
-import { buildMemberSearchMatch, buildMemberSearchRankStages } from "./member.searchRank";
+import {
+  TMemberIdSort,
+  buildMemberOrderStages,
+  buildMemberSearchMatch,
+} from "./member.searchRank";
 import { MemberCounterService } from "./memberCounter.service";
 
 type TCreatePaymentPayload = {
@@ -849,19 +853,33 @@ const getMembers = async (
   let data: unknown[];
   let meta: { page: number; limit: number; total: number; totalPage: number };
 
-  if (searchTerm) {
-    // Ranked search: member ID first, then phone, then name (see member.searchRank.ts).
+  const memberIdSort: TMemberIdSort | undefined =
+    query.sortBy === "memberId"
+      ? query.sortOrder === "desc"
+        ? "desc"
+        : "asc"
+      : undefined;
+
+  if (searchTerm || memberIdSort) {
+    // Search ranks member ID, then phone, then name; the Member ID header
+    // sort, when the user picks one, overrides that order (member.searchRank.ts).
     const limit = Number(query.limit) || 100;
     const page = Number(query.page) || 1;
 
     queryBuilder.filter();
-    const filter = {
-      $and: [queryBuilder.modelQuery.cast(Member), buildMemberSearchMatch(searchTerm)],
-    };
+    const castFilter = queryBuilder.modelQuery.cast(Member);
+    const filter = searchTerm
+      ? { $and: [castFilter, buildMemberSearchMatch(searchTerm)] }
+      : castFilter;
 
     data = await MemberRepository.aggregate([
       { $match: filter },
-      ...buildMemberSearchRankStages(searchTerm, { skip: (page - 1) * limit, limit }),
+      ...buildMemberOrderStages({
+        searchTerm,
+        memberIdSort,
+        skip: (page - 1) * limit,
+        limit,
+      }),
     ]);
     const total = await MemberRepository.count(filter);
     meta = { page, limit, total, totalPage: Math.ceil(total / limit) };

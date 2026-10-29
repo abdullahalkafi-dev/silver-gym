@@ -45,15 +45,11 @@ const matches = (field: string, pattern: string) => ({
   $regexMatch: { input: `$${field}`, regex: pattern, options: "i" },
 });
 
-/** Aggregation stages that order a filtered member list by search relevance. */
-export const buildMemberSearchRankStages = (
-  searchTerm: string,
-  page: { skip: number; limit: number },
-): PipelineStage[] => {
-  const term = searchTerm.trim();
+export type TMemberIdSort = "asc" | "desc";
+
+const buildRankBranches = (term: string) => {
   const escaped = escapeRegex(term);
   const idKey = normalizeMemberId(term);
-
   const branches: { case: unknown; then: number }[] = [];
 
   if (Types.ObjectId.isValid(term) && String(new Types.ObjectId(term)) === term) {
@@ -72,7 +68,7 @@ export const buildMemberSearchRankStages = (
 
   branches.push(
     {
-      case: matches("memberId", `^\\s*${escaped}`),
+      case: matches("memberId", `^\s*${escaped}`),
       then: MEMBER_SEARCH_RANK.idStartsWith,
     },
     { case: matches("memberId", escaped), then: MEMBER_SEARCH_RANK.idContains },
@@ -80,19 +76,59 @@ export const buildMemberSearchRankStages = (
     { case: matches("fullName", escaped), then: MEMBER_SEARCH_RANK.name },
   );
 
+  return branches;
+};
+
+/**
+ * Aggregation stages that order and page a filtered member list.
+ *
+ * - searchTerm only: relevance order (member ID, then phone, then name).
+ * - memberIdSort set: the user clicked the Member ID header, so that order wins
+ *   over relevance (the search still decides which members are listed).
+ *
+ * Member IDs are text, so they are compared as numbers (2 before 10, "003" is 3).
+ * IDs that are not numbers always go last, in either direction.
+ */
+export const buildMemberOrderStages = (options: {
+  searchTerm?: string;
+  memberIdSort?: TMemberIdSort;
+  skip: number;
+  limit: number;
+}): PipelineStage[] => {
+  const term = options.searchTerm?.trim() ?? "";
+  const direction = options.memberIdSort === "desc" ? -1 : 1;
+  const notNumeric = direction === 1 ? Number.MAX_SAFE_INTEGER : -1;
+
+  const sort: Record<string, 1 | -1> = options.memberIdSort
+    ? { _memberIdNumber: direction, memberId: direction, createdAt: -1, _id: 1 }
+    : { _searchRank: 1, _memberIdNumber: 1, createdAt: -1, _id: 1 };
+
   return [
     {
       $addFields: {
-        _searchRank: { $switch: { branches, default: MEMBER_SEARCH_RANK.other } },
-        // Numeric order inside a tier (0030, 0031 ... not 0030, 0300); non-numeric IDs sort last.
+        ...(term && !options.memberIdSort
+          ? {
+              _searchRank: {
+                $switch: {
+                  branches: buildRankBranches(term),
+                  default: MEMBER_SEARCH_RANK.other,
+                },
+              },
+            }
+          : {}),
         _memberIdNumber: {
-          $convert: { input: "$memberId", to: "long", onError: Number.MAX_SAFE_INTEGER, onNull: Number.MAX_SAFE_INTEGER },
+          $convert: {
+            input: "$memberId",
+            to: "long",
+            onError: notNumeric,
+            onNull: notNumeric,
+          },
         },
       },
     },
-    { $sort: { _searchRank: 1, _memberIdNumber: 1, createdAt: -1, _id: 1 } },
-    { $skip: page.skip },
-    { $limit: page.limit },
+    { $sort: sort },
+    { $skip: options.skip },
+    { $limit: options.limit },
     { $project: { _searchRank: 0, _memberIdNumber: 0 } },
   ];
 };
