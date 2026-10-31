@@ -106,6 +106,8 @@ export interface TBranch {
 	admissionFeeAmount?: number;
 	lockerFeeAmount?: number;
 	autoDeactivateAfterUnpaidMonths?: number;
+	/** When true, member imports may contain duplicate phone numbers. Add/edit stay strictly unique. */
+	allowDuplicatePhoneOnImport?: boolean;
 	lastAutoDeactivationRunDate?: string | null;
 	lastDueAccrualRunDate?: string | null;
 	startingBalance?: number | null;

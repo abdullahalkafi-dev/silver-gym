@@ -240,13 +240,12 @@ memberSchema.pre("validate", async function () {
 memberSchema.index({ branchId: 1, isActive: 1, createdAt: -1 });
 memberSchema.index({ branchId: 1, systemMemberId: 1 }, { unique: true, sparse: true });
 memberSchema.index({ branchId: 1, memberId: 1 });
-memberSchema.index(
-  { branchId: 1, contact: 1 },
-  {
-    unique: true,
-    partialFilterExpression: { contact: { $exists: true, $gt: "" } },
-  },
-);
+// NOT unique: branches may allow duplicate phones on import (see
+// Branch.allowDuplicatePhoneOnImport). Uniqueness for add/edit is enforced in
+// member.service. Key order differs from the legacy unique index
+// (branchId_1_contact_1) on purpose so startup index sync never conflicts with it;
+// that legacy index is dropped by db/migrations/drop-member-contact-unique-index.ts.
+memberSchema.index({ contact: 1, branchId: 1 });
 memberSchema.index(
   { branchId: 1, barcode: 1 },
   {

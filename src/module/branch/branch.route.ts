@@ -122,6 +122,20 @@ router.patch(
 );
 
 router.get(
+  "/:businessId/branches/:branchId/import-settings",
+  authStaff({ allowOwner: true }),
+  BranchController.getImportSettings
+);
+
+router.patch(
+  "/:businessId/branches/:branchId/import-settings",
+  authLimiter,
+  authStaff({ allowOwner: true }),
+  validateRequest(BranchDto.updateImportSettings),
+  BranchController.updateImportSettings
+);
+
+router.get(
   "/:businessId/branches/:branchId/sms-settings",
   authStaff({ allowOwner: true }),
   BranchController.getSMSSettings

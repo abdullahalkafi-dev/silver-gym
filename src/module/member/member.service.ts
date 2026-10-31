@@ -352,6 +352,33 @@ const ensureMemberIdAvailable = async (
   }
 };
 
+// Phone numbers must stay unique per branch when adding a member, regardless of the
+// branch's "allow duplicate phone on import" setting. Done here (not only via the DB
+// index) because that index is relaxed so imports can carry duplicates.
+const ensureContactAvailable = async (
+  branchId: string,
+  contact: string | undefined | null,
+  photoFile?: Express.Multer.File,
+) => {
+  if (typeof contact !== "string" || !contact.trim()) return;
+
+  const existingMember = await MemberRepository.findOne({
+    branchId: new Types.ObjectId(branchId),
+    contact,
+  });
+
+  if (existingMember) {
+    if (photoFile) {
+      await unlinkFile(storage.getObjectKey(photoFile.path));
+    }
+
+    throw new AppError(
+      StatusCodes.CONFLICT,
+      "A member with this phone number already exists in this branch.",
+    );
+  }
+};
+
 const resolveBranchAccess = async (
   branchId: string,
   actor: TAccessActor,
@@ -507,6 +534,7 @@ const createMember = async (
   const branch = await resolveBranchAccess(branchId, actor, photoFile);
   BranchService.ensureBranchFeesConfigured(branch, "member");
   await ensureMemberIdAvailable(branchId, payload.memberId, photoFile);
+  await ensureContactAvailable(branchId, payload.contact, photoFile);
 
   const membershipStartDate = payload.membershipStartDate
     ? new Date(payload.membershipStartDate)

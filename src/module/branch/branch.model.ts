@@ -124,6 +124,10 @@ const branchSchema = new Schema<TBranch>(
       min: 1,
       default: DEFAULT_BRANCH_AUTO_DEACTIVATE_AFTER_UNPAID_MONTHS,
     },
+    allowDuplicatePhoneOnImport: {
+      type: Boolean,
+      default: false,
+    },
     lastAutoDeactivationRunDate: {
       type: String,
       trim: true,

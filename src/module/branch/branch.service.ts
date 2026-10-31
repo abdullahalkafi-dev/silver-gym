@@ -223,6 +223,14 @@ const buildBranchAutoDeactivationSettingsSnapshot = (
     ),
 });
 
+const buildBranchImportSettingsSnapshot = (
+  branch: TBranch & { _id?: Types.ObjectId },
+) => ({
+  branchId: branch._id,
+  branchName: branch.branchName,
+  allowDuplicatePhoneOnImport: branch.allowDuplicatePhoneOnImport === true,
+});
+
 /**
  * Get all branches for a business with ownership verification
  * Performance: 2 DB queries
@@ -516,6 +524,45 @@ const updateBranchAutoDeactivationSettings = async (
   return buildBranchAutoDeactivationSettingsSnapshot(updatedBranch);
 };
 
+const getBranchImportSettings = async (
+  businessId: string,
+  branchId: string,
+  actor: TBranchAccessActor,
+) => {
+  const branch = await resolveBranchFeeAccess(businessId, branchId, actor);
+
+  return buildBranchImportSettingsSnapshot(branch);
+};
+
+const updateBranchImportSettings = async (
+  businessId: string,
+  branchId: string,
+  actor: TBranchAccessActor,
+  allowDuplicatePhoneOnImport: boolean,
+) => {
+  await resolveBranchFeeAccess(businessId, branchId, actor);
+
+  if (!actor.userId) {
+    throw new AppError(
+      StatusCodes.FORBIDDEN,
+      "Only the owner can update branch import settings",
+    );
+  }
+
+  const updatedBranch = await BranchRepository.updateById(branchId, {
+    allowDuplicatePhoneOnImport: allowDuplicatePhoneOnImport === true,
+  });
+
+  if (!updatedBranch) {
+    throw new AppError(
+      StatusCodes.INTERNAL_SERVER_ERROR,
+      "Failed to update branch import settings",
+    );
+  }
+
+  return buildBranchImportSettingsSnapshot(updatedBranch);
+};
+
 const getBranchSMSSettings = async (
   businessId: string,
   branchId: string,
@@ -675,6 +722,8 @@ export const BranchService = {
   updateBranchAdmissionFee,
   getBranchAutoDeactivationSettings,
   updateBranchAutoDeactivationSettings,
+  getBranchImportSettings,
+  updateBranchImportSettings,
   getBranchSMSSettings,
   updateBranchSMSSettings,
   getBranchStartingBalance,

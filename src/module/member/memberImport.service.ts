@@ -369,10 +369,14 @@ type TDBConflictFailure = {
 const batchCheckDBConflicts = async (
   branchObjectId: Types.ObjectId,
   validatedRows: { rowIndex: number; parsed: TParsedRow; raw: TRawImportRow }[],
+  allowDuplicatePhones = false,
 ): Promise<TDBConflictFailure[]> => {
-  const allContacts = validatedRows
-    .map((r) => r.parsed.contact)
-    .filter((c): c is string => !!c);
+  // When the branch allows duplicate phones on import, phones are never a conflict.
+  const allContacts = allowDuplicatePhones
+    ? []
+    : validatedRows
+        .map((r) => r.parsed.contact)
+        .filter((c): c is string => !!c);
   const allEmails = validatedRows
     .map((r) => r.parsed.email)
     .filter((e): e is string => !!e);
@@ -401,7 +405,7 @@ const batchCheckDBConflicts = async (
   const failures: TDBConflictFailure[] = [];
 
   for (const { rowIndex, parsed, raw } of validatedRows) {
-    if (parsed.contact && contactMap.has(parsed.contact)) {
+    if (!allowDuplicatePhones && parsed.contact && contactMap.has(parsed.contact)) {
       const existing = contactMap.get(parsed.contact)!;
       const sysId = (existing as unknown as Record<string, unknown>).systemMemberId;
       failures.push({
@@ -969,6 +973,7 @@ const processBatch = async (batchId: string) => {
     // Get branch monthlyFee for fallback
     const branch = await BranchRepository.findById(String(batch.branchId));
     const branchMonthlyFee = branch?.monthlyFeeAmount || 0;
+    const allowDuplicatePhones = branch?.allowDuplicatePhoneOnImport === true;
 
     // Collect all memberIds from sheet
     const sheetMemberIds: string[] = [];
@@ -991,7 +996,9 @@ const processBatch = async (batchId: string) => {
     }
 
     // Pre-scan for duplicate phone numbers within this batch
-    const phoneDuplicates = validateUniquePhones(rowsFromSource);
+    const phoneDuplicates = allowDuplicatePhones
+      ? { valid: true, duplicates: [] as { phone: string; rowIndices: number[] }[] }
+      : validateUniquePhones(rowsFromSource);
     if (!phoneDuplicates.valid) {
       const details = phoneDuplicates.duplicates
         .map(d => `"${d.phone}" (rows ${d.rowIndices.join(", ")})`)
@@ -1055,7 +1062,11 @@ const processBatch = async (batchId: string) => {
     // ════════════════════════════════════════════════════════════════
     // PHASE 2: Batch DB conflict check — single query
     // ════════════════════════════════════════════════════════════════
-    const dbConflicts = await batchCheckDBConflicts(branchObjectId, validatedRows);
+    const dbConflicts = await batchCheckDBConflicts(
+      branchObjectId,
+      validatedRows,
+      allowDuplicatePhones,
+    );
     if (dbConflicts.length > 0) {
       const dbFailures: TMemberImportFailureRow[] = dbConflicts.map((c) => ({
         rowIndex: c.rowIndex,
@@ -1631,7 +1642,7 @@ const startCSVImport = async (
   actor: TImportActor,
   csvFile: Express.Multer.File,
 ) => {
-  await resolveBranchAccess(branchId, actor);
+  const branchForImport = await resolveBranchAccess(branchId, actor);
 
   const branchObjectId = new Types.ObjectId(branchId);
 
@@ -1710,7 +1721,10 @@ const startCSVImport = async (
   }
 
   // Pre-validate: reject immediately if phone numbers are not unique within the sheet
-  const phoneDuplicates = validateUniquePhones(csvRows);
+  const allowDuplicatePhones = branchForImport?.allowDuplicatePhoneOnImport === true;
+  const phoneDuplicates = allowDuplicatePhones
+    ? { valid: true, duplicates: [] as { phone: string; rowIndices: number[] }[] }
+    : validateUniquePhones(csvRows);
   if (!phoneDuplicates.valid) {
     const details = phoneDuplicates.duplicates
       .map(d => `"${d.phone}" (rows ${d.rowIndices.join(", ")})`)

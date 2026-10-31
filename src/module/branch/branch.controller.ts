@@ -245,6 +245,44 @@ const updateAutoDeactivationSettings = catchAsync(async (req: Request, res: Resp
   });
 });
 
+const getImportSettings = catchAsync(async (req: Request, res: Response) => {
+  const businessId = req.params.businessId as string;
+  const branchId = req.params.branchId as string;
+
+  const result = await BranchService.getBranchImportSettings(
+    businessId,
+    branchId,
+    resolveActor(req)
+  );
+
+  sendResponse(res, {
+    statusCode: StatusCodes.OK,
+    success: true,
+    message: "Branch import settings retrieved successfully",
+    data: result,
+  });
+});
+
+const updateImportSettings = catchAsync(async (req: Request, res: Response) => {
+  const businessId = req.params.businessId as string;
+  const branchId = req.params.branchId as string;
+  const payload = req.body.data || req.body;
+
+  const result = await BranchService.updateBranchImportSettings(
+    businessId,
+    branchId,
+    resolveActor(req),
+    payload.allowDuplicatePhoneOnImport
+  );
+
+  sendResponse(res, {
+    statusCode: StatusCodes.OK,
+    success: true,
+    message: "Branch import settings updated successfully",
+    data: result,
+  });
+});
+
 const getSMSSettings = catchAsync(async (req: Request, res: Response) => {
   const businessId = req.params.businessId as string;
   const branchId = req.params.branchId as string;
@@ -332,6 +370,8 @@ export const BranchController = {
   updateAdmissionFee,
   getAutoDeactivationSettings,
   updateAutoDeactivationSettings,
+  getImportSettings,
+  updateImportSettings,
   getSMSSettings,
   updateSMSSettings,
   getStartingBalance,

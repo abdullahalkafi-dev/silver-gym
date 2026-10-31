@@ -139,6 +139,14 @@ const updateBranchAutoDeactivationSettingsDto = z.object({
     .strict(),
 });
 
+const updateBranchImportSettingsDto = z.object({
+  data: z
+    .object({
+      allowDuplicatePhoneOnImport: z.boolean(),
+    })
+    .strict(),
+});
+
 const setStartingBalanceDto = z.object({
   data: z
     .object({
@@ -155,6 +163,7 @@ export const BranchDto = {
   updateMonthlyFee: updateBranchMonthlyFeeDto,
   updateAdmissionFee: updateBranchAdmissionFeeDto,
   updateAutoDeactivationSettings: updateBranchAutoDeactivationSettingsDto,
+  updateImportSettings: updateBranchImportSettingsDto,
   updateSMSSettings: updateBranchSMSSettingsSchema,
   setStartingBalance: setStartingBalanceDto,
 };
