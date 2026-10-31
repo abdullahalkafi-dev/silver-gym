@@ -3,8 +3,12 @@ import { Types } from "mongoose";
 import { BD_OFFSET_MS } from "../../utils/dhakaTime";
 import { Expense } from "../expense/expense.model";
 import { Member } from "../member/member.model";
+import { Package } from "../package/package.model";
 import { PaymentStatus } from "../payment/payment.interface";
 import { Payment } from "../payment/payment.model";
+
+/** Analytics queries fail fast instead of holding the database for minutes. */
+const ANALYTICS_QUERY_MAX_MS = 20_000;
 
 type TYearMonthBounds = {
   start: Date;
@@ -396,93 +400,97 @@ export const AnalyticsRepository = {
     ]);
   },
 
-  getMemberJoinChart(branchId: string, year: number) {
+  /**
+   * Members that joined in `year`, counted per month and per the package they
+   * first bought ("" = no package, imported or purely monthly members).
+   *
+   * Runs a fixed number of queries no matter how many members the branch has.
+   * (It used to look up payments once per member, which timed out for branches
+   * with thousands of members.)
+   */
+  async getMemberJoinChart(branchId: string, year: number) {
     const start = new Date(Date.UTC(year, 0, 1) - BD_OFFSET_MS);
     const end = new Date(Date.UTC(year + 1, 0, 1) - BD_OFFSET_MS);
+    const branchObjectId = toBranchObjectId(branchId);
+    const joinedInYear = { branchId: branchObjectId, createdAt: { $gte: start, $lt: end } };
+    const monthOf = { $month: { $add: ["$createdAt", BD_OFFSET_MS] } };
 
-    return Member.aggregate([
-      {
-        $match: {
-          branchId: toBranchObjectId(branchId),
-          createdAt: { $gte: start, $lt: end },
-        },
-      },
-      // Look up the member's first payment that has a packageId
-      // to determine what package they originally joined with.
-      {
-        $lookup: {
-          from: "payments",
-          let: { mid: "$_id" },
-          pipeline: [
-            {
-              $match: {
-                $expr: {
-                  $and: [
-                    { $eq: ["$memberId", "$$mid"] },
-                    { $ne: ["$packageId", null] },
-                  ],
-                },
-              },
-            },
-            { $sort: { paymentDate: 1 } },
-            { $limit: 1 },
-            {
-              $lookup: {
-                from: "packages",
-                localField: "packageId",
-                foreignField: "_id",
-                as: "pkgDoc",
-              },
-            },
-            {
-              $addFields: {
-                resolvedTitle: {
-                  $ifNull: [
-                    { $arrayElemAt: ["$pkgDoc.title", 0] },
-                    { $ifNull: ["$packageName", ""] },
-                  ],
-                },
-              },
-            },
-          ],
-          as: "firstPayment",
-        },
-      },
-      {
-        $addFields: {
-          joinMonth: { $month: { $add: ["$createdAt", BD_OFFSET_MS] } },
-          // Empty string = no-package member (imported, purely monthly, or "Monthly Renewal" package)
-          packageTitle: {
-            $let: {
-              vars: {
-                rawTitle: {
-                  $ifNull: [
-                    { $arrayElemAt: ["$firstPayment.resolvedTitle", 0] },
-                    "",
-                  ],
-                },
-              },
-              in: {
-                $cond: {
-                  if: { $eq: ["$$rawTitle", "Monthly Renewal"] },
-                  then: "",
-                  else: "$$rawTitle",
-                },
-              },
-            },
+    const [joinedPerMonth, firstPackagePayments] = await Promise.all([
+      Member.aggregate([
+        { $match: joinedInYear },
+        { $group: { _id: monthOf, count: { $sum: 1 } } },
+      ]).option({ maxTimeMS: ANALYTICS_QUERY_MAX_MS }),
+      // Each member's earliest payment that actually carries a package.
+      Payment.aggregate([
+        {
+          $match: {
+            branchId: branchObjectId,
+            packageId: { $exists: true, $ne: null },
+            memberId: { $exists: true, $ne: null },
           },
         },
-      },
-      {
-        $group: {
-          _id: {
-            month: "$joinMonth",
-            packageTitle: "$packageTitle",
+        { $sort: { paymentDate: 1, _id: 1 } },
+        {
+          $group: {
+            _id: "$memberId",
+            packageId: { $first: "$packageId" },
+            packageName: { $first: "$packageName" },
           },
-          count: { $sum: 1 },
         },
-      },
+      ]).option({ maxTimeMS: ANALYTICS_QUERY_MAX_MS }),
     ]);
+
+    const counts = new Map<string, { month: number; packageTitle: string; count: number }>();
+    const add = (month: number, packageTitle: string, by: number) => {
+      const key = `${month}|${packageTitle}`;
+      const row = counts.get(key) ?? { month, packageTitle, count: 0 };
+      row.count += by;
+      counts.set(key, row);
+    };
+
+    // Start with everyone as "no package", then move the ones who bought a package.
+    (joinedPerMonth as Array<{ _id: number; count: number }>).forEach((row) =>
+      add(row._id, "", row.count),
+    );
+
+    if (firstPackagePayments.length > 0) {
+      const packageIds = [
+        ...new Set(firstPackagePayments.map((row) => String(row.packageId))),
+      ].map((id) => new Types.ObjectId(id));
+
+      const [packageDocs, packagedMembers] = await Promise.all([
+        Package.find({ _id: { $in: packageIds } }).select("title").lean(),
+        Member.aggregate([
+          { $match: { ...joinedInYear, _id: { $in: firstPackagePayments.map((row) => row._id) } } },
+          { $project: { month: monthOf } },
+        ]).option({ maxTimeMS: ANALYTICS_QUERY_MAX_MS }),
+      ]);
+
+      const titleByPackageId = new Map(
+        packageDocs.map((doc) => [String(doc._id), doc.title as string]),
+      );
+      const firstPackageByMember = new Map(
+        firstPackagePayments.map((row) => [
+          String(row._id),
+          titleByPackageId.get(String(row.packageId)) ?? (row.packageName as string | undefined) ?? "",
+        ]),
+      );
+
+      (packagedMembers as Array<{ _id: Types.ObjectId; month: number }>).forEach((member) => {
+        const title = firstPackageByMember.get(String(member._id)) ?? "";
+        // "Monthly Renewal" is a billing package, not something a member joins with.
+        if (!title || title === "Monthly Renewal") return;
+        add(member.month, "", -1);
+        add(member.month, title, 1);
+      });
+    }
+
+    return [...counts.values()]
+      .filter((row) => row.count > 0)
+      .map((row) => ({
+        _id: { month: row.month, packageTitle: row.packageTitle },
+        count: row.count,
+      }));
   },
 
   getMemberPackageSummary(branchId: string) {
