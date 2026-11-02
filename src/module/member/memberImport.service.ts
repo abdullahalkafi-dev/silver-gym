@@ -28,6 +28,8 @@ import {
   mergeMemberBillingLedgerMetadata,
 } from "./member.billingLedger";
 import { MemberCounterService } from "./memberCounter.service";
+import { parseImportNextPaymentDate } from "./memberImport.dateParser";
+import { normalizeBangladeshPhone } from "../../utils/bangladeshPhone";
 import { Member } from "./member.model";
 import {
   TMemberImportBatch,
@@ -162,56 +164,10 @@ const pickValue = (row: TRawImportRow, keys: string[]): unknown => {
   return undefined;
 };
 
-const MONTH_ABBRS = [
-  'jan', 'feb', 'mar', 'apr', 'may', 'jun',
-  'jul', 'aug', 'sep', 'oct', 'nov', 'dec',
-];
-
 const MONTH_ABBRS_OUTPUT = [
   'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
   'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
 ];
-
-const resolveMonthIndex = (monthStr: string): number => {
-  return MONTH_ABBRS.indexOf(monthStr.toLowerCase());
-};
-
-const parseNextPaymentDateText = (value: unknown): Date | undefined => {
-  if (value == null) return undefined;
-
-  const str = String(value).trim();
-  if (!str) return undefined;
-
-  // "DD-Mon-YY" or "DD-Mon-YYYY" — e.g. "01-May-26", "31-Jan-2026"
-  const ddMonYearMatch = str.match(/^(\d{2})-([A-Za-z]{3})-(\d{2,4})$/);
-  if (ddMonYearMatch) {
-    const day = parseInt(ddMonYearMatch[1]!, 10);
-    const monthIndex = resolveMonthIndex(ddMonYearMatch[2]!);
-    let year = parseInt(ddMonYearMatch[3]!, 10);
-    if (year < 100) year += 2000;
-
-    if (monthIndex >= 0 && day >= 1 && day <= 31 && year >= 1970 && year <= 2100) {
-      const result = new Date(year, monthIndex, day);
-      if (result.getDate() === day) return result;
-    }
-    return undefined;
-  }
-
-  // "Mon-YY" or "Mon-YYYY" — e.g. "May-26", "Jan-2026"
-  const monYearMatch = str.match(/^([A-Za-z]{3})-(\d{2,4})$/);
-  if (monYearMatch) {
-    const monthIndex = resolveMonthIndex(monYearMatch[1]!);
-    let year = parseInt(monYearMatch[2]!, 10);
-    if (year < 100) year += 2000;
-
-    if (monthIndex >= 0 && year >= 1970 && year <= 2100) {
-      return new Date(year, monthIndex, 1);
-    }
-    return undefined;
-  }
-
-  return undefined;
-};
 
 export const formatNextPaymentDate = (date: Date): string => {
   const day = String(date.getDate()).padStart(2, '0');
@@ -250,7 +206,10 @@ const validateUniquePhones = (
   const phoneMap = new Map<string, number[]>();
 
   rows.forEach((row, index) => {
-    const phone = toStringValue(pickValue(row, ["contact", "phone", "mobile", "phone_number"]));
+    // Invalid numbers are imported without a phone, so they can never clash.
+    const phone = normalizeBangladeshPhone(
+      toStringValue(pickValue(row, ["contact", "phone", "mobile", "phone_number"])),
+    );
     if (phone) {
       const existing = phoneMap.get(phone) || [];
       existing.push(index + 2); // +2 for header row offset
@@ -309,7 +268,7 @@ type TParsedRow = {
 };
 
 type TValidateRowResult =
-  | { valid: true; parsed: TParsedRow }
+  | { valid: true; parsed: TParsedRow; warnings: string[] }
   | { valid: false; failure: TMemberImportFailureRow };
 
 const validateRow = (
@@ -317,16 +276,21 @@ const validateRow = (
   row: TRawImportRow,
   branchMonthlyFee: number,
 ): TValidateRowResult => {
+  const warnings: string[] = [];
+
   const fullName = toStringValue(pickValue(row, ["full_name", "fullname", "name", "member_name"]));
   if (!fullName) {
     return { valid: false, failure: { rowIndex, reason: "Name is required", raw: row } };
   }
 
-  const contact = toStringValue(pickValue(row, ["contact", "phone", "mobile", "phone_number"]));
-  const email = toStringValue(pickValue(row, ["email", "mail"]))?.toLowerCase();
-  if (!contact && !email) {
-    return { valid: false, failure: { rowIndex, reason: "Phone number or email is required", raw: row } };
+  // Phone and email are optional for imported members. An invalid phone is
+  // dropped (the member is still imported) instead of failing the whole file.
+  const rawContact = toStringValue(pickValue(row, ["contact", "phone", "mobile", "phone_number"]));
+  const contact = normalizeBangladeshPhone(rawContact) ?? undefined;
+  if (rawContact && !contact) {
+    warnings.push(`Phone "${rawContact}" is not a valid Bangladesh mobile number, imported without a phone`);
   }
+  const email = toStringValue(pickValue(row, ["email", "mail"]))?.toLowerCase();
 
   const memberId = toStringValue(pickValue(row, ["member_id", "memberid"]));
 
@@ -345,9 +309,19 @@ const validateRow = (
     "next_payment_date", "next_payment", "nextpaymentdate",
     "payment_date", "next_pamyent_date", "nextpamyentdate",
   ]);
-  const nextPaymentDate = parseNextPaymentDateText(nextPaymentDateRaw);
-  if (!nextPaymentDate && isActive) {
-    return { valid: false, failure: { rowIndex, reason: `Next payment date is required for active members (received: ${JSON.stringify(nextPaymentDateRaw)})`, raw: row } };
+  const dateResult = parseImportNextPaymentDate(nextPaymentDateRaw);
+  const nextPaymentDate = dateResult.ok ? dateResult.date : undefined;
+  if (!dateResult.ok && isActive) {
+    const reason = dateResult.empty
+      ? "Next payment date is required for active members"
+      : `Next payment date could not be read: ${dateResult.reason}`;
+    return { valid: false, failure: { rowIndex, reason, raw: row } };
+  }
+  if (!dateResult.ok && !dateResult.empty) {
+    warnings.push(`Next payment date ignored for inactive member: ${dateResult.reason}`);
+  }
+  if (dateResult.ok && dateResult.corrected) {
+    warnings.push(`Next payment date "${String(nextPaymentDateRaw).trim()}" read as ${formatNextPaymentDate(dateResult.date)}`);
   }
 
   const { currentDueAmount, updatedNextPaymentDate } = calculateBalanceSnapshot(nextPaymentDate, monthlyFeeAmount, sheetDueAmount, isActive);
@@ -355,6 +329,7 @@ const validateRow = (
   return {
     valid: true,
     parsed: { fullName, contact, email, memberId, monthlyFeeAmount, sheetDueAmount, isActive, nextPaymentDate, updatedNextPaymentDate, currentDueAmount },
+    warnings,
   };
 };
 
@@ -634,6 +609,19 @@ const normalizePhoneValue = (value: unknown): string | undefined => {
 
 const isXLSXFile = (filename: string): boolean => {
   return path.extname(filename).toLowerCase() === ".xlsx";
+};
+
+// Real Excel date cells would otherwise be formatted as US "4/1/26", which is
+// ambiguous (4 Jan or 1 Apr). Rewrite their display text as unambiguous ISO.
+const writeDateCellsAsIso = (sheet: XLSX.WorkSheet) => {
+  for (const [address, cell] of Object.entries(sheet)) {
+    if (address.startsWith("!")) continue;
+    const typedCell = cell as XLSX.CellObject;
+    if (typedCell?.t === "d" && typedCell.v instanceof Date && !Number.isNaN(typedCell.v.getTime())) {
+      const d = typedCell.v;
+      typedCell.w = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`;
+    }
+  }
 };
 
 const getSheetRows = async (
@@ -1043,6 +1031,19 @@ const processBatch = async (batchId: string) => {
         validationFailures.push(result.failure);
       } else {
         validatedRows.push({ rowIndex, parsed: result.parsed, raw });
+
+        // A resumed batch (cursor > 0) already counted these warnings.
+        if (result.warnings.length > 0 && cursor === 0) {
+          warningRows += 1;
+          if (warningsPreview.length < runtimeConfig.maxPreviewRows) {
+            warningsPreview.push({
+              rowIndex,
+              reason: result.warnings.join("; "),
+              memberName: result.parsed.fullName,
+              raw,
+            });
+          }
+        }
       }
     }
 
@@ -1282,63 +1283,80 @@ const processBatch = async (batchId: string) => {
 
       // ── Bulk insert new members ──
       if (chunkCreates.length > 0) {
-        const createDocs = chunkCreates.map((e) => e.memberData);
+        // Each doc gets its _id up front so results are matched to rows by id.
+        // With ordered:false Mongoose silently drops docs that fail validation,
+        // so array positions in the result do not line up with chunkCreates.
+        const entryById = new Map<string, TMemberEntry>();
+        const createDocs = chunkCreates.map((e) => {
+          const _id = new Types.ObjectId();
+          entryById.set(String(_id), e);
+          return { ...e.memberData, _id };
+        });
+
+        const insertedIds = new Set<string>();
+        const failedIds = new Set<string>();
+
+        const recordCreateFailure = (entry: TMemberEntry, reason: string) => {
+          failedRows += 1;
+          const failure: TMemberImportFailureRow = {
+            rowIndex: entry.rowIndex,
+            reason,
+            memberName: entry.memberData.fullName,
+            raw: entry.raw,
+          };
+          if (failuresPreview.length < runtimeConfig.maxPreviewRows) {
+            failuresPreview.push(failure);
+          }
+          if (failedRowsData.length < runtimeConfig.maxFailedRowsData) {
+            failedRowsData.push(failure);
+          }
+        };
 
         try {
           const insertedDocs = await Member.insertMany(createDocs, { ordered: false });
-          for (let j = 0; j < insertedDocs.length; j += 1) {
-            persistedEntries.push({
-              entry: chunkCreates[j]!,
-              memberId: (insertedDocs[j] as any)._id as Types.ObjectId,
-            });
+          for (const doc of insertedDocs) {
+            insertedIds.add(String((doc as any)._id));
           }
         } catch (error: unknown) {
           const bulkError = error as {
             name?: string;
-            writeErrors?: Array<{ index: number; code?: number; errmsg?: string }>;
-            result?: { insertedIds?: Map<number, Types.ObjectId> };
+            writeErrors?: Array<{
+              code?: number;
+              errmsg?: string;
+              err?: { op?: { _id?: unknown } };
+              getOperation?: () => { _id?: unknown } | undefined;
+            }>;
+            result?: { insertedIds?: Map<number, Types.ObjectId> | Record<string, Types.ObjectId> };
           };
 
           if (bulkError.name === "MongoBulkWriteError" && bulkError.writeErrors) {
-            const failedIndices = new Set(bulkError.writeErrors.map((we) => we.index));
-
-            const insertedIds = bulkError.result?.insertedIds;
-            if (insertedIds) {
-              insertedIds.forEach((_id: Types.ObjectId, idx: number) => {
-                if (!failedIndices.has(idx)) {
-                  persistedEntries.push({
-                    entry: chunkCreates[idx]!,
-                    memberId: _id,
-                  });
-                }
-              });
-            }
-
             for (const we of bulkError.writeErrors) {
-              const entry = chunkCreates[we.index];
+              const opId = we.getOperation?.()?._id ?? we.err?.op?._id;
+              const entry = opId != null ? entryById.get(String(opId)) : undefined;
               if (!entry) continue;
 
-              failedRows += 1;
-
+              failedIds.add(String(opId));
               const duplicateMsg = getDuplicateConflictMessage({ code: we.code });
-              const reason = duplicateMsg || we.errmsg || "Failed to create member";
+              recordCreateFailure(entry, duplicateMsg || we.errmsg || "Failed to create member");
+            }
 
-              const failure: TMemberImportFailureRow = {
-                rowIndex: entry.rowIndex,
-                reason,
-                memberName: entry.memberData.fullName,
-                raw: entry.raw,
-              };
-
-              if (failuresPreview.length < runtimeConfig.maxPreviewRows) {
-                failuresPreview.push(failure);
-              }
-              if (failedRowsData.length < runtimeConfig.maxFailedRowsData) {
-                failedRowsData.push(failure);
-              }
+            const attempted = bulkError.result?.insertedIds;
+            const attemptedIds =
+              attempted instanceof Map ? [...attempted.values()] : Object.values(attempted ?? {});
+            for (const _id of attemptedIds) {
+              const key = String(_id);
+              if (!failedIds.has(key)) insertedIds.add(key);
             }
           } else {
             throw error;
+          }
+        }
+
+        for (const [id, entry] of entryById) {
+          if (insertedIds.has(id)) {
+            persistedEntries.push({ entry, memberId: new Types.ObjectId(id) });
+          } else if (!failedIds.has(id)) {
+            recordCreateFailure(entry, "Member data failed validation and was not saved");
           }
         }
       }
@@ -1493,7 +1511,8 @@ const processBatch = async (batchId: string) => {
     }
 
     const finalStatus: TMemberImportStatus =
-      failedRows > 0 || warningRows > 0 ? "partial_failed" : "completed";
+      // Warnings (dropped invalid phone, corrected date spelling) still import the row.
+      failedRows > 0 ? "partial_failed" : "completed";
 
     await updateBatchProgress(batchId, {
       status: finalStatus,
@@ -1665,7 +1684,7 @@ const startCSVImport = async (
   let csvRows: TRawImportRow[];
   try {
     if (isXLSXFile(csvFile.originalname)) {
-      const workbook = XLSX.read(csvFile.buffer, { type: "buffer" });
+      const workbook = XLSX.read(csvFile.buffer, { type: "buffer", cellDates: true });
       const sheetName = workbook.SheetNames[0];
       if (!sheetName) {
         csvRows = [];
@@ -1674,6 +1693,7 @@ const startCSVImport = async (
         if (!sheet) {
           csvRows = [];
         } else {
+          writeDateCellsAsIso(sheet);
           const jsonData = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: "", raw: false });
           if (jsonData.length === 0) {
             csvRows = [];
