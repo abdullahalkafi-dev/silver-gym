@@ -1,20 +1,34 @@
 import { Types } from "mongoose";
-import type { TSmsDeliveryMode } from "../sms/sms.interface";
+
+export type TBranchSMSAutoToggles = {
+	dueReminder: boolean;
+	birthday: boolean;
+	paymentConfirmation: boolean;
+	membershipExpired: boolean;
+	welcome: boolean;
+};
+
+export const DEFAULT_BRANCH_SMS_TOGGLES: TBranchSMSAutoToggles = {
+	dueReminder: false,
+	birthday: false,
+	paymentConfirmation: false,
+	membershipExpired: false,
+	welcome: false,
+};
 
 export interface TBranchSMSSettings {
-	autoSendEnabled: boolean;
-	reminderDayOfMonth: number;
-	template: string;
-	templateBangla: string;
-	occasionTemplate: string;
-	occasionTemplateBangla: string;
-	promotionTemplate: string;
-	promotionTemplateBangla: string;
-	defaultDeliveryMode: TSmsDeliveryMode;
+	/** Master switch. OFF by default for every branch. */
+	enabled: boolean;
 	maskingSender?: string | null;
+	reminderDayOfMonth: number;
+	/** Dhaka-time hour (9-20) when the due-reminder / birthday jobs start sending. */
+	reminderHour: number;
+	birthdayHour: number;
+	toggles: TBranchSMSAutoToggles;
 	updatedAt?: Date | null;
 	updatedBy?: Types.ObjectId | null;
 	lastAutoReminderRunDate?: string | null;
+	lastBirthdayRunDate?: string | null;
 }
 
 export interface TBranchAccessControl {
@@ -45,56 +59,50 @@ export const normalizeBranchAutoDeactivateAfterUnpaidMonths = (
 	return Math.floor(value);
 };
 
-export const DEFAULT_BRANCH_SMS_TEMPLATE =
-	"Dear {memberName}, your {dueMonth} monthly due is pending at {branchName}. Please pay as soon as possible. Thank you. Contact: 01815635091";
-
-export const DEFAULT_BRANCH_SMS_TEMPLATE_BANGLA =
-	"প্রিয় {memberName}, {branchName} এ {dueMonth} মাসিক বকেয়া বাকি আছে। দয়া করে যত দ্রুত সম্ভব পরিশোধ করুন। ধন্যবাদ। যোগাযোগ: 01815635091";
-
-export const DEFAULT_BRANCH_SMS_OCCASION_TEMPLATE =
-	"Dear {memberName}, greetings from {branchName}. Thank you for being with us.";
-
-export const DEFAULT_BRANCH_SMS_OCCASION_TEMPLATE_BANGLA =
-	"প্রিয় {memberName}, {branchName} থেকে আপনাকে শুভেচ্ছা জানাচ্ছি। আমাদের পাশে থাকার জন্য ধন্যবাদ।";
-
-export const DEFAULT_BRANCH_SMS_PROMOTION_TEMPLATE =
-	"Dear {memberName}, {branchName} has a new offer for you. Contact us for details.";
-
-export const DEFAULT_BRANCH_SMS_PROMOTION_TEMPLATE_BANGLA =
-	"প্রিয় {memberName}, {branchName} আপনার জন্য একটি নতুন অফার রেখেছে। বিস্তারিত জানতে আমাদের সাথে যোগাযোগ করুন।";
-
 export const getDefaultBranchSMSSettings = (): TBranchSMSSettings => ({
-	autoSendEnabled: false,
-	reminderDayOfMonth: 5,
-	template: DEFAULT_BRANCH_SMS_TEMPLATE,
-	templateBangla: DEFAULT_BRANCH_SMS_TEMPLATE_BANGLA,
-	occasionTemplate: DEFAULT_BRANCH_SMS_OCCASION_TEMPLATE,
-	occasionTemplateBangla: DEFAULT_BRANCH_SMS_OCCASION_TEMPLATE_BANGLA,
-	promotionTemplate: DEFAULT_BRANCH_SMS_PROMOTION_TEMPLATE,
-	promotionTemplateBangla: DEFAULT_BRANCH_SMS_PROMOTION_TEMPLATE_BANGLA,
-	defaultDeliveryMode: "masking",
+	enabled: false,
 	maskingSender: null,
+	reminderDayOfMonth: 5,
+	reminderHour: 10,
+	birthdayHour: 10,
+	toggles: { ...DEFAULT_BRANCH_SMS_TOGGLES },
+	lastAutoReminderRunDate: null,
+	lastBirthdayRunDate: null,
 	updatedAt: null,
 	updatedBy: null,
-	lastAutoReminderRunDate: null,
 });
 
 export const normalizeBranchSMSSettings = (
 	settings?: Partial<TBranchSMSSettings> | null,
 ): TBranchSMSSettings => {
-	const rawSettings =
+	const raw: Partial<TBranchSMSSettings> =
 		settings && typeof (settings as any).toObject === "function"
 			? (settings as any).toObject()
-			: settings;
+			: settings ?? {};
+	const defaults = getDefaultBranchSMSSettings();
+	const clampInt = (value: unknown, min: number, max: number, fallback: number) => {
+		const n = Number(value);
+		return Number.isInteger(n) && n >= min && n <= max ? n : fallback;
+	};
 
 	return {
-		...getDefaultBranchSMSSettings(),
-		...(rawSettings ?? {}),
-		defaultDeliveryMode: "masking",
+		enabled: raw.enabled === true,
 		maskingSender:
-			typeof rawSettings?.maskingSender === "string"
-				? rawSettings.maskingSender.trim() || null
-				: rawSettings?.maskingSender ?? null,
+			typeof raw.maskingSender === "string" ? raw.maskingSender.trim() || null : null,
+		reminderDayOfMonth: clampInt(raw.reminderDayOfMonth, 1, 31, defaults.reminderDayOfMonth),
+		reminderHour: clampInt(raw.reminderHour, 9, 20, defaults.reminderHour),
+		birthdayHour: clampInt(raw.birthdayHour, 9, 20, defaults.birthdayHour),
+		toggles: {
+			dueReminder: raw.toggles?.dueReminder === true,
+			birthday: raw.toggles?.birthday === true,
+			paymentConfirmation: raw.toggles?.paymentConfirmation === true,
+			membershipExpired: raw.toggles?.membershipExpired === true,
+			welcome: raw.toggles?.welcome === true,
+		},
+		lastAutoReminderRunDate: raw.lastAutoReminderRunDate ?? null,
+		lastBirthdayRunDate: raw.lastBirthdayRunDate ?? null,
+		updatedAt: raw.updatedAt ?? null,
+		updatedBy: raw.updatedBy ?? null,
 	};
 };
 

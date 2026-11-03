@@ -136,233 +136,173 @@ const getBalance = async (): Promise<TSmsBalanceSnapshot> => {
   return balance;
 };
 
-export type TFastsmsbdSendRequest = {
-  mobileNo: string;
-  smsText: string;
-  isUnicode: boolean;
+export type TSmsOutgoing = {
+  phone: string;
+  text: string;
+  unicode: boolean;
 };
 
-export type TSmsSendResult = {
+export type TSmsRecipientResult = {
+  status: "sent" | "failed";
+  reason?: string;
+};
+
+export type TSmsSendOutcome = {
   providerReference: string;
-  responseMessage: string;
-  recipientStatuses?: Record<string, { status: "sent" | "failed"; reason?: string }>;
+  dryRun: boolean;
+  /** Same order and length as the messages that were passed in. */
+  results: TSmsRecipientResult[];
 };
 
-const sendBulk = async (
-  requests: TFastsmsbdSendRequest[],
-  requestId: string,
-  senderIdOverride?: string,
-): Promise<TSmsSendResult> => {
-  if (config.sms.dry_run !== false) {
-    logger.info("[SMS_DRY_RUN] Fastsmsbd bulk payload", {
-      requestId,
-      recipients: requests.length,
-      requests,
-      senderId: senderIdOverride,
+const describeStatus = (status?: number) =>
+  FASTSMSBD_STATUS_CODES[status ?? -1] || `Provider error ${status ?? "unknown"}`;
+
+const failAll = (count: number, reason: string): TSmsRecipientResult[] =>
+  Array.from({ length: count }, () => ({ status: "failed" as const, reason }));
+
+/** One GET call for a single recipient. Never throws: failures come back as a result. */
+const sendSingle = async (
+  message: TSmsOutgoing,
+  apiBaseUrl: string,
+  apiKey: string,
+  senderId: string,
+): Promise<TSmsRecipientResult> => {
+  try {
+    const params: Record<string, string> = {
+      apikey: apiKey,
+      sender: senderId,
+      msisdn: message.phone,
+      smstext: message.text,
+    };
+    if (message.unicode) {
+      params.smsformat = "8";
+    }
+
+    const response = await fetch(`${apiBaseUrl}/smsapiv3?${buildQueryString(params)}`, {
+      method: "GET",
+    });
+    if (!response.ok) {
+      return { status: "failed", reason: `Provider returned HTTP ${response.status}` };
+    }
+
+    const data = (await response.json()) as TFastsmsbdSingleResponse;
+    const item = data.response?.[0];
+    if (!item) {
+      return { status: "failed", reason: "No confirmation from provider" };
+    }
+    return item.status === 0
+      ? { status: "sent" }
+      : { status: "failed", reason: describeStatus(item.status) };
+  } catch (error) {
+    return {
+      status: "failed",
+      reason: error instanceof Error ? error.message : "Could not reach the SMS provider",
+    };
+  }
+};
+
+/** Plain-text messages in one POST (each can have its own text). */
+const sendMany = async (
+  messages: TSmsOutgoing[],
+  apiBaseUrl: string,
+  apiKey: string,
+  senderId: string,
+): Promise<TSmsRecipientResult[]> => {
+  try {
+    const response = await fetch(`${apiBaseUrl}/smsapimany`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        apikey: apiKey,
+        sender: senderId,
+        messages: messages.map((msg, index) => ({
+          id: index + 1,
+          msisdn: msg.phone,
+          smstext: msg.text,
+        })),
+      }),
+    });
+    if (!response.ok) {
+      return failAll(messages.length, `Provider returned HTTP ${response.status}`);
+    }
+
+    const data = (await response.json()) as TFastsmsbdDynamicResponse;
+    // Match each reply to the next unmatched message with the same phone number.
+    const byPhone = new Map<string, number[]>();
+    messages.forEach((msg, index) => {
+      const list = byPhone.get(msg.phone) ?? [];
+      list.push(index);
+      byPhone.set(msg.phone, list);
     });
 
-    return {
-      providerReference: `dry-run:${requestId}`,
-      responseMessage: "Dry-run only. No SMS was sent to Fastsmsbd.",
-    };
+    const results: TSmsRecipientResult[] = failAll(messages.length, "No confirmation from provider");
+    for (const item of data.response ?? []) {
+      const index = item.msisdn ? byPhone.get(item.msisdn)?.shift() : undefined;
+      if (index === undefined) continue;
+      results[index] =
+        item.status === 0 ? { status: "sent" } : { status: "failed", reason: describeStatus(item.status) };
+    }
+    return results;
+  } catch (error) {
+    return failAll(
+      messages.length,
+      error instanceof Error ? error.message : "Could not reach the SMS provider",
+    );
   }
-
-  const { apiKey, senderId: defaultSenderId, apiBaseUrl } = getRequiredConfig();
-  const senderId = senderIdOverride?.trim() || defaultSenderId;
-
-  const results: Array<{ status: number; msisdn: string; id?: number }> = [];
-  const recipientStatuses: Record<string, { status: "sent" | "failed"; reason?: string }> = {};
-  const hasUnicode = requests.some((r) => r.isUnicode);
-
-  if (requests.length === 1) {
-    const request = requests[0]!;
-    const params: Record<string, string> = {
-      apikey: apiKey,
-      sender: senderId,
-      msisdn: request.mobileNo,
-      smstext: request.smsText,
-    };
-
-    if (request.isUnicode) {
-      params.smsformat = "8";
-    }
-
-    const url = `${apiBaseUrl}/smsapiv3?${buildQueryString(params)}`;
-    const response = await fetch(url, { method: "GET" });
-
-    if (!response.ok) {
-      throw new AppError(
-        StatusCodes.BAD_GATEWAY,
-        `SMS provider request failed with status ${response.status}`,
-      );
-    }
-
-    const data = (await response.json()) as TFastsmsbdSingleResponse;
-
-    if (data.response) {
-      for (const item of data.response) {
-        const phone = item.msisdn || request.mobileNo;
-        results.push({
-          status: item.status ?? 1,
-          msisdn: phone,
-          id: item.id,
-        });
-
-        if (item.status !== 0) {
-          const errorMessage = FASTSMSBD_STATUS_CODES[item.status!] || `Unknown error: ${item.status}`;
-          recipientStatuses[phone] = { status: "failed", reason: errorMessage };
-          throw new AppError(
-            StatusCodes.BAD_GATEWAY,
-            `SMS send failed for ${phone}: ${errorMessage}`,
-          );
-        } else {
-          recipientStatuses[phone] = { status: "sent" };
-        }
-      }
-    }
-  } else {
-    const msisdns = requests.map((r) => r.mobileNo).join(",");
-    const firstMessage = requests[0]!;
-
-    const params: Record<string, string> = {
-      apikey: apiKey,
-      sender: senderId,
-      msisdn: msisdns,
-      smstext: firstMessage.smsText,
-    };
-
-    if (hasUnicode) {
-      params.smsformat = "8";
-    }
-
-    const url = `${apiBaseUrl}/smsapiv3?${buildQueryString(params)}`;
-    const response = await fetch(url, { method: "GET" });
-
-    if (!response.ok) {
-      throw new AppError(
-        StatusCodes.BAD_GATEWAY,
-        `SMS provider request failed with status ${response.status}`,
-      );
-    }
-
-    const data = (await response.json()) as TFastsmsbdSingleResponse;
-
-    if (data.response) {
-      for (const item of data.response) {
-        const phone = item.msisdn || "";
-        results.push({
-          status: item.status ?? 1,
-          msisdn: phone,
-          id: item.id,
-        });
-
-        if (item.status !== 0) {
-          const errorMessage = FASTSMSBD_STATUS_CODES[item.status!] || `Unknown error: ${item.status}`;
-          if (phone) {
-            recipientStatuses[phone] = { status: "failed", reason: errorMessage };
-          }
-          logger.warn("[SMS_PROVIDER] Individual send failed in batch", {
-            msisdn: item.msisdn,
-            status: item.status,
-            errorMessage,
-          });
-        } else if (phone) {
-          recipientStatuses[phone] = { status: "sent" };
-        }
-      }
-    }
-  }
-
-  const successCount = results.filter((r) => r.status === 0).length;
-  const failCount = results.filter((r) => r.status !== 0).length;
-
-  return {
-    providerReference: `fastsmsbd:${requestId}`,
-    responseMessage: `Sent ${successCount}/${results.length} messages successfully${failCount > 0 ? ` (${failCount} failed)` : ""}`,
-    recipientStatuses,
-  };
 };
 
-const sendDynamic = async (
-  messages: Array<{ mobileNo: string; smsText: string; isUnicode: boolean }>,
+/**
+ * Send any mix of messages. Plain text goes in one batch call; Unicode messages
+ * (for example a Bangla member name) go one by one with the unicode flag, because
+ * the batch endpoint has no per-message unicode flag.
+ */
+const sendMessages = async (
+  messages: TSmsOutgoing[],
   requestId: string,
   senderIdOverride?: string,
-): Promise<TSmsSendResult> => {
+): Promise<TSmsSendOutcome> => {
   if (config.sms.dry_run !== false) {
-    logger.info("[SMS_DRY_RUN] Fastsmsbd dynamic payload", {
+    logger.info("[SMS_DRY_RUN] Fastsmsbd payload (nothing was sent)", {
       requestId,
       recipients: messages.length,
       senderId: senderIdOverride,
     });
-
     return {
       providerReference: `dry-run:${requestId}`,
-      responseMessage: "Dry-run only. No SMS was sent to Fastsmsbd.",
+      dryRun: true,
+      results: messages.map(() => ({ status: "sent" as const })),
     };
   }
 
   const { apiKey, senderId: defaultSenderId, apiBaseUrl } = getRequiredConfig();
   const senderId = senderIdOverride?.trim() || defaultSenderId;
+  const results: TSmsRecipientResult[] = new Array(messages.length);
 
-  const payload = {
-    apikey: apiKey,
-    sender: senderId,
-    messages: messages.map((msg, index) => ({
-      id: index + 1,
-      msisdn: msg.mobileNo,
-      smstext: msg.smsText,
-    })),
-  };
+  const plainIndexes: number[] = [];
+  const unicodeIndexes: number[] = [];
+  messages.forEach((msg, index) => (msg.unicode ? unicodeIndexes : plainIndexes).push(index));
 
-  const response = await fetch(`${apiBaseUrl}/smsapimany`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-
-  if (!response.ok) {
-    throw new AppError(
-      StatusCodes.BAD_GATEWAY,
-      `SMS provider request failed with status ${response.status}`,
+  if (plainIndexes.length === 1) {
+    const index = plainIndexes[0]!;
+    results[index] = await sendSingle(messages[index]!, apiBaseUrl, apiKey, senderId);
+  } else if (plainIndexes.length > 1) {
+    const plainResults = await sendMany(
+      plainIndexes.map((index) => messages[index]!),
+      apiBaseUrl,
+      apiKey,
+      senderId,
     );
+    plainIndexes.forEach((index, position) => (results[index] = plainResults[position]!));
   }
 
-  const data = (await response.json()) as TFastsmsbdDynamicResponse;
-  const recipientStatuses: Record<string, { status: "sent" | "failed"; reason?: string }> = {};
-
-  if (data.response) {
-    for (const item of data.response) {
-      const phone = item.msisdn || "";
-      if (item.status !== 0) {
-        const errorMessage = FASTSMSBD_STATUS_CODES[item.status!] || `Unknown error: ${item.status}`;
-        if (phone) {
-          recipientStatuses[phone] = { status: "failed", reason: errorMessage };
-        }
-        logger.warn("[SMS_PROVIDER] Dynamic send individual result", {
-          cid: item.cid,
-          sid: item.sid,
-          msisdn: item.msisdn,
-          status: item.status,
-          errorMessage,
-        });
-      } else if (phone) {
-        recipientStatuses[phone] = { status: "sent" };
-      }
-    }
+  for (const index of unicodeIndexes) {
+    results[index] = await sendSingle(messages[index]!, apiBaseUrl, apiKey, senderId);
   }
 
-  const successCount = data.response?.filter((r) => r.status === 0).length || 0;
-  const totalCount = data.response?.length || messages.length;
-
-  return {
-    providerReference: `fastsmsbd:${requestId}`,
-    responseMessage: `Sent ${successCount}/${totalCount} messages successfully`,
-    recipientStatuses,
-  };
+  return { providerReference: `fastsmsbd:${requestId}`, dryRun: false, results };
 };
 
 export const SmsProvider = {
   getBalance,
-  sendBulk,
-  sendDynamic,
+  sendMessages,
 };

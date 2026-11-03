@@ -20,73 +20,24 @@ const branchAccessControlSchema = new Schema(
 
 const branchSmsSettingsSchema = new Schema(
   {
-    autoSendEnabled: {
-      type: Boolean,
-      default: false,
+    enabled: { type: Boolean, default: false },
+    maskingSender: { type: String, trim: true, default: null },
+    reminderDayOfMonth: { type: Number, min: 1, max: 31, default: 5 },
+    reminderHour: { type: Number, min: 9, max: 20, default: 10 },
+    birthdayHour: { type: Number, min: 9, max: 20, default: 10 },
+    toggles: {
+      dueReminder: { type: Boolean, default: false },
+      birthday: { type: Boolean, default: false },
+      paymentConfirmation: { type: Boolean, default: false },
+      membershipExpired: { type: Boolean, default: false },
+      welcome: { type: Boolean, default: false },
     },
-    reminderDayOfMonth: {
-      type: Number,
-      min: 1,
-      max: 31,
-      default: 5,
-    },
-    template: {
-      type: String,
-      trim: true,
-      default: getDefaultBranchSMSSettings().template,
-    },
-    templateBangla: {
-      type: String,
-      trim: true,
-      default: getDefaultBranchSMSSettings().templateBangla,
-    },
-    occasionTemplate: {
-      type: String,
-      trim: true,
-      default: getDefaultBranchSMSSettings().occasionTemplate,
-    },
-    occasionTemplateBangla: {
-      type: String,
-      trim: true,
-      default: getDefaultBranchSMSSettings().occasionTemplateBangla,
-    },
-    promotionTemplate: {
-      type: String,
-      trim: true,
-      default: getDefaultBranchSMSSettings().promotionTemplate,
-    },
-    promotionTemplateBangla: {
-      type: String,
-      trim: true,
-      default: getDefaultBranchSMSSettings().promotionTemplateBangla,
-    },
-    defaultDeliveryMode: {
-      type: String,
-      enum: ["nonMasking", "masking"],
-      default: getDefaultBranchSMSSettings().defaultDeliveryMode,
-    },
-    maskingSender: {
-      type: String,
-      trim: true,
-      default: getDefaultBranchSMSSettings().maskingSender,
-    },
-    updatedAt: {
-      type: Date,
-      default: null,
-    },
-    updatedBy: {
-      type: Schema.Types.ObjectId,
-      default: null,
-    },
-    lastAutoReminderRunDate: {
-      type: String,
-      trim: true,
-      default: null,
-    },
+    updatedAt: { type: Date, default: null },
+    updatedBy: { type: Schema.Types.ObjectId, default: null },
+    lastAutoReminderRunDate: { type: String, trim: true, default: null },
+    lastBirthdayRunDate: { type: String, trim: true, default: null },
   },
-  {
-    _id: false,
-  }
+  { _id: false }
 );
 
 const branchSchema = new Schema<TBranch>(

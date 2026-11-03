@@ -79,3 +79,12 @@ export const formatEnglishAmount = (amount: number): string =>
   new Intl.NumberFormat("en-US", {
     maximumFractionDigits: 0,
   }).format(amount);
+
+export const getDhakaHour = (date: Date = new Date()): number =>
+  Number(
+    new Intl.DateTimeFormat("en-US", {
+      timeZone: BD_TZ,
+      hour: "numeric",
+      hourCycle: "h23",
+    }).format(date),
+  );

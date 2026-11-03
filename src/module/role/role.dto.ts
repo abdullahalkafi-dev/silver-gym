@@ -7,6 +7,7 @@ const permissionsSchema = z.object({
   canManageBilling: z.boolean().optional(),
   canManageExpenses: z.boolean().optional(),
   canManageLockers: z.boolean().optional(),
+  canSendSms: z.boolean().optional(),
 });
 
 const updateRolePermissionsDto = z.object({

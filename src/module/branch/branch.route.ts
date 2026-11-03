@@ -136,20 +136,6 @@ router.patch(
 );
 
 router.get(
-  "/:businessId/branches/:branchId/sms-settings",
-  authStaff({ allowOwner: true }),
-  BranchController.getSMSSettings
-);
-
-router.patch(
-  "/:businessId/branches/:branchId/sms-settings",
-  authLimiter,
-  authStaff({ allowOwner: true }),
-  validateRequest(BranchDto.updateSMSSettings),
-  BranchController.updateSMSSettings
-);
-
-router.get(
   "/:businessId/branches/:branchId/starting-balance",
   auth(),
   BranchController.getStartingBalance

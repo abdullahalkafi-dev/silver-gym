@@ -18,6 +18,7 @@ export const getPermissionsByRoleId = async (roleId: string) => {
     canManageBilling: role.canManageBilling || false,
     canManageExpenses: role.canManageExpenses || false,
     canManageLockers: role.canManageLockers || false,
+    canSendSms: role.canSendSms || false,
   };
 };
 
@@ -36,6 +37,7 @@ export const getAllPermissionFields = (): Record<string, boolean> => {
     canManageBilling: false,
     canManageExpenses: false,
     canManageLockers: false,
+    canSendSms: false,
   };
 };
 

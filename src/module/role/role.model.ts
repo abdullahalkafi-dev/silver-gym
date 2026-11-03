@@ -21,6 +21,7 @@ const roleSchema = new Schema<TRole>(
     canManageBilling: { type: Boolean, default: false },
     canManageExpenses: { type: Boolean, default: false },
     canManageLockers: { type: Boolean, default: false },
+    canSendSms: { type: Boolean, default: false },
   },
   {
     timestamps: true,

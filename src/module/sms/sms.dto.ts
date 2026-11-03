@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { HOLIDAY_REASONS } from "./sms.templates";
 
 const routeParamsSchema = z
   .object({
@@ -7,103 +8,112 @@ const routeParamsSchema = z
   })
   .strict();
 
+const dueDurationSchema = z.enum(["thisMonth", "last2Months", "last3Months", "allDue"]);
+const templateKeySchema = z.enum([
+  "dueReminder",
+  "holiday",
+  "birthday",
+  "paymentConfirmation",
+  "membershipExpired",
+  "welcome",
+]);
+
 const historyQuerySchema = z
   .object({
     page: z.string().optional(),
     limit: z.string().optional(),
-    status: z.enum(["simulated", "sent", "blocked", "failed"]).optional(),
-    sendMode: z.enum(["manual", "auto"]).optional(),
+    status: z.enum(["simulated", "sent", "blocked", "failed", "skipped"]).optional(),
+    templateKey: z.string().trim().optional(),
+    requestId: z.string().trim().optional(),
     searchTerm: z.string().trim().optional(),
   })
   .strict();
 
-const dueDurationSchema = z.enum(["thisMonth", "last2Months", "last3Months", "allDue"]);
-
-const templateCategorySchema = z.enum(["due", "occasion", "promotion", "custom"]);
-
-const deliveryModeSchema = z.literal("masking");
-
-const previewSendDataSchema = z
+const sendDataSchema = z
   .object({
-    audience: z.enum(["selected", "due"]).optional(),
-    memberIds: z.array(z.string().trim().min(1)).optional(),
-    template: z
-      .string()
-      .trim()
-      .min(1, "Template cannot be empty")
-      .max(480, "Template must be 480 characters or fewer")
-      .optional(),
-    templateCategory: templateCategorySchema.optional(),
-    deliveryMode: deliveryModeSchema.optional(),
+    kind: z.enum(["dueReminder", "holiday", "custom"]),
+    audience: z.enum(["selected", "active", "inactive", "all"]).optional(),
+    memberIds: z.array(z.string().trim().min(1)).max(5000).optional(),
     dueDuration: dueDurationSchema.optional(),
     targetDate: z.coerce.date().optional(),
+    message: z.string().max(600).optional(),
+    holidayId: z.string().trim().optional(),
   })
-  .strict()
-  .superRefine((data, ctx) => {
-    const audience = data.audience || "selected";
-    const templateCategory = audience === "due" ? "due" : data.templateCategory || "custom";
+  .strict();
 
-    if (audience === "selected" && (!data.memberIds || data.memberIds.length === 0)) {
-      ctx.addIssue({
-        code: "custom",
-        path: ["memberIds"],
-        message: "Select at least one member",
-      });
-    }
+const emptyParams = z.object({ params: routeParamsSchema });
 
-    if (templateCategory === "custom" && !data.template?.trim()) {
-      ctx.addIssue({
-        code: "custom",
-        path: ["template"],
-        message: "Write a custom message before continuing",
-      });
-    }
-  });
-
-const dueMembersQuerySchema = z.object({
-  params: routeParamsSchema,
-  query: z
-    .object({
-      targetDate: z.coerce.date().optional(),
-      dueDuration: dueDurationSchema.optional(),
-      page: z.string().optional(),
-      limit: z.string().optional(),
-      searchTerm: z.string().trim().optional(),
-    })
-    .strict(),
-});
-
-const balanceDto = z.object({
-  params: routeParamsSchema,
-});
-
-const previewDto = z.object({
-  params: routeParamsSchema,
-  data: previewSendDataSchema,
-});
-
-const sendDto = z.object({
-  params: routeParamsSchema,
-  data: previewSendDataSchema,
-});
-
-const listHistoryDto = z.object({
-  params: routeParamsSchema,
-  query: historyQuerySchema,
-});
-
-const listMemberHistoryDto = z.object({
-  params: routeParamsSchema.extend({
-    memberId: z.string().trim().min(1, "memberId is required"),
-  }),
-  query: historyQuerySchema,
-});
+const hour = z.number().int().min(9).max(20);
 
 export const SmsDto = {
-  balance: balanceDto,
-  dueMembers: dueMembersQuerySchema,
-  preview: previewDto,
-  send: sendDto,
-  listHistory: listHistoryDto,
-  listMemberHistory: listMemberHistoryDto,
+  balance: emptyParams,
+  settings: emptyParams,
+  holidays: emptyParams,
+  dueMembers: z.object({
+    params: routeParamsSchema,
+    query: z
+      .object({ targetDate: z.coerce.date().optional(), dueDuration: dueDurationSchema.optional() })
+      .strict(),
+  }),
+  updateSettings: z.object({
+    params: routeParamsSchema,
+    data: z
+      .object({
+        enabled: z.boolean().optional(),
+        maskingSender: z
+          .string()
+          .trim()
+          .min(1)
+          .max(32, "Sender name must be 32 characters or fewer")
+          .regex(/^[\x21-\x7E ]+$/, "Sender name must use English characters only")
+          .nullable()
+          .optional(),
+        reminderDayOfMonth: z.number().int().min(1).max(31).optional(),
+        reminderHour: hour.optional(),
+        birthdayHour: hour.optional(),
+        toggles: z
+          .object({
+            dueReminder: z.boolean().optional(),
+            birthday: z.boolean().optional(),
+            paymentConfirmation: z.boolean().optional(),
+            membershipExpired: z.boolean().optional(),
+            welcome: z.boolean().optional(),
+          })
+          .strict()
+          .optional(),
+      })
+      .strict()
+      .refine((data) => Object.keys(data).length > 0, "Nothing to update"),
+  }),
+  preview: z.object({ params: routeParamsSchema, data: sendDataSchema }),
+  send: z.object({ params: routeParamsSchema, data: sendDataSchema }),
+  test: z.object({
+    params: routeParamsSchema,
+    data: z
+      .object({ templateKey: templateKeySchema, phone: z.string().trim().min(5).max(20) })
+      .strict(),
+  }),
+  createHoliday: z.object({
+    params: routeParamsSchema,
+    data: z
+      .object({
+        fromDate: z.coerce.date(),
+        toDate: z.coerce.date().optional(),
+        reason: z.enum([...HOLIDAY_REASONS, "Other"]),
+        otherReason: z.string().trim().max(80).optional(),
+        includeInactive: z.boolean().optional(),
+      })
+      .strict(),
+  }),
+  deleteHoliday: z.object({
+    params: routeParamsSchema.extend({ holidayId: z.string().trim().min(1) }),
+  }),
+  listHistory: z.object({ params: routeParamsSchema, query: historyQuerySchema }),
+  listMemberHistory: z.object({
+    params: routeParamsSchema.extend({ memberId: z.string().trim().min(1) }),
+    query: historyQuerySchema,
+  }),
+  retry: z.object({
+    params: routeParamsSchema.extend({ requestId: z.string().trim().min(1) }),
+  }),
 };

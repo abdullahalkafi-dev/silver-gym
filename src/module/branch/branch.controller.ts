@@ -283,44 +283,6 @@ const updateImportSettings = catchAsync(async (req: Request, res: Response) => {
   });
 });
 
-const getSMSSettings = catchAsync(async (req: Request, res: Response) => {
-  const businessId = req.params.businessId as string;
-  const branchId = req.params.branchId as string;
-
-  const result = await BranchService.getBranchSMSSettings(
-    businessId,
-    branchId,
-    resolveActor(req)
-  );
-
-  sendResponse(res, {
-    statusCode: StatusCodes.OK,
-    success: true,
-    message: "Branch SMS settings retrieved successfully",
-    data: result,
-  });
-});
-
-const updateSMSSettings = catchAsync(async (req: Request, res: Response) => {
-  const businessId = req.params.businessId as string;
-  const branchId = req.params.branchId as string;
-  const payload = req.body.data || req.body;
-
-  const result = await BranchService.updateBranchSMSSettings(
-    businessId,
-    branchId,
-    resolveActor(req),
-    payload
-  );
-
-  sendResponse(res, {
-    statusCode: StatusCodes.OK,
-    success: true,
-    message: "Branch SMS settings updated successfully",
-    data: result,
-  });
-});
-
 const getStartingBalance = catchAsync(async (req: Request, res: Response) => {
   const businessId = req.params.businessId as string;
   const branchId = req.params.branchId as string;
@@ -372,8 +334,6 @@ export const BranchController = {
   updateAutoDeactivationSettings,
   getImportSettings,
   updateImportSettings,
-  getSMSSettings,
-  updateSMSSettings,
   getStartingBalance,
   setStartingBalance,
 };

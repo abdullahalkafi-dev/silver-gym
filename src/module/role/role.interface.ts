@@ -9,6 +9,7 @@ export interface TRole {
 	canManageBilling?: boolean;
 	canManageExpenses?: boolean;
 	canManageLockers?: boolean;
+	canSendSms?: boolean;
 	createdAt?: Date;
 	updatedAt?: Date;
 }

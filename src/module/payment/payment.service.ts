@@ -55,6 +55,7 @@ import { InvoiceCounterService } from "./invoiceCounter.service";
 import { Payment } from "./payment.model";
 import { PaymentRepository } from "./payment.repository";
 import { reverseSettlement } from "./payment.dueSettlement";
+import { SmsService } from "../sms/sms.service";
 
 type TAccessActor = {
   userId?: Types.ObjectId;
@@ -1446,6 +1447,13 @@ const collectBill = async (
       "Member update completed but the latest member record could not be loaded",
     );
   }
+
+  void SmsService.notifyPayment(
+    branchId,
+    updatedMember,
+    Number(payment?.paidTotal ?? 0),
+    String(payment?._id),
+  );
 
   return {
     payment,

@@ -54,6 +54,7 @@ import {
   buildMemberSearchMatch,
 } from "./member.searchRank";
 import { MemberCounterService } from "./memberCounter.service";
+import { SmsService } from "../sms/sms.service";
 
 type TCreatePaymentPayload = {
   paymentMethod: TPayment["paymentMethod"];
@@ -761,6 +762,8 @@ const createMember = async (
       cacheService.invalidateByPattern(`members:${branchId}:list:*`),
       cacheService.invalidateByPattern(`analytics:${branchId}:*`),
     ]);
+    // Welcome SMS: only runs when the branch turned it on and the member has a valid phone.
+    void SmsService.notifyWelcome(branchId, result.member);
     return result;
   } catch (error) {
     const dbError = error as { code?: number; keyValue?: Record<string, unknown> };

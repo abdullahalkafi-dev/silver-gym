@@ -4,16 +4,13 @@ import AppError from "../../errors/AppError";
 import { TStaffPermissionSnapshot } from "../auth/auth.util";
 import {
 	normalizeBranchAutoDeactivateAfterUnpaidMonths,
-  normalizeBranchSMSSettings,
   TBranch,
-  TBranchSMSSettings,
 } from "./branch.interface";
 import { BranchRepository } from "./branch.repository";
 import { BusinessProfileRepository } from "../businessProfile/businessProfile.repository";
 import unlinkFile from "../../shared/unlinkFile";
 import { storage } from "../../shared/storage";
 import { RoleService } from "../role/role.service";
-import { RoleRepository } from "../role/role.repository";
 import { TStaff } from "../staff/staff.interface";
 import cacheService from "../../redis-client/cacheService";
 import { logger } from "logger/logger";
@@ -29,19 +26,6 @@ type TBranchAccessActor = {
 type TBranchFeeSnapshot = Pick<TBranch, "monthlyFeeAmount" | "admissionFeeAmount">;
 
 type TBranchFeeType = "monthly" | "admission";
-
-type TBranchSMSSettingsUpdate = Partial<
-  Pick<
-    TBranchSMSSettings,
-    | "autoSendEnabled"
-    | "reminderDayOfMonth"
-    | "template"
-    | "occasionTemplate"
-    | "promotionTemplate"
-    | "defaultDeliveryMode"
-    | "maskingSender"
-  >
->;
 
 /**
  * Create a new branch for a business with ownership verification
@@ -173,43 +157,6 @@ const ensureBranchFeePermission = (
 ) => {
   // All staff can manage branch fees
   return;
-};
-
-const ensureBranchSMSPermission = (_actor: TBranchAccessActor) => {
-  // All staff can manage SMS settings
-  return;
-};
-
-const ensureBranchSMSSettingsPermission = (_actor: TBranchAccessActor) => {
-  // All staff can manage SMS settings
-  return;
-};
-
-const ensureBranchSMSTemplatePermission = (_actor: TBranchAccessActor) => {
-  // All staff can manage SMS templates
-  return;
-};
-
-const canEditDueSMSTemplate = async (actor: TBranchAccessActor) => {
-  if (actor.userId) {
-    return true;
-  }
-
-  if (!actor.staff?.roleId) {
-    return false;
-  }
-
-  const role = await RoleRepository.findById(String(actor.staff.roleId));
-  return Boolean(role?.roleName?.trim().toLowerCase().includes("admin"));
-};
-
-const buildBranchSMSSettingsSnapshot = (branch: TBranch & { _id?: Types.ObjectId }) => {
-  const plainBranch = typeof (branch as any).toObject === "function" ? (branch as any).toObject() : branch;
-  return {
-    branchId: plainBranch._id,
-    branchName: plainBranch.branchName,
-    smsSettings: normalizeBranchSMSSettings(plainBranch.smsSettings),
-  };
 };
 
 const buildBranchAutoDeactivationSettingsSnapshot = (
@@ -563,91 +510,6 @@ const updateBranchImportSettings = async (
   return buildBranchImportSettingsSnapshot(updatedBranch);
 };
 
-const getBranchSMSSettings = async (
-  businessId: string,
-  branchId: string,
-  actor: TBranchAccessActor,
-) => {
-  const branch = await resolveBranchFeeAccess(businessId, branchId, actor);
-  ensureBranchSMSPermission(actor);
-
-  return buildBranchSMSSettingsSnapshot(branch);
-};
-
-const updateBranchSMSSettings = async (
-  businessId: string,
-  branchId: string,
-  actor: TBranchAccessActor,
-  payload: TBranchSMSSettingsUpdate,
-) => {
-  const branch = await resolveBranchFeeAccess(businessId, branchId, actor);
-  ensureBranchSMSPermission(actor);
-
-  const isUpdatingGeneralSettings =
-    typeof payload.autoSendEnabled === "boolean" ||
-    typeof payload.reminderDayOfMonth === "number" ||
-    typeof payload.maskingSender !== "undefined" ||
-    typeof payload.defaultDeliveryMode !== "undefined";
-  const isUpdatingDueTemplate = typeof payload.template === "string";
-  const isUpdatingSavedTemplates =
-    typeof payload.occasionTemplate === "string" ||
-    typeof payload.promotionTemplate === "string";
-
-  if (isUpdatingGeneralSettings) {
-    ensureBranchSMSSettingsPermission(actor);
-  }
-
-  if (isUpdatingSavedTemplates) {
-    ensureBranchSMSTemplatePermission(actor);
-  }
-
-  if (isUpdatingDueTemplate && !(await canEditDueSMSTemplate(actor))) {
-    throw new AppError(
-      StatusCodes.FORBIDDEN,
-      "Only admins can edit the due reminder template",
-    );
-  }
-
-  if (
-    typeof payload.defaultDeliveryMode !== "undefined" &&
-    payload.defaultDeliveryMode !== "masking"
-  ) {
-    throw new AppError(
-      StatusCodes.BAD_REQUEST,
-      "Only masking SMS is supported",
-    );
-  }
-
-  const currentSettings = normalizeBranchSMSSettings(branch.smsSettings);
-  const nextSettings = normalizeBranchSMSSettings({
-    ...currentSettings,
-    ...payload,
-    defaultDeliveryMode: "masking",
-    updatedAt: new Date(),
-    updatedBy: actor.userId ?? (actor.staff as (TStaff & { _id?: Types.ObjectId }) | undefined)?._id ?? null,
-  });
-
-  if (!nextSettings.maskingSender) {
-    throw new AppError(
-      StatusCodes.BAD_REQUEST,
-      "A branch-level masking sender is required before SMS can be sent",
-    );
-  }
-
-  const updatedBranch = await BranchRepository.updateById(branchId, {
-    smsSettings: nextSettings,
-  });
-
-  if (!updatedBranch) {
-    throw new AppError(
-      StatusCodes.INTERNAL_SERVER_ERROR,
-      "Failed to update branch SMS settings",
-    );
-  }
-
-  return buildBranchSMSSettingsSnapshot(updatedBranch);
-};
-
 const getBranchStartingBalance = async (
   businessId: string,
   branchId: string,
@@ -724,8 +586,6 @@ export const BranchService = {
   updateBranchAutoDeactivationSettings,
   getBranchImportSettings,
   updateBranchImportSettings,
-  getBranchSMSSettings,
-  updateBranchSMSSettings,
   getBranchStartingBalance,
   setBranchStartingBalance,
 };

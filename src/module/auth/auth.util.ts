@@ -11,6 +11,7 @@ export type TStaffPermissionSnapshot = {
   canManageBilling: boolean;
   canManageExpenses: boolean;
   canManageLockers: boolean;
+  canSendSms: boolean;
 };
 
 export type TStaffPermissionKey = keyof TStaffPermissionSnapshot;
@@ -78,6 +79,7 @@ export const getStaffPermissionSnapshot = (role: TRole): TStaffPermissionSnapsho
   canManageBilling: role.canManageBilling ?? false,
   canManageExpenses: role.canManageExpenses ?? false,
   canManageLockers: role.canManageLockers ?? false,
+  canSendSms: role.canSendSms ?? false,
 });
 
 export const buildStaffTokenPayload = (

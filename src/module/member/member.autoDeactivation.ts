@@ -21,6 +21,7 @@ import {
 } from "./member.billingLedger";
 import { TMember } from "./member.interface";
 import { MemberRepository } from "./member.repository";
+import { SmsService } from "../sms/sms.service";
 
 type TAutoDeactivationBranch = Pick<
   TBranch,
@@ -178,6 +179,7 @@ export const runAutoDeactivationForBranch = async (
     await invalidateAutoDeactivatedMemberCaches(branchId, String(member._id));
 
     deactivatedCount += 1;
+    void SmsService.notifyMembershipExpired(branchId, updatedMember, now);
 
     logger.info("Member auto-deactivated for overdue unpaid months", {
       branchId,

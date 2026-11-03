@@ -30,6 +30,7 @@ const normalizePermissions = (
   canManageBilling: Boolean(input?.canManageBilling),
   canManageExpenses: Boolean(input?.canManageExpenses),
   canManageLockers: Boolean(input?.canManageLockers),
+  canSendSms: Boolean(input?.canSendSms),
 });
 
 const authStaff =

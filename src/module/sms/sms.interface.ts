@@ -1,14 +1,11 @@
 import { Types } from "mongoose";
+import type { TSmsMessageKind } from "./sms.templates";
 
-export type TSmsAudience = "selected" | "due";
 export type TSmsSendMode = "manual" | "auto";
-export type TSmsHistoryStatus = "simulated" | "sent" | "blocked" | "failed";
-export type TSmsDeliveryMode = "nonMasking" | "masking";
-export type TSmsTemplateCategory = "due" | "occasion" | "promotion" | "custom";
+export type TSmsHistoryStatus = "simulated" | "sent" | "blocked" | "failed" | "skipped";
 export type TSmsDueDuration = "thisMonth" | "last2Months" | "last3Months" | "allDue";
 export type TSmsMessageType = "text" | "unicode";
-export type TSmsMessageTypeSummary = TSmsMessageType | "mixed";
-export type TSmsBalanceBucket = "nonMasking" | "masking";
+export type TSmsAudience = "due" | "selected" | "active" | "inactive" | "all";
 
 export interface TSmsHistory {
   requestId: string;
@@ -16,28 +13,42 @@ export interface TSmsHistory {
   memberId?: Types.ObjectId | null;
   memberName: string;
   recipientPhone?: string | null;
-  template: string;
-  templateCategory: TSmsTemplateCategory;
+  templateKey: TSmsMessageKind;
   renderedMessage: string;
   audience: TSmsAudience;
   sendMode: TSmsSendMode;
-  deliveryMode: TSmsDeliveryMode;
   messageType: TSmsMessageType;
-  balanceBucket: TSmsBalanceBucket;
   status: TSmsHistoryStatus;
   reason?: string;
   units: number;
+  /** Set only on rows that were really sent; a unique index stops duplicate automatic SMS. */
+  dedupeKey?: string;
+  holidayId?: Types.ObjectId | null;
+  retriedAt?: Date | null;
   dueMonthLabel?: string;
   overdueMonths?: number;
-  monthlyDueAmount?: number;
   totalDueAmount?: number;
   requestedByUserId?: Types.ObjectId | null;
   requestedByStaffId?: Types.ObjectId | null;
-  targetDate?: Date;
   provider: "fastsmsbd";
-  availableBalance?: number | null;
-  remainingBalance?: number | null;
   providerReference?: string;
+  createdAt?: Date;
+  updatedAt?: Date;
+}
+
+export interface TSmsHoliday {
+  branchId: Types.ObjectId;
+  fromDate: Date;
+  toDate: Date;
+  reason: string;
+  includeInactive: boolean;
+  status: "draft" | "sent";
+  sentAt?: Date | null;
+  requestId?: string | null;
+  sentCount?: number;
+  failedCount?: number;
+  createdByUserId?: Types.ObjectId | null;
+  createdByStaffId?: Types.ObjectId | null;
   createdAt?: Date;
   updatedAt?: Date;
 }
@@ -47,40 +58,6 @@ export type TSmsBalanceSnapshot = {
   maskingBalance: number | null;
   fetchedAt: string;
   dryRun: boolean;
-};
-
-export type TSmsRecipientPreview = {
-  memberId: string;
-  memberName: string;
-  memberIdentifier?: string;
-  recipientPhone: string | null;
-  dueMonthLabel: string;
-  overdueMonths: number;
-  monthlyDueAmount: number;
-  totalDueAmount: number;
-  renderedMessage: string;
-  messageType: TSmsMessageType;
-  units: number;
-  status: "ready" | "blocked";
-  reason?: string;
-};
-
-export type TSmsPreviewSummary = {
-  totalRecipients: number;
-  readyRecipients: number;
-  blockedRecipients: number;
-  requiredUnits: number;
-  availableBalance: number;
-  remainingBalance: number;
-  canSend: boolean;
-  insufficientBalance: boolean;
-  deliveryMode: TSmsDeliveryMode;
-  balanceBucket: TSmsBalanceBucket;
-  messageType: TSmsMessageTypeSummary;
-  textRecipients: number;
-  unicodeRecipients: number;
-  messagesOverSingleSmsLimit: number;
-  singleSmsCharacterLimit: number;
 };
 
 export type TSmsDueDurationCounts = {
