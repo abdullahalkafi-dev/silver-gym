@@ -17,15 +17,6 @@ type TFastsmsbdSingleResponse = {
   }>;
 };
 
-type TFastsmsbdDynamicResponse = {
-  response?: Array<{
-    status?: number;
-    cid?: number;
-    sid?: number;
-    msisdn?: string;
-  }>;
-};
-
 const FASTSMSBD_STATUS_CODES: Record<number, string> = {
   0: "Success",
   101: "Invalid Message Length",
@@ -162,9 +153,6 @@ export type TSmsSendOutcome = {
 const describeStatus = (status?: number) =>
   FASTSMSBD_STATUS_CODES[status ?? -1] || `Provider error ${status ?? "unknown"}`;
 
-const failAll = (count: number, reason: string): TSmsRecipientResult[] =>
-  Array.from({ length: count }, () => ({ status: "failed" as const, reason }));
-
 const PROVIDER_TIMEOUT_MS = 20000;
 
 const describeFetchError = (error: unknown) => {
@@ -257,99 +245,33 @@ const sendSingle = async (
   }
 };
 
-/** Plain-text messages in one POST (each can have its own text). */
-const sendMany = async (
-  messages: TSmsOutgoing[],
-  apiBaseUrl: string,
-  apiKey: string,
-  senderId: string,
-  requestId: string,
-): Promise<TSmsRecipientResult[]> => {
-  try {
-    const startedAt = Date.now();
-    const response = await fetch(`${apiBaseUrl}/smsapimany`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        apikey: apiKey,
-        sender: senderId,
-        messages: messages.map((msg, index) => ({
-          id: index + 1,
-          msisdn: msg.phone,
-          smstext: msg.text,
-        })),
-      }),
-      signal: AbortSignal.timeout(PROVIDER_TIMEOUT_MS * 3),
-    });
-    if (!response.ok) {
-      smsLog.warn("provider batch call failed", {
-        requestId,
-        recipients: messages.length,
-        httpStatus: response.status,
-        ms: Date.now() - startedAt,
-      });
-      return failAll(messages.length, `Provider returned HTTP ${response.status}`);
-    }
+/** How many provider calls run at the same time. */
+const SEND_CONCURRENCY = 6;
 
-    const raw = await response.text();
-    let data: TFastsmsbdDynamicResponse = {};
-    try {
-      data = JSON.parse(raw) as TFastsmsbdDynamicResponse;
-    } catch {
-      /* handled below */
+/** Run `task` for every item with at most `limit` running at once. Keeps the result order. */
+const mapWithLimit = async <T, R>(
+  items: T[],
+  limit: number,
+  task: (item: T) => Promise<R>,
+): Promise<R[]> => {
+  const results = new Array<R>(items.length);
+  let next = 0;
+  const worker = async () => {
+    while (next < items.length) {
+      const index = next++;
+      results[index] = await task(items[index]!);
     }
-    // Match each reply to the next unmatched message with the same phone number.
-    const byPhone = new Map<string, number[]>();
-    messages.forEach((msg, index) => {
-      const list = byPhone.get(msg.phone) ?? [];
-      list.push(index);
-      byPhone.set(msg.phone, list);
-    });
-
-    const results: TSmsRecipientResult[] = failAll(
-      messages.length,
-      `Unexpected reply from provider (not confirmed as sent): ${snippet(raw)}`,
-    );
-    for (const item of asList<{ status?: number | string; msisdn?: string }>(data.response)) {
-      const index = item.msisdn ? byPhone.get(item.msisdn)?.shift() : undefined;
-      if (index === undefined) continue;
-      results[index] = isOk(item.status)
-        ? { status: "sent" }
-        : { status: "failed", reason: describeStatus(Number(item.status)) };
-    }
-    const failedReasons = new Map<string, number>();
-    results.forEach((r) => {
-      if (r.status === "failed") {
-        const key = r.reason ?? "unknown";
-        failedReasons.set(key, (failedReasons.get(key) ?? 0) + 1);
-      }
-    });
-    smsLog.info("provider batch call answered", {
-      requestId,
-      sender: senderId,
-      recipients: messages.length,
-      sent: results.filter((r) => r.status === "sent").length,
-      failed: results.filter((r) => r.status === "failed").length,
-      failures: failedReasons.size ? Object.fromEntries(failedReasons) : undefined,
-      httpStatus: response.status,
-      ms: Date.now() - startedAt,
-    });
-    return results;
-  } catch (error) {
-    smsLog.error("provider batch call error", {
-      requestId,
-      recipients: messages.length,
-      error: describeFetchError(error),
-    });
-    return failAll(messages.length, describeFetchError(error));
-  }
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+  return results;
 };
 
 /**
- * Send any mix of messages. One-part plain English messages go in one batch call.
- * Everything else (Unicode, for example a Bangla member name, or anything longer
- * than one part) goes one by one through the single endpoint, because only that
- * endpoint documents the smsformat=8 and type=long flags.
+ * Send any mix of messages. Every message is its own call to the single-message endpoint
+ * (smsapiv3), a few at a time. That endpoint is the one proven in production, it supports a
+ * different text per member, the smsformat=8 (Unicode) and type=long flags, and it gives a clear
+ * result per recipient. The provider's batch endpoint (smsapimany) answered HTTP 500 in
+ * production on 2026-11-10, so it is deliberately not used.
  */
 const sendMessages = async (
   messages: TSmsOutgoing[],
@@ -371,31 +293,28 @@ const sendMessages = async (
 
   const { apiKey, senderId: defaultSenderId, apiBaseUrl } = getRequiredConfig();
   const senderId = senderIdOverride?.trim() || defaultSenderId;
-  const results: TSmsRecipientResult[] = new Array(messages.length);
 
-  const plainIndexes: number[] = [];
-  const unicodeIndexes: number[] = [];
-  messages.forEach((msg, index) =>
-    (msg.unicode || msg.units > 1 ? unicodeIndexes : plainIndexes).push(index),
+  const startedAt = Date.now();
+  const results = await mapWithLimit(messages, SEND_CONCURRENCY, (message) =>
+    sendSingle(message, apiBaseUrl, apiKey, senderId, requestId),
   );
 
-  if (plainIndexes.length === 1) {
-    const index = plainIndexes[0]!;
-    results[index] = await sendSingle(messages[index]!, apiBaseUrl, apiKey, senderId, requestId);
-  } else if (plainIndexes.length > 1) {
-    const plainResults = await sendMany(
-      plainIndexes.map((index) => messages[index]!),
-      apiBaseUrl,
-      apiKey,
-      senderId,
-      requestId,
-    );
-    plainIndexes.forEach((index, position) => (results[index] = plainResults[position]!));
-  }
-
-  for (const index of unicodeIndexes) {
-    results[index] = await sendSingle(messages[index]!, apiBaseUrl, apiKey, senderId, requestId);
-  }
+  const failedReasons = new Map<string, number>();
+  results.forEach((result) => {
+    if (result.status === "failed") {
+      const key = result.reason ?? "unknown";
+      failedReasons.set(key, (failedReasons.get(key) ?? 0) + 1);
+    }
+  });
+  smsLog.info("provider calls finished", {
+    requestId,
+    sender: senderId,
+    recipients: messages.length,
+    sent: results.filter((r) => r.status === "sent").length,
+    failed: results.filter((r) => r.status === "failed").length,
+    failures: failedReasons.size ? Object.fromEntries(failedReasons) : undefined,
+    ms: Date.now() - startedAt,
+  });
 
   return { providerReference: `fastsmsbd:${requestId}`, dryRun: false, results };
 };
