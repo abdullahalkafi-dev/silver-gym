@@ -4,7 +4,6 @@ import { Types } from "mongoose";
 import config from "../../config";
 import AppError from "../../errors/AppError";
 import cacheService from "../../redis-client/cacheService";
-import { logger } from "../../logger/logger";
 import { normalizeBangladeshPhone } from "../../utils/bangladeshPhone";
 import {
   getDhakaDateString,
@@ -39,6 +38,7 @@ import {
   TSmsHistoryStatus,
   TSmsSendMode,
 } from "./sms.interface";
+import { maskPhone, smsLog } from "./sms.log";
 import { SmsHistory, SmsHoliday } from "./sms.model";
 import { SmsProvider } from "./sms.provider";
 import { SmsRepository } from "./sms.repository";
@@ -52,6 +52,9 @@ import {
   isPlainSmsText,
   renderSmsText,
   sanitizeSmsText,
+  singleSmsLimit,
+  SMS_MAX_CREDITS_CUSTOM,
+  SMS_MAX_CREDITS_TEMPLATE,
   SMS_TEMPLATE_LIST,
   SMS_TEMPLATES,
   TSmsMessageKind,
@@ -97,6 +100,16 @@ type TRow = {
   units: number;
   status: "ready" | "skipped";
   reason?: string;
+  /** Skipped only because it would cost more credits than allowed (always recorded in History). */
+  creditLimitSkip?: boolean;
+};
+
+const actorLabel = (actor?: TSmsActor) => {
+  if (!actor) return "unknown";
+  if (actor.system) return "system";
+  if (actor.userId) return `owner:${String(actor.userId)}`;
+  if (actor.staff?._id) return `staff:${String(actor.staff._id)}`;
+  return "unknown";
 };
 
 const MEMBER_SELECT =
@@ -210,6 +223,7 @@ const describeTemplates = (settings: TBranchSMSSettings) =>
       text: template.text,
       example: rendered,
       units: estimateSmsUnits(rendered),
+      maxCredits: SMS_MAX_CREDITS_TEMPLATE,
       placeholders: template.placeholders,
       whenSent: template.whenSent,
       whoReceives: template.whoReceives,
@@ -279,6 +293,23 @@ const updateSettings = async (
   if (!updated) {
     throw new AppError(StatusCodes.INTERNAL_SERVER_ERROR, "Failed to update SMS settings");
   }
+
+  const changes: Record<string, unknown> = {};
+  if (current.enabled !== next.enabled) changes.enabled = `${current.enabled}->${next.enabled}`;
+  if (current.maskingSender !== next.maskingSender) changes.sender = `${current.maskingSender ?? "none"}->${next.maskingSender ?? "none"}`;
+  for (const key of Object.keys(next.toggles) as Array<keyof TBranchSMSAutoToggles>) {
+    if (current.toggles[key] !== next.toggles[key]) changes[key] = `${current.toggles[key]}->${next.toggles[key]}`;
+  }
+  if (current.reminderDayOfMonth !== next.reminderDayOfMonth) changes.reminderDay = `${current.reminderDayOfMonth}->${next.reminderDayOfMonth}`;
+  if (current.reminderHour !== next.reminderHour) changes.reminderHour = `${current.reminderHour}->${next.reminderHour}`;
+  if (current.birthdayHour !== next.birthdayHour) changes.birthdayHour = `${current.birthdayHour}->${next.birthdayHour}`;
+  smsLog.info("settings changed", {
+    branchId,
+    by: actorLabel(actor),
+    changes: Object.keys(changes).length ? changes : "nothing",
+    nowEnabled: next.enabled,
+    nowOn: (Object.keys(next.toggles) as Array<keyof TBranchSMSAutoToggles>).filter((k) => next.toggles[k]),
+  });
   return buildSettingsSnapshot(updated);
 };
 
@@ -291,13 +322,19 @@ const SKIP = {
   alreadySent: "Already sent before",
   duplicate: "Same number and same message already in this send",
   inactiveNotAllowed: "Only the owner or an admin can message inactive members",
+  tooLong: (maxUnits: number, units: number, unicode: boolean) =>
+    maxUnits <= 1
+      ? unicode
+        ? `Too long for 1 SMS: this member's name is not English, so only ${singleSmsLimit(true)} characters fit`
+        : `Too long for 1 SMS with this member's name (${singleSmsLimit(false)} characters maximum)`
+      : `Would cost ${units} credits (limit is ${maxUnits}), so it was not sent`,
 };
 
 const planRows = async (
   branchId: string,
   templateText: string,
   candidates: TCandidate[],
-  options: { checkDedupe: boolean },
+  options: { checkDedupe: boolean; /** most credits one message may cost */ maxUnits: number },
 ): Promise<TRow[]> => {
   let alreadySent = new Set<string>();
   if (options.checkDedupe) {
@@ -334,11 +371,21 @@ const planRows = async (
     if (rendered.missing.length > 0) return skip(SKIP.missing(rendered.missing));
     if (candidate.dedupeKey && alreadySent.has(candidate.dedupeKey)) return skip(SKIP.alreadySent);
 
+    const units = estimateSmsUnits(rendered.text);
+    if (units > options.maxUnits) {
+      return {
+        ...base,
+        status: "skipped",
+        reason: SKIP.tooLong(options.maxUnits, units, base.unicode),
+        creditLimitSkip: true,
+      };
+    }
+
     const batchKey = `${phone}|${rendered.text}`;
     if (seen.has(batchKey)) return skip(SKIP.duplicate);
     seen.add(batchKey);
 
-    return { ...base, units: estimateSmsUnits(rendered.text), status: "ready" };
+    return { ...base, units, status: "ready" };
   });
 };
 
@@ -450,7 +497,7 @@ const buildManualPlan = async (
     const text = SMS_TEMPLATES.dueReminder.text;
     return {
       branch, settings, templateKey: "dueReminder", audience: "due", templateText: text,
-      rows: await planRows(branchId, text, chosen.map((c) => ({ ...c, dedupeKey: undefined })), { checkDedupe: false }),
+      rows: await planRows(branchId, text, chosen.map((c) => ({ ...c, dedupeKey: undefined })), { checkDedupe: false, maxUnits: SMS_MAX_CREDITS_TEMPLATE }),
       dueDurationCounts: buildDueDurationCounts(all),
       dueDuration: duration,
       targetDate,
@@ -483,7 +530,7 @@ const buildManualPlan = async (
       branch, settings, templateKey: "holiday",
       audience: holiday.includeInactive ? "all" : "active",
       templateText: text,
-      rows: await planRows(branchId, text, buildMemberCandidates(members, () => values), { checkDedupe: false }),
+      rows: await planRows(branchId, text, buildMemberCandidates(members, () => values), { checkDedupe: false, maxUnits: SMS_MAX_CREDITS_TEMPLATE }),
       holidayId: String(holiday._id),
       targetDate,
     };
@@ -524,7 +571,7 @@ const buildManualPlan = async (
 
   return {
     branch, settings, templateKey: "custom", audience, templateText: message,
-    rows: await planRows(branchId, message, buildMemberCandidates(members, (m) => ({ Member_Name: m.fullName })), { checkDedupe: false }),
+    rows: await planRows(branchId, message, buildMemberCandidates(members, (m) => ({ Member_Name: m.fullName })), { checkDedupe: false, maxUnits: SMS_MAX_CREDITS_CUSTOM }),
     targetDate,
   };
 };
@@ -584,11 +631,13 @@ const saveHistory = async (rows: TSmsHistory[]) => {
   if (rows.length === 0) return;
   try {
     await SmsRepository.createMany(rows);
+    smsLog.info("history saved", { requestId: rows[0]?.requestId, rows: rows.length });
   } catch (error) {
     // The SMS may already be out at this point, so never fail the request over history.
-    logger.error("SMS history could not be fully saved", {
-      message: error instanceof Error ? error.message : String(error),
+    smsLog.error("history could not be fully saved", {
+      requestId: rows[0]?.requestId,
       rows: rows.length,
+      error: error instanceof Error ? error.message : String(error),
     });
   }
 };
@@ -597,11 +646,42 @@ const executeRows = async (input: TExecuteInput) => {
   const requestId = input.requestId ?? randomUUID();
   const ready = input.rows.filter((r) => r.status === "ready");
   const skipped = input.rows.filter((r) => r.status === "skipped");
-  const skippedHistory = input.saveSkipped
-    ? skipped.map((r) => buildHistoryRow(input, requestId, r, "skipped", r.reason, undefined, undefined))
-    : [];
+  // Manual sends keep every skipped row so the admin can see why. Automatic sends only
+  // keep rows skipped for the credit limit, so a cost problem is never silent.
+  const skippedHistory = skipped
+    .filter((r) => input.saveSkipped || r.creditLimitSkip)
+    .map((r) => buildHistoryRow(input, requestId, r, "skipped", r.reason, undefined, undefined));
+
+  const skipBreakdown = new Map<string, number>();
+  skipped.forEach((r) => skipBreakdown.set(r.reason ?? "Skipped", (skipBreakdown.get(r.reason ?? "Skipped") ?? 0) + 1));
+  smsLog.info("send planned", {
+    requestId,
+    branchId: input.branchId,
+    template: input.templateKey,
+    audience: input.audience,
+    mode: input.sendMode,
+    by: actorLabel(input.actor),
+    total: input.rows.length,
+    ready: ready.length,
+    skipped: skipped.length,
+    skippedWhy: skipBreakdown.size ? Object.fromEntries(skipBreakdown) : undefined,
+    credits: ready.reduce((total, r) => total + r.units, 0),
+    maxCreditsOneMessage: ready.reduce((max, r) => Math.max(max, r.units), 0),
+  });
+  skipped
+    .filter((r) => r.creditLimitSkip)
+    .forEach((r) =>
+      smsLog.warn("message skipped: credit limit", {
+        requestId,
+        to: maskPhone(r.phone),
+        length: r.text.length,
+        unicode: r.unicode,
+        why: r.reason,
+      }),
+    );
 
   if (ready.length === 0) {
+    smsLog.warn("nothing to send", { requestId, mode: input.sendMode, template: input.templateKey });
     await saveHistory(skippedHistory);
     if (input.throwOnBlock) {
       throw new AppError(StatusCodes.BAD_REQUEST, "Nobody to send to. Everyone was skipped (no phone, invalid number or duplicate).");
@@ -615,6 +695,7 @@ const executeRows = async (input: TExecuteInput) => {
 
   if (required > available) {
     const reason = `Not enough SMS credits (need ${required}, have ${available})`;
+    smsLog.warn("blocked: balance too low", { requestId, need: required, have: available, mode: input.sendMode });
     if (input.throwOnBlock) throw new AppError(StatusCodes.BAD_REQUEST, reason);
     await saveHistory([
       ...skippedHistory,
@@ -623,8 +704,9 @@ const executeRows = async (input: TExecuteInput) => {
     return { requestId, sent: 0, failed: ready.length, skipped: skipped.length, dryRun: balance.dryRun };
   }
 
+  smsLog.info("balance ok, calling provider", { requestId, need: required, have: available, dryRun: balance.dryRun });
   const outcome = await SmsProvider.sendMessages(
-    ready.map((r) => ({ phone: r.phone as string, text: r.text, unicode: r.unicode })),
+    ready.map((r) => ({ phone: r.phone as string, text: r.text, unicode: r.unicode, units: r.units })),
     requestId,
     input.senderName,
   );
@@ -649,6 +731,42 @@ const executeRows = async (input: TExecuteInput) => {
 
   await saveHistory([...skippedHistory, ...sentHistory]);
   await cacheService.deleteCache(BALANCE_CACHE_KEY).catch(() => {});
+
+  const failureWhy = new Map<string, number>();
+  ready.forEach((_row, index) => {
+    const result = outcome.results[index];
+    if (result?.status !== "sent") {
+      const key = result?.reason ?? "No confirmation from provider";
+      failureWhy.set(key, (failureWhy.get(key) ?? 0) + 1);
+    }
+  });
+  // One line per recipient (first 25), so a one-member send is fully traceable.
+  ready.slice(0, 25).forEach((row, index) => {
+    const result = outcome.results[index];
+    smsLog.info("recipient result", {
+      requestId,
+      to: maskPhone(row.phone),
+      credits: row.units,
+      unicode: row.unicode,
+      length: row.text.length,
+      status: result?.status === "sent" ? (outcome.dryRun ? "simulated" : "sent") : "failed",
+      why: result?.status === "sent" ? undefined : (result?.reason ?? "No confirmation from provider"),
+    });
+  });
+  smsLog.info("send finished", {
+    requestId,
+    mode: input.sendMode,
+    template: input.templateKey,
+    sent,
+    failed,
+    skipped: skipped.length,
+    creditsAccepted: ready.reduce(
+      (total, row, index) => total + (outcome.results[index]?.status === "sent" ? row.units : 0),
+      0,
+    ),
+    dryRun: outcome.dryRun,
+    failedWhy: failureWhy.size ? Object.fromEntries(failureWhy) : undefined,
+  });
 
   return { requestId, sent, failed, skipped: skipped.length, dryRun: outcome.dryRun };
 };
@@ -695,7 +813,25 @@ const sendSms = async (
   actor: TSmsActor,
   payload: TSmsSendPayload,
 ) => {
-  const plan = await buildManualPlan(businessId, branchId, actor, payload);
+  smsLog.info("manual send requested", {
+    branchId,
+    by: actorLabel(actor),
+    kind: payload.kind,
+    audience: payload.audience,
+    members: payload.memberIds?.length,
+    messageLength: payload.message?.length,
+  });
+  let plan: TManualPlan;
+  try {
+    plan = await buildManualPlan(businessId, branchId, actor, payload);
+  } catch (error) {
+    smsLog.warn("manual send refused", {
+      branchId,
+      by: actorLabel(actor),
+      why: error instanceof Error ? error.message : String(error),
+    });
+    throw error;
+  }
 
   const result = await executeRows({
     branchId,
@@ -710,7 +846,8 @@ const sendSms = async (
     throwOnBlock: true,
   });
 
-  if (plan.holidayId) {
+  // If nothing at all went out, keep the notice as a draft so it can be sent again.
+  if (plan.holidayId && result.sent > 0) {
     await SmsHoliday.updateOne(
       { _id: plan.holidayId },
       { $set: { status: "sent", sentAt: new Date(), requestId: result.requestId, sentCount: result.sent, failedCount: result.failed } },
@@ -733,6 +870,7 @@ const sendTest = async (
   input: { templateKey: TSmsTemplateKey; phone: string },
 ) => {
   requireAdmin(actor);
+  smsLog.info("test message requested", { branchId, by: actorLabel(actor), template: input.templateKey, to: maskPhone(input.phone) });
   const branch = await resolveBranchAccess(businessId, branchId, actor);
   const settings = normalizeBranchSMSSettings(branch.smsSettings);
   if (!settings.maskingSender) {
@@ -746,7 +884,7 @@ const sendTest = async (
     branchId,
     template.text,
     [{ member: { fullName: "Test message", contact: phone, isActive: true }, values: template.sample }],
-    { checkDedupe: false },
+    { checkDedupe: false, maxUnits: SMS_MAX_CREDITS_TEMPLATE },
   );
   const result = await executeRows({
     branchId,
@@ -1011,6 +1149,7 @@ const retryFailed = async (
     throw new AppError(StatusCodes.NOT_FOUND, "There are no failed messages to retry");
   }
 
+  smsLog.info("retry requested", { branchId, by: actorLabel(actor), originalRequestId: requestId, failedRows: failedRows.length });
   const first = failedRows[0]!;
   const candidates: TCandidate[] = failedRows.map((row) => ({
     member: {
@@ -1023,7 +1162,7 @@ const retryFailed = async (
     text: row.renderedMessage,
     dedupeKey: undefined,
   }));
-  const rows = await planRows(branchId, "", candidates, { checkDedupe: false });
+  const rows = await planRows(branchId, "", candidates, { checkDedupe: false, maxUnits: SMS_MAX_CREDITS_TEMPLATE });
 
   const result = await executeRows({
     branchId,
@@ -1059,7 +1198,16 @@ const loadAutoBranch = async (branchId: string, key: TAutoKey) => {
   const branch = await BranchRepository.findById(branchId);
   if (!branch) return null;
   const settings = normalizeBranchSMSSettings(branch.smsSettings);
-  if (!settings.enabled || !settings.maskingSender || !settings.toggles[key]) return null;
+  if (!settings.enabled) return null; // SMS is off for this branch: stay completely silent
+  if (!settings.maskingSender) {
+    smsLog.warn("automatic message ignored: no sender set", { branchId, message: key });
+    return null;
+  }
+  if (!settings.toggles[key]) {
+    smsLog.info("automatic message ignored: switch is off", { branchId, message: key });
+    return null;
+  }
+  smsLog.info("automatic message triggered", { branchId, message: key });
   return { branch, settings };
 };
 
@@ -1070,7 +1218,7 @@ const runAutoBatch = async (
   candidates: TCandidate[],
 ) => {
   if (candidates.length === 0) return null;
-  const rows = await planRows(branchId, SMS_TEMPLATES[key].text, candidates, { checkDedupe: true });
+  const rows = await planRows(branchId, SMS_TEMPLATES[key].text, candidates, { checkDedupe: true, maxUnits: SMS_MAX_CREDITS_TEMPLATE });
   return executeRows({
     branchId,
     senderName: settings.maskingSender as string,
@@ -1089,9 +1237,10 @@ const safely = async (label: string, branchId: string, task: () => Promise<unkno
   try {
     await task();
   } catch (error) {
-    logger.error(`Automatic SMS failed (${label})`, {
+    smsLog.error("automatic message crashed", {
       branchId,
-      message: error instanceof Error ? error.message : String(error),
+      label,
+      error: error instanceof Error ? error.message : String(error),
     });
   }
 };
@@ -1164,7 +1313,7 @@ const runDueRemindersForBranch = async (branchId: string) => {
 
   const candidates = await buildDueCandidates(branch, new Date());
   const result = await runAutoBatch(branchId, settings, "dueReminder", candidates);
-  logger.info("Auto due-reminder SMS run finished", { branchId, ...result });
+  smsLog.info("due reminder run finished", { branchId, candidates: candidates.length, sent: result?.sent, failed: result?.failed, skipped: result?.skipped });
 };
 
 const runBirthdaysForBranch = async (branchId: string) => {
@@ -1206,7 +1355,7 @@ const runBirthdaysForBranch = async (branchId: string) => {
     }));
 
   const result = await runAutoBatch(branchId, settings, "birthday", candidates);
-  logger.info("Auto birthday SMS run finished", { branchId, ...result });
+  smsLog.info("birthday run finished", { branchId, candidates: candidates.length, sent: result?.sent, failed: result?.failed, skipped: result?.skipped });
 };
 
 const runAutomationSweep = async () => {
@@ -1218,6 +1367,9 @@ const runAutomationSweep = async () => {
     { select: "_id" },
   ).lean();
 
+  if (branches.length > 0) {
+    smsLog.info("automation sweep", { branchesWithSmsOn: branches.length });
+  }
   for (const branch of branches) {
     const branchId = String(branch._id);
     await safely("due-reminder", branchId, () => runDueRemindersForBranch(branchId));
@@ -1229,7 +1381,7 @@ const startAutomationScheduler = () => {
   if (schedulerHandle) return;
   schedulerHandle = setInterval(() => void runAutomationSweep(), SCHEDULER_INTERVAL_MS);
   void runAutomationSweep();
-  logger.info("SMS automation scheduler started", { intervalMs: SCHEDULER_INTERVAL_MS });
+  smsLog.info("scheduler started", { intervalMinutes: SCHEDULER_INTERVAL_MS / 60000 });
 };
 
 export const SmsService = {

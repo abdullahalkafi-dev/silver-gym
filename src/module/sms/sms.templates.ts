@@ -105,7 +105,22 @@ export const HOLIDAY_REASONS = [
   "Maintenance",
 ] as const;
 
-export const CUSTOM_MESSAGE_MAX_CHARS = 306; // 2 SMS parts of 153
+/**
+ * CREDIT RULES (the one place to audit SMS cost)
+ *
+ * 1 credit = 1 SMS part. English text: 160 characters per part. Any non-English
+ * character (for example a Bangla member name) makes it Unicode: 70 per part.
+ * Longer messages are split into parts of 153 (English) / 67 (Unicode).
+ *
+ * - Fixed templates (automatic or manual): at most SMS_MAX_CREDITS_TEMPLATE (2) credits.
+ *   A normal English name keeps every template at 1 credit. A Bangla name or a
+ *   very long name can push it to 2. Anything above 2 is skipped, never sent.
+ * - Custom messages: at most 160 characters and exactly 1 credit per member.
+ *   A member whose real name makes it longer is skipped with a clear reason.
+ */
+export const CUSTOM_MESSAGE_MAX_CHARS = 160;
+export const SMS_MAX_CREDITS_CUSTOM = 1;
+export const SMS_MAX_CREDITS_TEMPLATE = 2;
 export const HOLIDAY_OTHER_REASON_MAX_CHARS = 40;
 
 const PLAIN_SMS_PATTERN = /^[\x20-\x7E\r\n]*$/;
@@ -143,6 +158,9 @@ const UNICODE_SINGLE = 70;
 const UNICODE_MULTI = 67;
 
 export const detectUnicode = (message: string) => !isPlainSmsText(message);
+
+/** Characters that fit in ONE credit. */
+export const singleSmsLimit = (unicode: boolean) => (unicode ? UNICODE_SINGLE : GSM_SINGLE);
 
 export const estimateSmsUnits = (message: string): number => {
   const unicode = detectUnicode(message);
