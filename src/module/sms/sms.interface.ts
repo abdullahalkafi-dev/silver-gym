@@ -21,6 +21,8 @@ export interface TSmsHistory {
   status: TSmsHistoryStatus;
   reason?: string;
   units: number;
+  /** Which sender style this message used (masking or non-masking). */
+  senderType?: "masking" | "nonMasking";
   /** Set only on rows that were really sent; a unique index stops duplicate automatic SMS. */
   dedupeKey?: string;
   holidayId?: Types.ObjectId | null;

@@ -51,6 +51,12 @@ export default {
       process.env.SMS_FASTSMSBD_API_BASE_URL || "https://smsapi.fastsmsbd.com",
     api_key: process.env.SMS_FASTSMSBD_API_KEY,
     sender_id: process.env.SMS_FASTSMSBD_SENDER_ID,
+    // Fixed for the whole app (branches only choose masking or non-masking).
+    masking_sender_id: process.env.SMS_MASKING_SENDER_ID || "SILVER GYM",
+    non_masking_sender_id: process.env.SMS_NON_MASKING_SENDER_ID || "8809640911565",
+    // Taka per SMS part, from the provider price list.
+    price_masking: Number(process.env.SMS_PRICE_MASKING) || 0.53,
+    price_non_masking: Number(process.env.SMS_PRICE_NON_MASKING) || 0.35,
     dry_run: process.env.SMS_DRY_RUN !== "false",
     balance_cache_ttl_seconds: process.env.SMS_BALANCE_CACHE_TTL_SECONDS,
   },

@@ -41,6 +41,7 @@ import {
 import { maskPhone, smsLog } from "./sms.log";
 import { SmsHistory, SmsHoliday } from "./sms.model";
 import { SmsProvider } from "./sms.provider";
+import { resolveSender, roundMoney, TResolvedSender } from "./sms.sender";
 import { SmsRepository } from "./sms.repository";
 import {
   CUSTOM_MESSAGE_MAX_CHARS,
@@ -208,8 +209,18 @@ const requireAdmin = (actor: TSmsActor) => {
 };
 
 const getBalance = async (businessId: string, branchId: string, actor: TSmsActor) => {
-  await resolveBranchAccess(businessId, branchId, actor);
-  return SmsProvider.getBalance();
+  const branch = await resolveBranchAccess(businessId, branchId, actor);
+  const sender = resolveSender(normalizeBranchSMSSettings(branch.smsSettings).senderType);
+  const balance = await SmsProvider.getBalance();
+  const money = Math.max(Number(balance.maskingBalance || 0), 0);
+  return {
+    ...balance,
+    senderType: sender.type,
+    senderName: sender.id,
+    pricePerSms: sender.pricePerSms,
+    /** How many one-part messages the balance covers at this branch's price. */
+    messagesLeft: Math.floor(roundMoney(money / sender.pricePerSms)),
+  };
 };
 
 // ───────────────────────────── settings ─────────────────────────────
@@ -234,6 +245,13 @@ const describeTemplates = (settings: TBranchSMSSettings) =>
     };
   });
 
+const senderView = (sender: TResolvedSender) => ({
+  type: sender.type,
+  id: sender.id,
+  label: sender.label,
+  pricePerSms: sender.pricePerSms,
+});
+
 const buildSettingsSnapshot = (branch: TBranch & { _id?: Types.ObjectId }) => {
   const plain = typeof (branch as any).toObject === "function" ? (branch as any).toObject() : branch;
   const settings = normalizeBranchSMSSettings(plain.smsSettings);
@@ -241,6 +259,8 @@ const buildSettingsSnapshot = (branch: TBranch & { _id?: Types.ObjectId }) => {
     branchId: plain._id,
     branchName: plain.branchName,
     smsSettings: settings,
+    sender: senderView(resolveSender(settings.senderType)),
+    senders: { masking: senderView(resolveSender("masking")), nonMasking: senderView(resolveSender("nonMasking")) },
     templates: describeTemplates(settings),
     dryRun: config.sms.dry_run !== false,
   };
@@ -253,7 +273,7 @@ const getSettings = async (businessId: string, branchId: string, actor: TSmsActo
 
 type TSettingsUpdate = {
   enabled?: boolean;
-  maskingSender?: string | null;
+  senderType?: "masking" | "nonMasking";
   reminderDayOfMonth?: number;
   reminderHour?: number;
   birthdayHour?: number;
@@ -273,7 +293,7 @@ const updateSettings = async (
   const next = normalizeBranchSMSSettings({
     ...current,
     ...(payload.enabled !== undefined ? { enabled: payload.enabled } : {}),
-    ...(payload.maskingSender !== undefined ? { maskingSender: payload.maskingSender } : {}),
+    ...(payload.senderType !== undefined ? { senderType: payload.senderType } : {}),
     ...(payload.reminderDayOfMonth !== undefined ? { reminderDayOfMonth: payload.reminderDayOfMonth } : {}),
     ...(payload.reminderHour !== undefined ? { reminderHour: payload.reminderHour } : {}),
     ...(payload.birthdayHour !== undefined ? { birthdayHour: payload.birthdayHour } : {}),
@@ -282,13 +302,6 @@ const updateSettings = async (
     updatedBy: actor.userId ?? actor.staff?._id ?? null,
   });
 
-  if (next.enabled && !next.maskingSender) {
-    throw new AppError(
-      StatusCodes.BAD_REQUEST,
-      "Enter the approved sender name before turning SMS on",
-    );
-  }
-
   const updated = await BranchRepository.updateById(branchId, { smsSettings: next });
   if (!updated) {
     throw new AppError(StatusCodes.INTERNAL_SERVER_ERROR, "Failed to update SMS settings");
@@ -296,7 +309,7 @@ const updateSettings = async (
 
   const changes: Record<string, unknown> = {};
   if (current.enabled !== next.enabled) changes.enabled = `${current.enabled}->${next.enabled}`;
-  if (current.maskingSender !== next.maskingSender) changes.sender = `${current.maskingSender ?? "none"}->${next.maskingSender ?? "none"}`;
+  if (current.senderType !== next.senderType) changes.senderType = `${current.senderType}->${next.senderType}`;
   for (const key of Object.keys(next.toggles) as Array<keyof TBranchSMSAutoToggles>) {
     if (current.toggles[key] !== next.toggles[key]) changes[key] = `${current.toggles[key]}->${next.toggles[key]}`;
   }
@@ -308,6 +321,7 @@ const updateSettings = async (
     by: actorLabel(actor),
     changes: Object.keys(changes).length ? changes : "nothing",
     nowEnabled: next.enabled,
+    nowSender: `${next.senderType} (${resolveSender(next.senderType).id})`,
     nowOn: (Object.keys(next.toggles) as Array<keyof TBranchSMSAutoToggles>).filter((k) => next.toggles[k]),
   });
   return buildSettingsSnapshot(updated);
@@ -389,12 +403,14 @@ const planRows = async (
   });
 };
 
-const summarizeRows = (rows: TRow[], balance: TSmsBalanceSnapshot) => {
+const summarizeRows = (rows: TRow[], balance: TSmsBalanceSnapshot, sender: TResolvedSender) => {
   const ready = rows.filter((r) => r.status === "ready");
   const skipped = rows.filter((r) => r.status === "skipped");
   const requiredUnits = ready.reduce((total, r) => total + r.units, 0);
-  const availableBalance = Math.max(Number(balance.maskingBalance || 0), 0);
-  const insufficientBalance = requiredUnits > availableBalance;
+  // The provider balance is money (taka). Cost = SMS parts x the price of this branch's sender style.
+  const requiredCost = roundMoney(requiredUnits * sender.pricePerSms);
+  const availableBalance = roundMoney(Math.max(Number(balance.maskingBalance || 0), 0));
+  const insufficientBalance = requiredCost > availableBalance;
 
   const breakdown = new Map<string, number>();
   skipped.forEach((r) => breakdown.set(r.reason ?? "Skipped", (breakdown.get(r.reason ?? "Skipped") ?? 0) + 1));
@@ -404,8 +420,12 @@ const summarizeRows = (rows: TRow[], balance: TSmsBalanceSnapshot) => {
     readyRecipients: ready.length,
     skippedRecipients: skipped.length,
     requiredUnits,
+    requiredCost,
+    pricePerSms: sender.pricePerSms,
+    senderType: sender.type,
+    senderName: sender.id,
     availableBalance,
-    remainingBalance: Math.max(availableBalance - requiredUnits, 0),
+    remainingBalance: roundMoney(Math.max(availableBalance - requiredCost, 0)),
     insufficientBalance,
     canSend: ready.length > 0 && !insufficientBalance,
     needsConfirmation: ready.length >= LARGE_SEND_THRESHOLD,
@@ -482,10 +502,6 @@ const buildManualPlan = async (
   if (!settings.enabled) {
     throw new AppError(StatusCodes.BAD_REQUEST, "SMS is turned off for this branch");
   }
-  if (!settings.maskingSender) {
-    throw new AppError(StatusCodes.BAD_REQUEST, "Sender name is not set for this branch");
-  }
-
   const branchObjectId = new Types.ObjectId(branchId);
   const targetDate = payload.targetDate ? new Date(payload.targetDate) : new Date();
   const isAdmin = Boolean(actor.isAdmin || actor.userId || actor.system);
@@ -580,7 +596,7 @@ const buildManualPlan = async (
 
 type TExecuteInput = {
   branchId: string;
-  senderName: string;
+  sender: TResolvedSender;
   rows: TRow[];
   templateKey: TSmsMessageKind;
   audience: TSmsAudience;
@@ -616,6 +632,7 @@ const buildHistoryRow = (
   status,
   reason,
   units: status === "skipped" ? 0 : row.units,
+  senderType: input.sender.type,
   dedupeKey,
   holidayId: input.holidayId ? new Types.ObjectId(input.holidayId) : null,
   dueMonthLabel: row.candidate.due?.label,
@@ -660,12 +677,14 @@ const executeRows = async (input: TExecuteInput) => {
     template: input.templateKey,
     audience: input.audience,
     mode: input.sendMode,
+    sender: `${input.sender.type}(${input.sender.id})`,
     by: actorLabel(input.actor),
     total: input.rows.length,
     ready: ready.length,
     skipped: skipped.length,
     skippedWhy: skipBreakdown.size ? Object.fromEntries(skipBreakdown) : undefined,
     credits: ready.reduce((total, r) => total + r.units, 0),
+    cost: roundMoney(ready.reduce((total, r) => total + r.units, 0) * input.sender.pricePerSms),
     maxCreditsOneMessage: ready.reduce((max, r) => Math.max(max, r.units), 0),
   });
   skipped
@@ -690,12 +709,12 @@ const executeRows = async (input: TExecuteInput) => {
   }
 
   const balance = await SmsProvider.getBalance();
-  const required = ready.reduce((total, r) => total + r.units, 0);
-  const available = Math.max(Number(balance.maskingBalance || 0), 0);
+  const required = roundMoney(ready.reduce((total, r) => total + r.units, 0) * input.sender.pricePerSms);
+  const available = roundMoney(Math.max(Number(balance.maskingBalance || 0), 0));
 
   if (required > available) {
-    const reason = `Not enough SMS credits (need ${required}, have ${available})`;
-    smsLog.warn("blocked: balance too low", { requestId, need: required, have: available, mode: input.sendMode });
+    const reason = `Not enough SMS balance (need Tk ${required}, have Tk ${available})`;
+    smsLog.warn("blocked: balance too low", { requestId, needTk: required, haveTk: available, mode: input.sendMode });
     if (input.throwOnBlock) throw new AppError(StatusCodes.BAD_REQUEST, reason);
     await saveHistory([
       ...skippedHistory,
@@ -704,11 +723,11 @@ const executeRows = async (input: TExecuteInput) => {
     return { requestId, sent: 0, failed: ready.length, skipped: skipped.length, dryRun: balance.dryRun };
   }
 
-  smsLog.info("balance ok, calling provider", { requestId, need: required, have: available, dryRun: balance.dryRun });
+  smsLog.info("balance ok, calling provider", { requestId, needTk: required, haveTk: available, sender: input.sender.type, dryRun: balance.dryRun });
   const outcome = await SmsProvider.sendMessages(
     ready.map((r) => ({ phone: r.phone as string, text: r.text, unicode: r.unicode, units: r.units })),
     requestId,
-    input.senderName,
+    input.sender.id,
   );
 
   let sent = 0;
@@ -800,7 +819,8 @@ const previewSms = async (
     dueDuration: plan.dueDuration,
     dueDurationCounts: plan.dueDurationCounts,
     balance,
-    summary: summarizeRows(plan.rows, balance),
+    sender: senderView(resolveSender(plan.settings.senderType)),
+    summary: summarizeRows(plan.rows, balance, resolveSender(plan.settings.senderType)),
     sampleMessage: ready[0]?.text ?? plan.rows[0]?.text ?? "",
     recipients: ready.slice(0, 50).map(toRowView),
     skipped: plan.rows.filter((r) => r.status === "skipped").slice(0, 200).map(toRowView),
@@ -835,7 +855,7 @@ const sendSms = async (
 
   const result = await executeRows({
     branchId,
-    senderName: plan.settings.maskingSender as string,
+    sender: resolveSender(plan.settings.senderType),
     rows: plan.rows,
     templateKey: plan.templateKey,
     audience: plan.audience,
@@ -873,9 +893,6 @@ const sendTest = async (
   smsLog.info("test message requested", { branchId, by: actorLabel(actor), template: input.templateKey, to: maskPhone(input.phone) });
   const branch = await resolveBranchAccess(businessId, branchId, actor);
   const settings = normalizeBranchSMSSettings(branch.smsSettings);
-  if (!settings.maskingSender) {
-    throw new AppError(StatusCodes.BAD_REQUEST, "Set the sender name first");
-  }
   const phone = normalizeBangladeshPhone(input.phone);
   if (!phone) throw new AppError(StatusCodes.BAD_REQUEST, "Enter a valid Bangladesh mobile number");
 
@@ -888,7 +905,7 @@ const sendTest = async (
   );
   const result = await executeRows({
     branchId,
-    senderName: settings.maskingSender,
+    sender: resolveSender(settings.senderType),
     rows,
     templateKey: input.templateKey,
     audience: "selected",
@@ -1095,6 +1112,7 @@ const listBatches = async (
         _id: "$requestId",
         createdAt: { $first: "$createdAt" },
         templateKey: { $first: "$templateKey" },
+        senderType: { $first: "$senderType" },
         sendMode: { $first: "$sendMode" },
         audience: { $first: "$audience" },
         sampleMessage: { $first: "$renderedMessage" },
@@ -1134,7 +1152,7 @@ const retryFailed = async (
 ) => {
   const branch = await resolveBranchAccess(businessId, branchId, actor);
   const settings = normalizeBranchSMSSettings(branch.smsSettings);
-  if (!settings.enabled || !settings.maskingSender) {
+  if (!settings.enabled) {
     throw new AppError(StatusCodes.BAD_REQUEST, "SMS is turned off for this branch");
   }
 
@@ -1166,7 +1184,7 @@ const retryFailed = async (
 
   const result = await executeRows({
     branchId,
-    senderName: settings.maskingSender,
+    sender: resolveSender(settings.senderType),
     rows,
     templateKey: first.templateKey,
     audience: first.audience,
@@ -1199,10 +1217,6 @@ const loadAutoBranch = async (branchId: string, key: TAutoKey) => {
   if (!branch) return null;
   const settings = normalizeBranchSMSSettings(branch.smsSettings);
   if (!settings.enabled) return null; // SMS is off for this branch: stay completely silent
-  if (!settings.maskingSender) {
-    smsLog.warn("automatic message ignored: no sender set", { branchId, message: key });
-    return null;
-  }
   if (!settings.toggles[key]) {
     smsLog.info("automatic message ignored: switch is off", { branchId, message: key });
     return null;
@@ -1221,7 +1235,7 @@ const runAutoBatch = async (
   const rows = await planRows(branchId, SMS_TEMPLATES[key].text, candidates, { checkDedupe: true, maxUnits: SMS_MAX_CREDITS_TEMPLATE });
   return executeRows({
     branchId,
-    senderName: settings.maskingSender as string,
+    sender: resolveSender(settings.senderType),
     rows,
     templateKey: key,
     audience: key === "dueReminder" ? "due" : "selected",

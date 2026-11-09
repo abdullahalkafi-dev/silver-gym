@@ -21,7 +21,7 @@ const branchAccessControlSchema = new Schema(
 const branchSmsSettingsSchema = new Schema(
   {
     enabled: { type: Boolean, default: false },
-    maskingSender: { type: String, trim: true, default: null },
+    senderType: { type: String, enum: ["masking", "nonMasking"], default: "masking" },
     reminderDayOfMonth: { type: Number, min: 1, max: 31, default: 5 },
     reminderHour: { type: Number, min: 9, max: 20, default: 10 },
     birthdayHour: { type: Number, min: 9, max: 20, default: 10 },

@@ -60,14 +60,9 @@ export const SmsDto = {
     data: z
       .object({
         enabled: z.boolean().optional(),
-        maskingSender: z
-          .string()
-          .trim()
-          .min(1)
-          .max(32, "Sender name must be 32 characters or fewer")
-          .regex(/^[\x21-\x7E ]+$/, "Sender name must use English characters only")
-          .nullable()
-          .optional(),
+        senderType: z.enum(["masking", "nonMasking"]).optional(),
+        // Old screens may still send this. The sender IDs are fixed for the whole app now, so it is ignored.
+        maskingSender: z.unknown().optional(),
         reminderDayOfMonth: z.number().int().min(1).max(31).optional(),
         reminderHour: hour.optional(),
         birthdayHour: hour.optional(),

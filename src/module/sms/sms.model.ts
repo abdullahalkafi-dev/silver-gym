@@ -37,6 +37,7 @@ const smsHistorySchema = new Schema<TSmsHistory>(
     },
     reason: { type: String, trim: true },
     units: { type: Number, required: true, min: 0 },
+    senderType: { type: String, enum: ["masking", "nonMasking"] },
     dedupeKey: { type: String, trim: true },
     holidayId: { type: Schema.Types.ObjectId, ref: "SmsHoliday", default: null },
     retriedAt: { type: Date, default: null },

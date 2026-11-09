@@ -47,7 +47,8 @@ const FASTSMSBD_STATUS_CODES: Record<number, string> = {
 
 const getRequiredConfig = () => {
   const apiKey = config.sms.api_key;
-  const senderId = config.sms.sender_id;
+  // Every send passes its own sender (masking or non-masking); this is only the fallback.
+  const senderId = config.sms.sender_id || config.sms.masking_sender_id;
 
   if (!apiKey || !senderId) {
     throw new AppError(
@@ -91,7 +92,7 @@ const getBalance = async (): Promise<TSmsBalanceSnapshot> => {
     return cached;
   }
 
-  if (config.sms.dry_run !== false && (!config.sms.api_key || !config.sms.sender_id)) {
+  if (config.sms.dry_run !== false && !config.sms.api_key) {
     const mockBalance: TSmsBalanceSnapshot = {
       nonMaskingBalance: 0,
       maskingBalance: 9999,

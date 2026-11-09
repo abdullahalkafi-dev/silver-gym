@@ -16,10 +16,14 @@ export const DEFAULT_BRANCH_SMS_TOGGLES: TBranchSMSAutoToggles = {
 	welcome: false,
 };
 
+/** masking = approved brand name (costs more); nonMasking = the approved number. */
+export type TBranchSMSSenderType = "masking" | "nonMasking";
+
 export interface TBranchSMSSettings {
 	/** Master switch. OFF by default for every branch. */
 	enabled: boolean;
-	maskingSender?: string | null;
+	/** Which fixed sender ID this branch sends from. */
+	senderType: TBranchSMSSenderType;
 	reminderDayOfMonth: number;
 	/** Dhaka-time hour (9-20) when the due-reminder / birthday jobs start sending. */
 	reminderHour: number;
@@ -61,7 +65,7 @@ export const normalizeBranchAutoDeactivateAfterUnpaidMonths = (
 
 export const getDefaultBranchSMSSettings = (): TBranchSMSSettings => ({
 	enabled: false,
-	maskingSender: null,
+	senderType: "masking",
 	reminderDayOfMonth: 5,
 	reminderHour: 10,
 	birthdayHour: 10,
@@ -87,8 +91,7 @@ export const normalizeBranchSMSSettings = (
 
 	return {
 		enabled: raw.enabled === true,
-		maskingSender:
-			typeof raw.maskingSender === "string" ? raw.maskingSender.trim() || null : null,
+		senderType: raw.senderType === "nonMasking" ? "nonMasking" : "masking",
 		reminderDayOfMonth: clampInt(raw.reminderDayOfMonth, 1, 31, defaults.reminderDayOfMonth),
 		reminderHour: clampInt(raw.reminderHour, 9, 20, defaults.reminderHour),
 		birthdayHour: clampInt(raw.birthdayHour, 9, 20, defaults.birthdayHour),
