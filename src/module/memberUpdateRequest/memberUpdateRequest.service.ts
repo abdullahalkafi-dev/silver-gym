@@ -18,7 +18,8 @@ import { MemberUpdateRequest } from "./memberUpdateRequest.model";
 
 type TChanges = Record<string, { old: unknown; new: unknown }>;
 
-const OPEN_STATUSES = ["pending", "processing"];
+// Loose type: newer mongoose typings reject a plain string[] inside `$in` on the status field.
+const OPEN_STATUSES: any[] = ["pending", "processing"];
 
 const toKey = (value: unknown) => new Types.ObjectId(String(value));
 

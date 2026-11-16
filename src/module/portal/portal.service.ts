@@ -178,12 +178,14 @@ const getMemberMe = async (memberDbId: string, branchId: string) => {
 
 /** Real bills the member paid. Migration "opening balance" rows (paid 0) are hidden. */
 const getMemberPayments = async (memberDbId: string) => {
-  const payments = await Payment.find({
+  // Typed loosely on purpose: newer mongoose typings reject status string arrays in $nin.
+  const filter: Record<string, any> = {
     memberId: new Types.ObjectId(memberDbId),
     "metadata.entryKind": { $ne: "opening_import_balance" },
     status: { $nin: ["cancelled", "refunded"] },
     paidTotal: { $gt: 0 },
-  })
+  };
+  const payments = await Payment.find(filter)
     .sort({ paymentDate: -1, createdAt: -1 })
     .select(
       "invoiceNo paymentType packageName packageDuration packageDurationType periodStart periodEnd paidMonths year subTotal discount billAmount dueAmount paidTotal admissionFee exchange paymentMethod paymentDate status",
