@@ -79,10 +79,14 @@ export type TRequestFieldKey = keyof TRequestFields;
 
 export const REQUEST_FIELD_KEYS = Object.keys(requestFieldsSchema.shape) as TRequestFieldKey[];
 
+// The calendar day in Bangladesh time. The dashboard saves a picked date as local (Dhaka) midnight,
+// which is 18:00 UTC of the day before, so comparing UTC days would be off by one for those members.
 const dateKey = (value: unknown) => {
   if (!value) return "";
   const d = new Date(value as string | number | Date);
-  return Number.isNaN(d.getTime()) ? "" : d.toISOString().slice(0, 10);
+  return Number.isNaN(d.getTime())
+    ? ""
+    : d.toLocaleDateString("en-CA", { timeZone: "Asia/Dhaka" });
 };
 
 /** Reads the member's current value for a request field, in the same shape as requests use. */

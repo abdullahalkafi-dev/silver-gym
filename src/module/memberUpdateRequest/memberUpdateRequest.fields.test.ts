@@ -78,6 +78,14 @@ describe("currentFieldValue / isSameValue", () => {
     assert.equal(isSameValue("height", currentFieldValue(member, "height"), { value: 171, unit: "cm" }), false);
     assert.equal(isSameValue("address", null, "Dhaka"), false);
   });
+
+  it("compares dates of birth by Bangladesh calendar day", () => {
+    // The dashboard saves a picked date as Dhaka midnight = 18:00 UTC of the previous day.
+    const savedByDashboard = "1995-03-03T18:00:00.000Z"; // 4 March 1995 in Dhaka
+    assert.equal(isSameValue("dateOfBirth", savedByDashboard, "1995-03-04"), true);
+    assert.equal(isSameValue("dateOfBirth", savedByDashboard, "1995-03-03"), false);
+    assert.equal(isSameValue("dateOfBirth", "1995-03-04T00:00:00.000Z", "1995-03-04"), true);
+  });
 });
 
 describe("toMemberPayload", () => {
