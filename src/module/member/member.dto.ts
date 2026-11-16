@@ -245,6 +245,7 @@ const listMembersDto = z.object({
       includeInactive: z.enum(["true"]).optional(),
       paymentStatus: z.enum(["due", "complete", "monthly_due", "admission_due"]).optional(),
       billingPlan: z.enum(["custom", "system"]).optional(),
+      updateRequest: z.enum(["pending"]).optional(),
       page: z.string().optional(),
       limit: z.string().optional(),
       sort: z.string().optional(),

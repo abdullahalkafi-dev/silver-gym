@@ -48,6 +48,8 @@ import {
 import { TMember } from "./member.interface";
 import { Member } from "./member.model";
 import { MemberRepository } from "./member.repository";
+// Model only (not the service) so member.service does not import itself in a loop.
+import { MemberUpdateRequest } from "../memberUpdateRequest/memberUpdateRequest.model";
 import {
   TMemberIdSort,
   buildMemberOrderStages,
@@ -818,7 +820,10 @@ const getMembers = async (
       ? query.billingPlan
       : undefined;
 
+  const onlyPendingRequests = query.updateRequest === "pending";
+
   const sanitizedQuery = { ...query };
+  delete sanitizedQuery.updateRequest;
   delete sanitizedQuery.includeInactive;
   delete sanitizedQuery.isActive;
   delete sanitizedQuery.paymentStatus;
@@ -865,8 +870,22 @@ const getMembers = async (
     baseFilter.isCustomMonthlyFee = { $ne: true };
   }
 
+  // Members who have an open profile-update request waiting for review.
+  // Read live (never cached): reviewing a request changes this list, and a
+  // rejected request does not touch the member record, so the list cache
+  // would keep showing it as pending.
+  if (onlyPendingRequests) {
+    const pendingMemberIds = await MemberUpdateRequest.distinct("memberId", {
+      branchId: new Types.ObjectId(branchId),
+      status: "pending",
+    });
+    baseFilter._id = { $in: pendingMemberIds };
+  }
+
   const cacheKey = `members:${branchId}:list:${JSON.stringify(Object.entries(query).sort())}`;
-  const cached = await cacheService.getCache<{ meta: unknown; data: unknown }>(cacheKey);
+  const cached = onlyPendingRequests
+    ? null
+    : await cacheService.getCache<{ meta: unknown; data: unknown }>(cacheKey);
   if (cached) return cached;
 
   const queryBuilder = new QueryBuilder<TMember>(
@@ -934,7 +953,9 @@ const getMembers = async (
   });
 
   const result = { meta, data: enrichedData };
-  await cacheService.setCache(cacheKey, result, 300);
+  if (!onlyPendingRequests) {
+    await cacheService.setCache(cacheKey, result, 300);
+  }
   return result;
 };
 
@@ -1423,10 +1444,39 @@ const getDashboardMemberSummary = async (
   };
 };
 
+/**
+ * Read-only member view for the member portal. Same billing reconciliation the
+ * dashboard applies on read, but no actor check (the portal token already pins the
+ * member) and only active members.
+ */
+const getMemberForPortal = async (branchId: string, memberId: string) => {
+  const branch = await BranchRepository.findOne({
+    _id: new Types.ObjectId(branchId),
+    isActive: true,
+  });
+
+  if (!branch) {
+    throw new AppError(StatusCodes.NOT_FOUND, "Branch not found");
+  }
+
+  const member = await MemberRepository.findOne({
+    _id: new Types.ObjectId(memberId),
+    branchId: new Types.ObjectId(branchId),
+    isActive: true,
+  });
+
+  if (!member) {
+    throw new AppError(StatusCodes.NOT_FOUND, "Member not found");
+  }
+
+  return reconcileMemberRecord(branchId, branch, member);
+};
+
 export const MemberService = {
   createMember,
   getMembers,
   getMemberById,
+  getMemberForPortal,
   updateMember,
   deleteMember,
   restoreMember,

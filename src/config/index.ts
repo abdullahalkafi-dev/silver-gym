@@ -84,6 +84,11 @@ export default {
     max_failed_rows_data: process.env.IMPORT_MAX_FAILED_ROWS_DATA,
     max_rows_per_batch: process.env.IMPORT_MAX_ROWS_PER_BATCH,
   },
+  portal: {
+    // The single business (account) the member/trainer portal serves. When unset
+    // the portal login is disabled.
+    business_id: process.env.PORTAL_BUSINESS_ID,
+  },
   minio: {
     endpoint: process.env.MINIO_ENDPOINT || "localhost",
     port: Number(process.env.MINIO_PORT) || 9000,

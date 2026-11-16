@@ -16,6 +16,9 @@ import { TransactionRoutes } from "../module/transaction/transaction.route";
 import { LockerRoutes } from "../module/locker/locker.route";
 import { IncomeCategoryRoutes } from "../module/incomeCategory/incomeCategory.route";
 import { AccessRoutes } from "../module/access/access.route";
+import { TrainerRoutes } from "../module/trainer/trainer.route";
+import { MemberUpdateRequestRoutes } from "../module/memberUpdateRequest/memberUpdateRequest.route";
+import { PortalRoutes } from "../module/portal/portal.route";
 
 const router: Router = express.Router();
 
@@ -87,6 +90,18 @@ const apiRoutes = [
   {
     path: "/access",
     route: AccessRoutes,
+  },
+  {
+    path: "/trainers",
+    route: TrainerRoutes,
+  },
+  {
+    path: "/member-update-requests",
+    route: MemberUpdateRequestRoutes,
+  },
+  {
+    path: "/portal",
+    route: PortalRoutes,
   },
 ];
 
