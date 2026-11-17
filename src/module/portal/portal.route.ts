@@ -9,6 +9,7 @@ import catchAsync from "../../shared/catchAsync";
 import sendResponse from "../../shared/sendResponse";
 import unlinkFile from "../../shared/unlinkFile";
 import { MemberUpdateRequestService } from "../memberUpdateRequest/memberUpdateRequest.service";
+import { TrainerPlanPortalRoutes } from "../trainerPlan/trainerPlan.portal.route";
 import authPortal from "./portal.auth";
 import { PortalService } from "./portal.service";
 import portalPhotoUpload from "./portal.upload";
@@ -148,5 +149,8 @@ router.delete(
     });
   }),
 );
+
+// "Ask a trainer": member requests, trainer inbox and templates (docs/trainer-plans.md)
+router.use(TrainerPlanPortalRoutes);
 
 export const PortalRoutes = router;

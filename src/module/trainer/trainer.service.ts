@@ -6,6 +6,7 @@ import generateHashPassword from "../../utils/generateHashPassword";
 import { normalizeBangladeshPhone } from "../../utils/bangladeshPhone";
 import { StaffRepository } from "../staff/staff.repository";
 import { isValidUsername } from "../staff/staff.util";
+import { PlanRequestService } from "../trainerPlan/planRequest.service";
 import { Trainer } from "./trainer.model";
 
 // Usernames are shared with dashboard staff logins, so keep them unique across both.
@@ -105,6 +106,8 @@ const remove = async (branchId: string, trainerId: string) => {
   if (!result.deletedCount) {
     throw new AppError(StatusCodes.NOT_FOUND, "Trainer not found");
   }
+  // Members waiting on this trainer get a "no longer available" answer; templates go too.
+  await PlanRequestService.onTrainerRemoved(trainerId);
   return { deleted: true };
 };
 

@@ -19,6 +19,7 @@ import { AccessRoutes } from "../module/access/access.route";
 import { TrainerRoutes } from "../module/trainer/trainer.route";
 import { MemberUpdateRequestRoutes } from "../module/memberUpdateRequest/memberUpdateRequest.route";
 import { PortalRoutes } from "../module/portal/portal.route";
+import { TrainerPlanRoutes } from "../module/trainerPlan/trainerPlan.route";
 
 const router: Router = express.Router();
 
@@ -102,6 +103,10 @@ const apiRoutes = [
   {
     path: "/portal",
     route: PortalRoutes,
+  },
+  {
+    path: "/trainer-plans",
+    route: TrainerPlanRoutes,
   },
 ];
 
